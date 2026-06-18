@@ -7,6 +7,10 @@ on:
 jobs:
   run-pipeline:
     runs-on: ubuntu-latest
+    concurrency: # 이 부분 추가
+      group: daily-stock-pipeline
+      cancel-in-progress: true # 새 작업이 들어오면 이전 작업은 중단
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
