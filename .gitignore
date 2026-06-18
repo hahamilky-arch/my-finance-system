@@ -1,0 +1,13 @@
+# 환경 변수 (보안)
+.env
+
+# 파이썬 캐시 파일
+__pycache__/
+*.pyc
+
+# 코드스페이스/VS Code 설정 파일
+.vscode/
+.idea/
+
+# 시스템 파일
+.DS_Store
