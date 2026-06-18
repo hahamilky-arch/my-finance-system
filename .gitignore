@@ -11,3 +11,7 @@ __pycache__/
 
 # 시스템 파일
 .DS_Store
+
+# 테스트 파일
+testFetch.py
+

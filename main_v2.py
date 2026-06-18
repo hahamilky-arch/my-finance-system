@@ -12,8 +12,9 @@ stocks = supabase.table("stocks").select("*").execute().data
 for stock in stocks:
     ticker = stock["ticker"]
     market = stock["market"]
-    yf_ticker = f"{ticker}.KS" if market == "KR" else ticker
-    
+    #yf_ticker = f"{ticker}.KS" if market == "KR" else ticker
+    #6자리로 강제 변환 후 .KS를 붙임
+    Yf_ticker = f"{str(ticker).zfill(6)}.KS" if market == "KR" else ticker
     print(f"{yf_ticker} >> ");
 
     # 1. 마지막으로 적재된 날짜 확인 (DB에서 가장 최신 날짜 조회)
