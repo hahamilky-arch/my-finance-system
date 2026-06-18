@@ -20,7 +20,7 @@ jobs:
         run: pip install yfinance supabase pandas python-dotenv
       
       - name: Run Data Collection
-        run: python main_V2.py
+        run: python main_v2.py
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
