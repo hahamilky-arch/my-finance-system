@@ -22,11 +22,9 @@ for stock in stocks:
     market = stock["market"]
     #yf_ticker = f"{ticker}.KS" if market == "KR" else ticker
     #6자리로 강제 변환 후 .KS를 붙임
-    #yf_ticker = f"{str(ticker).zfill(6)}.KS" if market == "KR" else ticker
+    yf_ticker = f"{str(ticker).zfill(6)}.KS" if market == "KR" else ticker
     # 1. 마켓 구분 및 티커 포맷팅 (6자리 + .KS/.KQ/.US)
-    is_kr = True # 로직에 따라 구분 (예: 0으로 시작하면 KR)
-    yf_ticker = f"{ticker.zfill(6)}.KS" if is_kr else ticker
-    market = "KR" if is_kr else "US"
+    market = "KR" if market == "KR" else "US"
     
     print(f"{yf_ticker} >> ")
     target_date = get_market_date(market)
