@@ -7,6 +7,14 @@ from dotenv import load_dotenv
 load_dotenv()
 supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
 
+def get_market_date(market):
+    # 한국은 당일, 미국은 전일 데이터 기준
+    if market == "KR":
+        return datetime.now().strftime('%Y-%m-%d')
+    else:
+        return (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
+
+
 stocks = supabase.table("stocks").select("*").execute().data
 
 for stock in stocks:
@@ -14,8 +22,16 @@ for stock in stocks:
     market = stock["market"]
     #yf_ticker = f"{ticker}.KS" if market == "KR" else ticker
     #6자리로 강제 변환 후 .KS를 붙임
-    yf_ticker = f"{str(ticker).zfill(6)}.KS" if market == "KR" else ticker
-    print(f"{yf_ticker} >> ");
+    #yf_ticker = f"{str(ticker).zfill(6)}.KS" if market == "KR" else ticker
+    # 1. 마켓 구분 및 티커 포맷팅 (6자리 + .KS/.KQ/.US)
+    is_kr = True # 로직에 따라 구분 (예: 0으로 시작하면 KR)
+    yf_ticker = f"{ticker.zfill(6)}.KS" if is_kr else ticker
+    market = "KR" if is_kr else "US"
+    
+    print(f"{yf_ticker} >> ")
+    target_date = get_market_date(market)
+    print(f"{target_date} >> 기준 일자")
+
 
     # 1. 마지막으로 적재된 날짜 확인 (DB에서 가장 최신 날짜 조회)
     latest_price = supabase.table("stock_prices") \
@@ -28,10 +44,10 @@ for stock in stocks:
     print(f"lastest price -> {latest_price}")
 
     # 2. 당일 데이터 확인 로직 추가
-    today_str = datetime.now().strftime('%Y-%m-%d')
+    #today_str = datetime.now().strftime('%Y-%m-%d')
             
-    if latest_price and latest_price[0]["price_date"] == today_str:
-        print(f"[{name}] {today_str} 데이터 있음. 수집 건너뜀.")
+    if latest_price and latest_price[0]["price_date"] == target_date:
+        print(f"[{name}] {target_date} 데이터 있음. 수집 건너뜀.")
         continue # 다음 종목으로 즉시 이동
                                     
     # 3. 데이터가 없거나 최신이 아닐 때만 아래 로직 실행
@@ -59,7 +75,12 @@ for stock in stocks:
             "volume": int(row['Volume'])                    
         }
         try:                                                                                                                                                                      
-            supabase.table("stock_prices").upsert(data).execute()
+            #supabase.table("stock_prices").upsert(data).execute()
+            response = supabase.table("stock_prices").upsert(
+                    data, 
+                    on_conflict="ticker,price_date" 
+                ).execute()
+
         except Exception as e:
             print(f" 2: {e}")
     print(f"-> [{ticker}] {len(df)}건 적재 완료.")
