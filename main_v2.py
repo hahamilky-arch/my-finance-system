@@ -34,7 +34,7 @@ for stock in stocks:
     # 1. 마지막으로 적재된 날짜 확인 (DB에서 가장 최신 날짜 조회)
     latest_price = supabase.table("stock_prices") \
         .select("price_date") \
-        .eq("ticker", ticker) \
+        .eq("ticker", yf_ticker) \
         .order("price_date", desc=True) \
         .limit(1) \
         .execute().data
@@ -45,7 +45,7 @@ for stock in stocks:
     #today_str = datetime.now().strftime('%Y-%m-%d')
             
     if latest_price and latest_price[0]["price_date"] == target_date:
-        print(f"[{name}] {target_date} 데이터 있음. 수집 건너뜀.")
+        print(f"[{ticker}] {target_date} 데이터 있음. 수집 건너뜀.")
         continue # 다음 종목으로 즉시 이동
                                     
     # 3. 데이터가 없거나 최신이 아닐 때만 아래 로직 실행
