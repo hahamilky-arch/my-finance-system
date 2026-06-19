@@ -56,8 +56,8 @@ for stock in stocks:
         # 마지막 데이터의 다음 날부터 수집
         start_date = (datetime.strptime(latest_price[0]["price_date"], '%Y-%m-%d') + timedelta(days=1)).strftime('%Y-%m-%d')
     else:
-        # 데이터가 없으면 1년 전부터 시작
-        start_date = (datetime.now() - timedelta(days=365)).strftime('%Y-%m-%d')
+        # 데이터가 없으면 5일 전부터 시작
+        start_date = (datetime.now() - timedelta(days=5)).strftime('%Y-%m-%d')
 
     print(f"start_date -> {start_date}") 
 
