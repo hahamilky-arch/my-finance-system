@@ -14,12 +14,15 @@ latest_date = supabase.table("daily_analysis").select("price_date").order("price
 st.subheader(f"기준 일자: {latest_date}")
 
 # 2. 최근일자 순위 데이터 조회
-df = pd.DataFrame(supabase.table("daily_analysis").select("*").eq("price_date", latest_date).order("momentum_rank").execute().data)
-
-st.dataframe(df[['momentum_rank', 'ticker', 'weighted_momentum']].head(40))
+df_analysis = pd.DataFrame(supabase.table("daily_analysis").select("*").eq("price_date", latest_date).order("momentum_rank").execute().data)
+# stocks 데이터(티커와 이름 매칭용) 조회
+df_stocks = pd.DataFrame(supabase.table("stocks").select("ticker, name").execute().data)
+# 두 데이터프레임을 'ticker'를 기준으로 합치기
+df_merged = pd.merge(df_analysis, df_stocks, on="ticker", how="left")
+st.dataframe(df_merged[['momentum_rank', 'ticker', 'name' 'weighted_momentum']].head(40))
 
 # 3. 종목별 과거 순위 변화 (상세 보기)
-selected_ticker = st.selectbox("종목 선택", df['ticker'].unique())
+selected_ticker = st.selectbox("종목 선택", df_merged['ticker'].unique())
 history_df = pd.DataFrame(supabase.table("daily_analysis").select("*").eq("ticker", selected_ticker).execute().data)
 
 st.subheader(f"{selected_ticker} 과거 모멘텀 변화")
