@@ -52,7 +52,7 @@ def update_momentum(market):
 
     # 2. 티커별로 루프를 돌며 개별 조회 및 계산
     for ticker in tickers:
-        res = supabase.table("stock_prices").select("*").eq("ticker", ticker).order("price_date", desc=False).execute()
+        res = supabase.table("stock_prices").select("*").eq("ticker", ticker).gte("price_date", today).order("price_date", desc=False).execute()
 
         ticker_df = pd.DataFrame(res.data)
 
