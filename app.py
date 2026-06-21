@@ -21,8 +21,18 @@ df_stocks = pd.DataFrame(supabase.table("stocks").select("ticker, name").execute
 df_merged = pd.merge(df_analysis, df_stocks, on="ticker", how="left")
 st.dataframe(df_merged[['momentum_rank', 'ticker', 'name', 'weighted_momentum']].head(40))
 
-# 3. 종목별 과거 순위 변화 (상세 보기)
-selected_ticker = st.selectbox("종목 선택", df_merged['ticker'].unique())
+# 종목별 과거 순위 변화 (상세 보기)
+# 1. 티커와 종목명을 합친 리스트 생성
+# 예: "005930 - 삼성전자" 형태로 표시
+df_merged['display_name'] = df_merged['ticker'] + " - " + df_merged['name']
+
+# 2. selectbox 구성
+# 사용자는 display_name을 보지만, 반환값(selected_option)은 "005930 - 삼성전자" 전체가 됩니다.
+selected_option = st.selectbox("종목 선택", df_merged['display_name'].unique())
+
+# 3. 선택된 문자열에서 다시 ticker만 추출
+selected_ticker = selected_option.split(" - ")[0]
+##selected_ticker = st.selectbox("종목 선택", df_merged['ticker'].unique())
 history_df = pd.DataFrame(supabase.table("daily_analysis").select("*").eq("ticker", selected_ticker).execute().data)
 
 st.subheader(f"{selected_ticker} 과거 모멘텀 변화")
