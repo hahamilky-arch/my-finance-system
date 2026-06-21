@@ -19,7 +19,9 @@ def run_analysis():
         ticker, market = stock['ticker'], stock['market']
             
         # 1. 데이터 수집
-        yf_ticker = f"{ticker}.KS" if market == "KR" else ticker
+        #yf_ticker = f"{ticker}.KS" if market == "KR" else ticker
+        yf_ticker = f"{str(ticker).zfill(6)}.KS" if market == "KR" else ticker
+
         df = yf.Ticker(yf_ticker).history(period="15mo")
         df_idx = yf.Ticker(benchmarks[ market]).history(period="15mo")
                                                     
