@@ -19,7 +19,7 @@ df_analysis = pd.DataFrame(supabase.table("daily_analysis").select("*").eq("pric
 df_stocks = pd.DataFrame(supabase.table("stocks").select("ticker, name").execute().data)
 # 두 데이터프레임을 'ticker'를 기준으로 합치기
 df_merged = pd.merge(df_analysis, df_stocks, on="ticker", how="left")
-st.dataframe(df_merged[['momentum_rank', 'ticker', 'name' 'weighted_momentum']].head(40))
+st.dataframe(df_merged[['momentum_rank', 'ticker', 'name', 'weighted_momentum']].head(40))
 
 # 3. 종목별 과거 순위 변화 (상세 보기)
 selected_ticker = st.selectbox("종목 선택", df_merged['ticker'].unique())
