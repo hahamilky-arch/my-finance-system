@@ -19,6 +19,7 @@ def calculate_weighted_momentum(df):
 
     # 단일 종목 데이터프레임이 들어올 것이므로 groupby 대신 바로 처리
     group = df.sort_values('price_date')
+    print(f"group length {len(group)}")
     if len(group) < 21: return None
 
     current_price = group['close_price'].iloc[-1]
@@ -52,10 +53,9 @@ def update_momentum(market):
 
     # 2. 티커별로 루프를 돌며 개별 조회 및 계산
     for ticker in tickers:
-        res = supabase.table("stock_prices").select("*").eq("ticker", ticker).gte("price_date", today).order("price_date", desc=False).execute()
-
+        res = supabase.table("stock_prices").select("*").eq("ticker", ticker).lte("price_date", today).order("price_date", desc=False).execute()
         ticker_df = pd.DataFrame(res.data)
-
+        print(f"ticker_df len >> [{len(ticker_df)}]")
         if ticker_df.empty: continue
 
         ticker_df['price_date'] = pd.to_datetime(ticker_df['price_date'])
