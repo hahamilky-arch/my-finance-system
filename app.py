@@ -56,10 +56,10 @@ st.markdown('<p class="main-title">📈 모멘텀 분석</p>', unsafe_allow_html
 st.markdown("""
     <style>
     .stApp {
-        margin-top: -30px;
+        margin-top: 0px;
     }
     .block-container {
-        padding-top: 1rem;
+        padding-top: 0rem;
         padding-bottom: 0rem;
     }
     </style>
