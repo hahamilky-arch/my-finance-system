@@ -19,7 +19,21 @@ df_analysis = pd.DataFrame(supabase.table("daily_analysis").select("*").eq("pric
 df_stocks = pd.DataFrame(supabase.table("stocks").select("ticker, name").execute().data)
 # 두 데이터프레임을 'ticker'를 기준으로 합치기
 df_merged = pd.merge(df_analysis, df_stocks, on="ticker", how="left")
-st.dataframe(df_merged[['momentum_rank', 'ticker', 'name', 'weighted_momentum']].head(40))
+
+# 컬럼명 한글로 변경
+df_merged = df_merged.rename(columns={
+    'momentum_rank': '순위',
+    'ticker': '코드',
+    'name': '종목명',
+    'weighted_momentum': '점수'
+})
+
+# 모바일용: 필요한 컬럼만 보여주기 (순위, 종목명, 점수만)
+st.dataframe(
+    df_merged[['순위', '종목명', '점수']], 
+    use_container_width=True, # 화면 너비에 맞춤
+    hide_index=True           # 인덱스 숨겨 공간 확보
+)
 
 # 종목별 과거 순위 변화 (상세 보기)
 # 1. 티커와 종목명을 합친 리스트 생성
