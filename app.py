@@ -48,13 +48,11 @@ display_cols = ['순위', '종목명', '점수']
 
 # 스타일 적용 및 출력 (axis=None으로 전체 데이터 참조)
 st.dataframe(
-    df_table.style.apply(highlight_new, axis=None)
-    .format({'점수': '{:.4f}'}), # 점수 소수점 정리
+    df_table.style.apply(highlight_new, axis=None).format({'점수': '{:.4f}'}),
     use_container_width=True, 
     hide_index=True,
-    column_order=display_cols # 보여줄 컬럼만 순서대로 지정
+    column_order=display_cols
 )
-st.dataframe(
 
 # 6. 종목 선택 및 차트
 selected_option = st.selectbox("종목 선택", df_display['display_name'].unique())
