@@ -7,7 +7,7 @@ import plotly.express as px
 supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
 
 
-st# 페이지 설정
+# st 페이지 설정
 st.set_page_config(page_title="모멘텀 대시보드", layout="centered")
 
 # CSS를 사용하여 Title 크기 조정 및 디자인 깔끔하게 적용
