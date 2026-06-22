@@ -79,8 +79,8 @@ else:
 selected_date = st.selectbox("기준일 선택", all_dates_list)
 df_display, latest_date, _ = get_data(selected_date)
 
-# 35위까지 표시
-df_table = df_display[df_display['순위'] <= 35].copy()
+# 50위까지 표시
+df_table = df_display[df_display['순위'] <= 50].copy()
 
 # 표 출력 부분 (불필요한 컬럼 숨기기 및 스타일 적용)
 # 출력할 컬럼 정의
