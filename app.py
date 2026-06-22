@@ -26,12 +26,23 @@ def get_data(target_date=None):
     
     df_current = pd.DataFrame(supabase.table("daily_analysis").select("ticker, momentum_rank, weighted_momentum").eq("price_date", target_date).order("momentum_rank").limit(50).execute().data)
     df_prev = pd.DataFrame(supabase.table("daily_analysis").select("ticker, momentum_rank").eq("price_date", previous_date).execute().data)
+    # 데이터 타입 명시적 변환 (순위가 숫자인지 확인)
+    df_current['momentum_rank'] = pd.to_numeric(df_current['momentum_rank'])
+    df_prev['momentum_rank'] = pd.to_numeric(df_prev['momentum_rank'])
     
     # 데이터 병합 및 신규 계산
     df_merged = pd.merge(df_current, df_prev, on="ticker", how="left", suffixes=('', '_prev'))
-    df_merged['is_new'] = df_merged['momentum_rank_prev'].isna()
-    df_merged['is_new_top30'] = df_merged['is_new'] & (df_merged['momentum_rank'] <= 30)
+    #df_merged['is_new'] = df_merged['momentum_rank_prev'].isna()
+    #df_merged['is_new_top30'] = df_merged['is_new'] & (df_merged['momentum_rank'] <= 30)
     
+    # NaN(이전 데이터 없음)은 999로 변환
+    df_merged['momentum_rank_prev'] = df_merged['momentum_rank_prev'].fillna(999)
+             
+    # 신규 진입 조건: 당일 30위 이내이면서, 이전 순위가 30위 미만(31위 이상 또는 데이터 없음)
+    df_merged['is_new_top30'] = (df_merged['momentum_rank'] <= 30) & (df_merged['momentum_rank_prev'] > 30)
+
+
+
     df_stocks = pd.DataFrame(supabase.table("stocks").select("ticker, name").execute().data)
     df_final = pd.merge(df_merged, df_stocks, on="ticker", how="left")
     df_final['display_name'] = df_final['ticker'] + " - " + df_final['name']
@@ -45,7 +56,7 @@ st.markdown('<p class="main-title">📈 모멘텀 분석</p>', unsafe_allow_html
 st.markdown("""
     <style>
     .stApp {
-        margin-top: -50px;
+        margin-top: -30px;
     }
     .block-container {
         padding-top: 1rem;
@@ -79,7 +90,7 @@ display_cols = ['순위', '종목명', 'MOT', 'RS']
 event = st.dataframe(
     df_table.style.apply(highlight_new, axis=None).format({'MOT': '{:.2f}', 'RS': '{:.2f}'}),
     #use_container_width=True, 
-    width="stretch", # 또는 명시적으로 'stretch' 설정 가능
+    width="content", # 또는 명시적으로 'stretch' 설정 가능
     hide_index=True,
     column_order=display_cols,
     selection_mode="single-row", # 행 클릭 가능
@@ -116,7 +127,7 @@ if event.selection["rows"]:
     #st.divider()
 
     # st.popover는 1.34 버전 이상에서 사용 가능
-    with st.popover(f"📊 {selected_name} 상세 차트 보기"):
+    with st.popover(f"📊 {selected_name} 모멘텀 순위 변동"):
         st.subheader(f"📊 {selected_name} ({selected_ticker}) 상세 차트")
                             
         # 하단 그래프 노출
