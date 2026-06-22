@@ -8,10 +8,11 @@ supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
 
 # 1. 함수 정의 (사용 전에 정의되어야 함)
 def highlight_new(df):
-    # 'is_new_top30'이 True인 행의 모든 컬럼 배경색 변경
-    is_new = df['is_new_top30']
+    # 배경색을 적용할 스타일 템플릿 생성
     df_styles = pd.DataFrame('', index=df.index, columns=df.columns)
-    df_styles.loc[is_new, :] = 'background-color: #ffcccc'
+    # 신규 진입인 경우에만 색상 부여
+    mask = df['is_new_top30']
+    df_styles.loc[mask, :] = 'background-color: #ffcccc'
     return df_styles
 
 # 2. 데이터 조회
@@ -40,10 +41,20 @@ st.markdown(f'<p class="sub-header">기준일: {latest_date}</p>', unsafe_allow_
 
 # 30위까지 표시
 df_table = df_display[df_display['순위'] <= 30].copy()
+
+# 표 출력 부분 (불필요한 컬럼 숨기기 및 스타일 적용)
+# 출력할 컬럼 정의
+display_cols = ['순위', '종목명', '점수']
+
+# 스타일 적용 및 출력 (axis=None으로 전체 데이터 참조)
 st.dataframe(
-    df_table[['순위', '종목명', '점수', 'is_new_top30']].style.apply(highlight_new, axis=None),
-    use_container_width=True, hide_index=True
+    df_table.style.apply(highlight_new, axis=None)
+    .format({'점수': '{:.4f}'}), # 점수 소수점 정리
+    use_container_width=True, 
+    hide_index=True,
+    column_order=display_cols # 보여줄 컬럼만 순서대로 지정
 )
+st.dataframe(
 
 # 6. 종목 선택 및 차트
 selected_option = st.selectbox("종목 선택", df_display['display_name'].unique())
