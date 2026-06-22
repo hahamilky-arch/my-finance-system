@@ -20,12 +20,18 @@ df_stocks = pd.DataFrame(supabase.table("stocks").select("ticker, name").execute
 # 두 데이터프레임을 'ticker'를 기준으로 합치기
 df_merged = pd.merge(df_analysis, df_stocks, on="ticker", how="left")
 
+# 종목별 과거 순위 변화 (상세 보기)
+# 1. 티커와 종목명을 합친 리스트 생성
+# "005930 - 삼성전자" 형태로 표시
+df_merged['display_name'] = df_merged['ticker'] + " - " + df_merged['name']
+
 # 컬럼명 한글로 변경
 df_merged = df_merged.rename(columns={
     'momentum_rank': '순위',
     'ticker': '코드',
     'name': '종목명',
-    'weighted_momentum': '점수'
+    'weighted_momentum': '점수',
+    'display_name' : 'display_name'
 })
 
 # 모바일용: 필요한 컬럼만 보여주기 (순위, 종목명, 점수만)
@@ -34,11 +40,6 @@ st.dataframe(
     use_container_width=True, # 화면 너비에 맞춤
     hide_index=True           # 인덱스 숨겨 공간 확보
 )
-
-# 종목별 과거 순위 변화 (상세 보기)
-# 1. 티커와 종목명을 합친 리스트 생성
-# 예: "005930 - 삼성전자" 형태로 표시
-df_merged['display_name'] = df_merged['ticker'] + " - " + df_merged['name']
 
 # 2. selectbox 구성
 # 사용자는 display_name을 보지만, 반환값(selected_option)은 "005930 - 삼성전자" 전체가 됩니다.
