@@ -6,8 +6,21 @@ import plotly.express as px
 # Supabase 연결 (secrets 관리)
 supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
 
-st.set_page_config(page_title="모멘텀 대시보드", layout="wide")
-st.title("📈 한국 주식 모멘텀 순위 분석")
+
+st# 페이지 설정
+st.set_page_config(page_title="모멘텀 대시보드", layout="centered")
+
+# CSS를 사용하여 Title 크기 조정 및 디자인 깔끔하게 적용
+st.markdown("""
+    <style>
+        .main-title { font-size: 24px !important; font-weight: bold; margin-bottom: 10px; color: #2E4053; }
+        .sub-header { font-size: 14px !important; color: #7F8C8D; margin-bottom: 20px; }
+    </style>
+""", unsafe_allow_html=True)
+
+st.markdown('<p class="main-title">📈 모멘텀 분석</p>', unsafe_allow_html=True)
+st.markdown(f'<p class="sub-header">기준일: {latest_date}</p>', unsafe_allow_html=True).set_page_config(page_title="모멘텀 대시보드", layout="wide")
+#st.title("📈 한국 주식 모멘텀 순위 분석")
 
 # 1. 가장 최근 날짜 가져오기
 latest_date = supabase.table("daily_analysis").select("price_date").order("price_date", desc=True).limit(1).execute().data[0]['price_date']
