@@ -20,7 +20,8 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.markdown('<p class="main-title">📈 모멘텀 분석</p>', unsafe_allow_html=True)
-st.markdown(f'<p class="sub-header">기준일: {latest_date}</p>', unsafe_allow_html=True).set_page_config(page_title="모멘텀 대시보드", layout="wide")
+st.markdown(f'<p class="sub-header">기준일: {latest_date}</p>', unsafe_allow_html=True)
+#st.set_page_config(page_title="모멘텀 대시보드", layout="wide")
 #st.title("📈 한국 주식 모멘텀 순위 분석")
 #st.subheader(f"기준 일자: {latest_date}")
 
