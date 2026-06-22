@@ -26,7 +26,7 @@ st.markdown(f'<p class="sub-header">기준일: {latest_date}</p>', unsafe_allow_
 #st.subheader(f"기준 일자: {latest_date}")
 
 # 2. 최근일자 순위 데이터 조회
-df_analysis = pd.DataFrame(supabase.table("daily_analysis").select("*").eq("price_date", latest_date).order("momentum_rank").execute().data)
+df_analysis = pd.DataFrame(supabase.table("daily_analysis").select("*").eq("price_date", latest_date).limit(10).order("momentum_rank").execute().data)
 # stocks 데이터(티커와 이름 매칭용) 조회
 df_stocks = pd.DataFrame(supabase.table("stocks").select("ticker, name").execute().data)
 # 두 데이터프레임을 'ticker'를 기준으로 합치기

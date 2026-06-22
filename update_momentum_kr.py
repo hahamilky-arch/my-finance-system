@@ -47,7 +47,7 @@ def update_momentum(market):
 
     if not tickers: return
     today = datetime.now().strftime('%Y-%m-%d')
-    today = '2026-06-11'
+    ##today = '2026-06-15'
     print(f"기준 일자 : {today}")
     all_momentum_results = []
 
