@@ -58,30 +58,32 @@ df_stocks = pd.DataFrame(supabase.table("stocks").select("ticker, name").execute
 df_stocks = pd.DataFrame(supabase.table("stocks").select("ticker, name").execute().data)
 df_final = pd.merge(df_merged, df_stocks, on="ticker", how="left")
 
+# 병합된 데이터에서 필요한 컬럼만 추출하여 display_name 생성
+df_final['display_name'] = df_final['ticker'] + " - " + df_final['name']
+
 # 표시용 컬럼 정리
-df_display = df_final[['momentum_rank', 'name', 'weighted_momentum', 'is_new_top30']]
-df_display.columns = ['순위', '종목명', '점수', 'is_new_top30']
+df_display = df_final[['momentum_rank', 'name', 'weighted_momentum', 'is_new_top30', 'display_name', 'ticker']]
+df_display = df_display.rename(columns={
+    'momentum_rank': '순위',
+    'name': '종목명',
+    'weighted_momentum': '점수'
+})
+
+# 30위까지만 필터링 (표 출력용)
+df_table = df_display[df_display['순위'] <= 30].copy()
+
+# 스타일 적용 및 출력
+st.dataframe(
+    df_table[['순위', '종목명', '점수']].style.apply(highlight_new, axis=1),
+    use_container_width=True,
+    hide_index=True
+)
 
 # 30위까지만 최종 노출
 df_display = df_display[df_display['순위'] <= 30]
 
 def highlight_new(row):
     return ['background-color: #ffcccc' if row['is_new_top30'] else '' for _ in row]
-
-
-# 종목별 과거 순위 변화 (상세 보기)
-# 1. 티커와 종목명을 합친 리스트 생성
-# "005930 - 삼성전자" 형태로 표시
-df_display['display_name'] = df_display['ticker'] + " - " + df_display['name']
-
-# 컬럼명 한글로 변경
-df_display = df_display.rename(columns={
-    'momentum_rank': '순위',
-    'ticker': '코드',
-    'name': '종목명',
-    'weighted_momentum': '점수',
-    'display_name' : 'display_name'
-})
 
 # 모바일용: 필요한 컬럼만 보여주기 (순위, 종목명, 점수만)
 st.dataframe(
