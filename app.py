@@ -176,3 +176,7 @@ if event.selection["rows"]:
 #fig.update_yaxes(autorange="reversed")
 #st.plotly_chart(fig)
 
+with st.sidebar:
+    st.write("---")
+    st.caption("App Version: 1.0.2")
+    st.caption("Updated: 2026-06-23")
