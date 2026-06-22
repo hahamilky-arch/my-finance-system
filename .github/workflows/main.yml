@@ -1,7 +1,7 @@
-name: Daily Stock Fetch
+name: Daily Stock Fetch - KR
 on:
   schedule:
-      - cron: '15 9 * * *'  # 매일 오후 7시(UTC 기준 07시)에 실행
+      - cron: '0 10 * * *' # UTC 10시 = 한국 시간 19시
   workflow_dispatch:      # 수동으로도 실행 가능하게 설정
 
 jobs:
@@ -14,11 +14,21 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
+        
       
       - name: Set up Python
         uses: actions/setup-python@v4
         with: 
           python-version: '3.9'
+
+      # [추가] Install dependencies보다 위에 위치해야 합니다.
+      - name: Cache pip dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
 
       - name: Install dependencies
         run: pip install yfinance supabase pandas python-dotenv
@@ -30,18 +40,21 @@ jobs:
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
 
       - name: Run Analysis
+        if: success()  # 이전 단계가 성공했을 때만 실행
         run: python update_momentum_kr.py
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
 
       - name: Run Analysis Rank
+        if: success()  # 이전 단계가 성공했을 때만 실행
         run: python update_rank_kr.py
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
 
       - name: Run Cleanup
+        if: success()  # 이전 단계가 성공했을 때만 실행
         run: python cleanup.py
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
