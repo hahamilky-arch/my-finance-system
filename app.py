@@ -5,7 +5,8 @@ import plotly.express as px
 
 # Supabase 연결 (secrets 관리)
 supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
-
+# 1. 가장 최근 날짜 가져오기
+latest_date = supabase.table("daily_analysis").select("price_date").order("price_date", desc=True).limit(1).execute().data[0]['price_date']
 
 # st 페이지 설정
 st.set_page_config(page_title="모멘텀 대시보드", layout="centered")
@@ -21,10 +22,7 @@ st.markdown("""
 st.markdown('<p class="main-title">📈 모멘텀 분석</p>', unsafe_allow_html=True)
 st.markdown(f'<p class="sub-header">기준일: {latest_date}</p>', unsafe_allow_html=True).set_page_config(page_title="모멘텀 대시보드", layout="wide")
 #st.title("📈 한국 주식 모멘텀 순위 분석")
-
-# 1. 가장 최근 날짜 가져오기
-latest_date = supabase.table("daily_analysis").select("price_date").order("price_date", desc=True).limit(1).execute().data[0]['price_date']
-st.subheader(f"기준 일자: {latest_date}")
+#st.subheader(f"기준 일자: {latest_date}")
 
 # 2. 최근일자 순위 데이터 조회
 df_analysis = pd.DataFrame(supabase.table("daily_analysis").select("*").eq("price_date", latest_date).order("momentum_rank").execute().data)
