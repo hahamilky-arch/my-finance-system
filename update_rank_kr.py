@@ -11,7 +11,7 @@ supabase = create_client(os.environ.get("SUPABASE_URL"), os.environ.get("SUPABAS
 def update_momentum_rank():
     today = datetime.now().strftime('%Y-%m-%d')
     
-    today = '2026-06-17'
+    # today = '2026-06-17'
 
     print(f"기준 일자 : {today}")
     

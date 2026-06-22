@@ -15,3 +15,5 @@ __pycache__/
 # 테스트 파일
 testFetch.py
 
+# steamlit 설정파일
+.streamlit/secrets.toml
