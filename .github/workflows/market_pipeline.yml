@@ -42,4 +42,7 @@ jobs:
         run: |
           # 인자 전달 방식 수정
           python run_pipeline.py --market ${{ github.event.inputs.market || (github.event.schedule == '0 8 * * *' && 'KR' || 'US') }}
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}  # 이 부분이 중요합니다
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           
