@@ -19,23 +19,35 @@ def run_analysis_pipeline(market='KR'):
         
     ticker_list = [t["ticker"] for t in target_tickers]
     
-    # 3. 데이터 가져오기 (100개씩 나누어 조회하여 1,000건 제한 우회)
+    # 3. 데이터 가져오기 (Supabase 페이징 처리 적용)
     prices = []
-    chunk_size = 100 
+    chunk_size = 50 
+    page_limit = 5000 # Supabase 한 페이지 최대 제한
+    
     print(f"총 {len(ticker_list)}개 종목에 대해 데이터를 조회합니다.")
     
     for i in range(0, len(ticker_list), chunk_size):
         chunk = ticker_list[i : i + chunk_size]
-        # 디버깅: 루프가 제대로 도는지 확인
-        print(f"조회 중: {i} ~ {i + len(chunk)}번째 종목...")
         
-        response = supabase.table("stock_prices") \
-            .select("ticker, price_date, close_price") \
-            .in_("ticker", chunk) \
-            .execute()
-        
-        if response.data:
+        # 페이징(Pagination) 루프 추가
+        start_range = 0
+        while True:
+            response = supabase.table("stock_prices") \
+                .select("ticker, price_date, close_price") \
+                .in_("ticker", chunk) \
+                .range(start_range, start_range + page_limit - 1) \
+                .execute()
+            
+            if not response.data:
+                break
+                
             prices.extend(response.data)
+            
+            # 받아온 데이터가 limit보다 작으면 더 이상 페이지가 없음
+            if len(response.data) < page_limit:
+                break
+                
+            start_range += page_limit
         
     if not prices:
         print(f"[{market}] 분석할 가격 데이터가 없습니다.")
@@ -45,19 +57,12 @@ def run_analysis_pipeline(market='KR'):
     print(f"Supabase에서 가져온 총 데이터 행 개수: {len(df)}")
     print(f"가격 데이터에 존재하는 고유 종목 수: {df['ticker'].nunique()}")
     
-    # 필수 컬럼 존재 여부 확인
-    required_cols = ['price_date', 'ticker', 'close_price']
-    if not all(col in df.columns for col in required_cols):
-        print(f"에러: 필수 컬럼이 누락되었습니다. 현재 컬럼: {df.columns.tolist()}")
-        return
-
     # 4. 데이터 피벗 및 전처리
-    # 날짜 정렬 후, 빈 값은 이전 종가로 채움 (Forward Fill)
     pivot_df = df.pivot(index='price_date', columns='ticker', values='close_price') \
                  .sort_index() \
                  .ffill()
 
-    print(f"Pivot 데이터 형태: {pivot_df.shape}") # (날짜수, 종목수)
+    print(f"Pivot 데이터 형태: {pivot_df.shape}")
 
     # 5. RS 점수 계산
     if benchmark_ticker not in pivot_df.columns:
@@ -65,19 +70,12 @@ def run_analysis_pipeline(market='KR'):
         return
         
     rs_map = get_rs_score(pivot_df, benchmark_ticker=benchmark_ticker, window=90)
-    print(f"RS Map 샘플: {list(rs_map.items())[:5]}")
-    # [디버깅 추가]
-    # 결과값 중 숫자가 아닌 것이 얼마나 있는지 확인
-    nan_count = sum(1 for val in rs_map.values() if pd.isna(val))
-    print(f"전체 종목 수: {len(rs_map)}")
-    print(f"RS 계산 실패(NaN) 종목 수: {nan_count}")
-
-    # 벤치마크 데이터도 잘 있는지 확인
-    print(f"벤치마크(^KS11) 데이터 상태: {'정상' if benchmark_ticker in pivot_df.columns else '없음'}")
-
+    
+    # [타입 안전성 수정] rs_map이 Series/Array여도 순회 가능하도록 처리
+    rs_items = rs_map.items() if hasattr(rs_map, 'items') else rs_map.iteritems()
+    
     # 6. 결과 DB 적재
     today = datetime.now().strftime('%Y-%m-%d')
-    # NaN일 경우 0.0으로 저장하여 데이터 누락 방지
     analysis_data = [
         {
             "ticker": ticker,
@@ -85,11 +83,12 @@ def run_analysis_pipeline(market='KR'):
             "price_date": today,
             "market": market
         }
-        for ticker, score in rs_map.items() 
+        for ticker, score in rs_items 
         if ticker != benchmark_ticker
     ]
     
     if analysis_data:
+        # 400여 건의 데이터를 한 번에 upsert
         supabase.table("daily_analysis").upsert(analysis_data, on_conflict="ticker,price_date").execute()
         print(f"[{market}] 분석 완료 및 {len(analysis_data)}건 DB 적재 완료.")
     else:
