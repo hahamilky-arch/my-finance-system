@@ -62,3 +62,4 @@ def sync_kr_stocks(start_date=None, end_date=None):
             continue
             
     print("KR 주식 데이터 동기화 완료.")
+    

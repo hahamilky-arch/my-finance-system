@@ -60,7 +60,7 @@ def run_analysis_pipeline(market='KR'):
         {
             "ticker": ticker,
             "rs_score": float(score),
-            "analysis_date": today,
+            "price_date": today,
             "market": market
         }
         for ticker, score in rs_map.items() 
