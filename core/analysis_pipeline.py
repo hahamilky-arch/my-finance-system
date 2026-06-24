@@ -53,6 +53,8 @@ def run_analysis_pipeline(market='KR'):
         return
         
     rs_map = get_rs_score(pivot_df, benchmark_ticker=benchmark_ticker, window=90)
+    # [디버깅] RS 결과물 확인
+    print(f"RS Map 샘플: {list(rs_map.items())[:5]}")
     
     # 6. 결과 DB 적재
     today = datetime.now().strftime('%Y-%m-%d')
