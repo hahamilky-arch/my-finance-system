@@ -19,69 +19,63 @@ def run_analysis_pipeline(market='KR'):
         
     ticker_list = [t["ticker"] for t in target_tickers]
     
-    # 3. 데이터 가져오기 (Supabase에서 데이터를 안전하게 추출)
-    response = supabase.table("stock_prices") \
-        .select("ticker, price_date, close_price") \
-        .in_("ticker", ticker_list) \
-        .execute()
+    # 3. 데이터 가져오기 (100개씩 나누어 조회하여 1,000건 제한 우회)
+    prices = []
+    chunk_size = 100 
+    print(f"총 {len(ticker_list)}개 종목에 대해 데이터를 조회합니다.")
+    
+    for i in range(0, len(ticker_list), chunk_size):
+        chunk = ticker_list[i : i + chunk_size]
+        response = supabase.table("stock_prices") \
+            .select("ticker, price_date, close_price") \
+            .in_("ticker", chunk) \
+            .execute()
         
-    prices = response.data
+        if response.data:
+            prices.extend(response.data)
         
-    if not prices or len(prices) == 0:
+    if not prices:
         print(f"[{market}] 분석할 가격 데이터가 없습니다.")
         return
-    # 데이터 가져오기 직후
-    print(f"Supabase에서 가져온 가격 데이터 행 개수: {len(prices)}")
-    
+
     df = pd.DataFrame(prices)
+    print(f"Supabase에서 가져온 총 데이터 행 개수: {len(df)}")
+    print(f"가격 데이터에 존재하는 고유 종목 수: {df['ticker'].nunique()}")
     
-    # [디버깅] 데이터 구조 확인
-    print(f"로드된 컬럼: {df.columns.tolist()}")
-    
-    # 필수 컬럼 존재 여부 확인 (에러 방지)
+    # 필수 컬럼 존재 여부 확인
     required_cols = ['price_date', 'ticker', 'close_price']
     if not all(col in df.columns for col in required_cols):
         print(f"에러: 필수 컬럼이 누락되었습니다. 현재 컬럼: {df.columns.tolist()}")
         return
 
-    
-    # 여기서 종목 개수를 확인해 보세요.
-    unique_tickers = df['ticker'].unique()
-    print(f"가격 데이터에 존재하는 고유 종목 수: {len(unique_tickers)}")
-    
-    # 4. 데이터 피벗
-    # pivot 전에 정렬을 하면 더 정확한 시계열 분석이 가능합니다.
-    pivot_df = df.pivot(index='price_date', columns='ticker', values='close_price').sort_index()
-    
-    # 정렬된​ffill()을 쓰면 **"거래가 없는 날은 마지막 거래 가격을 유지한다"**는 가정이 적용되어, 
-    # 분석 대상에서 종목이 사라지는 것을 막아줍니다. 
-    # 종목별로 정렬하고 빈 값을 앞의 가격으로 채움 (Forward Fill)
-    pivot_df = pivot_df.ffill()
+    # 4. 데이터 피벗 및 전처리
+    # 날짜 정렬 후, 빈 값은 이전 종가로 채움 (Forward Fill)
+    pivot_df = df.pivot(index='price_date', columns='ticker', values='close_price') \
+                 .sort_index() \
+                 .ffill()
 
     print(f"Pivot 데이터 형태: {pivot_df.shape}") # (날짜수, 종목수)
 
-
     # 5. RS 점수 계산
-    # get_rs_score 내부에서 benchmark_ticker가 pivot_df에 있는지 확인해야 합니다.
     if benchmark_ticker not in pivot_df.columns:
-        print(f"에러: 벤치마크 데이터({benchmark_ticker})가 부족하여 분석할 수 없습니다.")
+        print(f"에러: 벤치마크 데이터({benchmark_ticker})가 피벗 데이터에 없습니다.")
         return
         
     rs_map = get_rs_score(pivot_df, benchmark_ticker=benchmark_ticker, window=90)
-    # [디버깅] RS 결과물 확인
     print(f"RS Map 샘플: {list(rs_map.items())[:5]}")
     
     # 6. 결과 DB 적재
     today = datetime.now().strftime('%Y-%m-%d')
+    # NaN일 경우 0.0으로 저장하여 데이터 누락 방지
     analysis_data = [
         {
             "ticker": ticker,
-            "rs_score": float(score),
+            "rs_score": float(score) if pd.notna(score) else 0.0,
             "price_date": today,
             "market": market
         }
         for ticker, score in rs_map.items() 
-        if ticker != benchmark_ticker and pd.notna(score)
+        if ticker != benchmark_ticker
     ]
     
     if analysis_data:
