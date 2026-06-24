@@ -26,6 +26,9 @@ def run_analysis_pipeline(market='KR'):
     
     for i in range(0, len(ticker_list), chunk_size):
         chunk = ticker_list[i : i + chunk_size]
+        # 디버깅: 루프가 제대로 도는지 확인
+        print(f"조회 중: {i} ~ {i + len(chunk)}번째 종목...")
+        
         response = supabase.table("stock_prices") \
             .select("ticker, price_date, close_price") \
             .in_("ticker", chunk) \
