@@ -68,7 +68,7 @@ def run_analysis_pipeline(market='KR'):
     ]
     
     if analysis_data:
-        supabase.table("daily_analysis").upsert(analysis_data, on_conflict="ticker,analysis_date").execute()
+        supabase.table("daily_analysis").upsert(analysis_data, on_conflict="ticker,price_date").execute()
         print(f"[{market}] 분석 완료 및 {len(analysis_data)}건 DB 적재 완료.")
     else:
         print("적재할 유효한 분석 데이터가 없습니다.")
