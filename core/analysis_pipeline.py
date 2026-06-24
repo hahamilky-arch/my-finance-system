@@ -7,37 +7,54 @@ def run_analysis_pipeline(market='KR'):
     # 1. 벤치마크 설정
     benchmark_ticker = "^KS11" if market == "KR" else "^GSPC"
     
-    # 2. 시장 내 모든 티커 및 지수 데이터 조회
-    # stocks 테이블에서 대상 시장 종목들 + 지수 조회
+    # 2. 분석 대상 티커 리스트 가져오기
     target_tickers = supabase.table("stocks") \
         .select("ticker") \
         .or_(f"market.eq.{market},market.eq.INDEX") \
         .execute().data
     
+    if not target_tickers:
+        print("대상 티커 목록이 없습니다.")
+        return
+        
     ticker_list = [t["ticker"] for t in target_tickers]
     
-    # 3. 데이터 가져오기 (stock_prices에서 해당 티커들만)
-    # 데이터를 메모리상에서 빠르게 처리하기 위해 필터링
-    prices = supabase.table("stock_prices") \
+    # 3. 데이터 가져오기 (Supabase에서 데이터를 안전하게 추출)
+    response = supabase.table("stock_prices") \
         .select("ticker, price_date, close_price") \
         .in_("ticker", ticker_list) \
-        .execute().data
+        .execute()
         
-    if not prices:
-        print("분석할 데이터가 없습니다.")
+    prices = response.data
+        
+    if not prices or len(prices) == 0:
+        print(f"[{market}] 분석할 가격 데이터가 없습니다.")
         return
 
     df = pd.DataFrame(prices)
     
-    # 4. 분석을 위해 데이터 피벗 (날짜별/종목별 종가 매트릭스 생성)
-    # 이 과정이 필수입니다: 그래야 get_rs_score가 종목별/날짜별 계산을 수행합니다.
-    pivot_df = df.pivot(index='price_date', columns='ticker', values='close_price')
+    # [디버깅] 데이터 구조 확인
+    print(f"로드된 컬럼: {df.columns.tolist()}")
+    
+    # 필수 컬럼 존재 여부 확인 (에러 방지)
+    required_cols = ['price_date', 'ticker', 'close_price']
+    if not all(col in df.columns for col in required_cols):
+        print(f"에러: 필수 컬럼이 누락되었습니다. 현재 컬럼: {df.columns.tolist()}")
+        return
+
+    # 4. 데이터 피벗
+    # pivot 전에 정렬을 하면 더 정확한 시계열 분석이 가능합니다.
+    pivot_df = df.pivot(index='price_date', columns='ticker', values='close_price').sort_index()
     
     # 5. RS 점수 계산
-    # pivot_df는 이제 인덱스가 날짜, 컬럼이 티커(지수 포함)인 형태입니다.
+    # get_rs_score 내부에서 benchmark_ticker가 pivot_df에 있는지 확인해야 합니다.
+    if benchmark_ticker not in pivot_df.columns:
+        print(f"에러: 벤치마크 데이터({benchmark_ticker})가 부족하여 분석할 수 없습니다.")
+        return
+        
     rs_map = get_rs_score(pivot_df, benchmark_ticker=benchmark_ticker, window=90)
     
-    # 6. 결과 DB 적재 (daily_analysis 테이블)
+    # 6. 결과 DB 적재
     today = datetime.now().strftime('%Y-%m-%d')
     analysis_data = [
         {
@@ -47,11 +64,11 @@ def run_analysis_pipeline(market='KR'):
             "market": market
         }
         for ticker, score in rs_map.items() 
-        if ticker != benchmark_ticker # 벤치마크 자체는 분석 결과에서 제외
+        if ticker != benchmark_ticker and pd.notna(score)
     ]
     
     if analysis_data:
         supabase.table("daily_analysis").upsert(analysis_data, on_conflict="ticker,analysis_date").execute()
         print(f"[{market}] 분석 완료 및 {len(analysis_data)}건 DB 적재 완료.")
     else:
-        print("적재할 데이터가 없습니다.")
+        print("적재할 유효한 분석 데이터가 없습니다.")
