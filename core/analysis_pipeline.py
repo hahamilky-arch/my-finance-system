@@ -45,7 +45,10 @@ def run_analysis_pipeline(market='KR'):
     # 4. 데이터 피벗
     # pivot 전에 정렬을 하면 더 정확한 시계열 분석이 가능합니다.
     pivot_df = df.pivot(index='price_date', columns='ticker', values='close_price').sort_index()
-    
+    # analysis_pipeline.py에 추가
+    print(f"Pivot 데이터 형태: {pivot_df.shape}") # (날짜수, 종목수)
+
+
     # 5. RS 점수 계산
     # get_rs_score 내부에서 benchmark_ticker가 pivot_df에 있는지 확인해야 합니다.
     if benchmark_ticker not in pivot_df.columns:
