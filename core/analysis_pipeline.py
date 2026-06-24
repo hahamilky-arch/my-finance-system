@@ -45,7 +45,12 @@ def run_analysis_pipeline(market='KR'):
     # 4. 데이터 피벗
     # pivot 전에 정렬을 하면 더 정확한 시계열 분석이 가능합니다.
     pivot_df = df.pivot(index='price_date', columns='ticker', values='close_price').sort_index()
-    # analysis_pipeline.py에 추가
+    
+    # 정렬된​ffill()을 쓰면 **"거래가 없는 날은 마지막 거래 가격을 유지한다"**는 가정이 적용되어, 
+    # 분석 대상에서 종목이 사라지는 것을 막아줍니다. 
+    # 종목별로 정렬하고 빈 값을 앞의 가격으로 채움 (Forward Fill)
+    pivot_df = pivot_df.ffill()
+
     print(f"Pivot 데이터 형태: {pivot_df.shape}") # (날짜수, 종목수)
 
 
