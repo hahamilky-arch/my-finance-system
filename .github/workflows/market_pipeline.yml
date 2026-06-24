@@ -12,6 +12,9 @@ on:
         description: 'Target Market (KR or US)'
         required: true
         default: 'KR'
+      target_date:
+        description: 'Specific date to re-run (YYYY-MM-DD, optional)'
+        required: false
 
 jobs:
   sync-and-analyze:
@@ -40,9 +43,22 @@ jobs:
       
       - name: Execute Pipeline
         run: |
-          # 인자 전달 방식 수정
-          python run_pipeline.py --market ${{ github.event.inputs.market || (github.event.schedule == '0 8 * * *' && 'KR' || 'US') }}
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}  # 이 부분이 중요합니다
-          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          # 1. 시장 결정 (스케줄 자동 실행 vs 수동 실행)
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            MARKET="${{ github.event.inputs.market }}"
+            DATE_ARG="--target_date ${{ github.event.inputs.target_date }}"
+          else
+            # 스케줄 실행 시 (0 8 * * * 은 KR, 나머지는 US)
+            if [ "${{ github.event.schedule }}" == "0 8 * * *" ]; then
+              MARKET="KR"
+            else
+              MARKET="US"
+            fi
+            DATE_ARG=""
+          fi
           
+          # 2. 파이프라인 실행
+          python run_pipeline.py --market $MARKET $DATE_ARG
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
