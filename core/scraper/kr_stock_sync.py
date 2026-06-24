@@ -9,6 +9,10 @@ def sync_kr_stocks(start_date=None, end_date=None):
     for stock in stocks:
         ticker = stock["ticker"]
         yf_ticker = f"{str(ticker).zfill(6)}.KS"
+
+        # DB 적재용 티커(원본)
+        db_ticker = str(ticker).zfill(6) 
+
         
         # 2. 날짜 결정 로직 (인자 우선 적용)
         if start_date:
@@ -44,7 +48,7 @@ def sync_kr_stocks(start_date=None, end_date=None):
             records = []
             for date, row in df.iterrows():
                 records.append({
-                    "ticker": yf_ticker,
+                    "ticker": db_ticker,
                     "price_date": date.strftime('%Y-%m-%d'),
                     "close_price": float(row['Close']),
                     "volume": int(row['Volume'])
