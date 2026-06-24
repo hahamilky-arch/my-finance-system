@@ -30,7 +30,9 @@ def run_analysis_pipeline(market='KR'):
     if not prices or len(prices) == 0:
         print(f"[{market}] 분석할 가격 데이터가 없습니다.")
         return
-
+    # 데이터 가져오기 직후
+    print(f"Supabase에서 가져온 가격 데이터 행 개수: {len(prices)}")
+    
     df = pd.DataFrame(prices)
     
     # [디버깅] 데이터 구조 확인
@@ -42,6 +44,11 @@ def run_analysis_pipeline(market='KR'):
         print(f"에러: 필수 컬럼이 누락되었습니다. 현재 컬럼: {df.columns.tolist()}")
         return
 
+    
+    # 여기서 종목 개수를 확인해 보세요.
+    unique_tickers = df['ticker'].unique()
+    print(f"가격 데이터에 존재하는 고유 종목 수: {len(unique_tickers)}")
+    
     # 4. 데이터 피벗
     # pivot 전에 정렬을 하면 더 정확한 시계열 분석이 가능합니다.
     pivot_df = df.pivot(index='price_date', columns='ticker', values='close_price').sort_index()
