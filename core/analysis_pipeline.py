@@ -19,33 +19,24 @@ def run_analysis_pipeline(market='KR'):
         
     ticker_list = [t["ticker"] for t in target_tickers]
     
-    # 3. 데이터 가져오기 (Supabase 페이징 처리 적용)
+    # 3. 데이터 가져오기 (종목별 개별 조회 방식 - 가장 안정적)
     prices = []
-    chunk_size = 50 
-    page_limit = 5000 
+    print(f"총 {len(ticker_list)}개 종목의 데이터를 안전하게 로드합니다.")
     
-    print(f"총 {len(ticker_list)}개 종목에 대해 데이터를 조회합니다.")
-    
-    for i in range(0, len(ticker_list), chunk_size):
-        chunk = ticker_list[i : i + chunk_size]
-        
-        start_range = 0
-        while True:
+    for ticker in ticker_list:
+        try:
+            # 개별 종목별로 최신 300일치 데이터를 순차적으로 조회
             response = supabase.table("stock_prices") \
                 .select("ticker, price_date, close_price") \
-                .in_("ticker", chunk) \
-                .range(start_range, start_range + page_limit - 1) \
+                .eq("ticker", ticker) \
+                .order("price_date", desc=False) \
+                .limit(300) \
                 .execute()
             
-            if not response.data:
-                break
-                
-            prices.extend(response.data)
-            
-            if len(response.data) < page_limit:
-                break
-                
-            start_range += page_limit
+            if response.data:
+                prices.extend(response.data)
+        except Exception as e:
+            print(f"[{ticker}] 조회 실패: {e}")
         
     if not prices:
         print(f"[{market}] 분석할 가격 데이터가 없습니다.")
@@ -69,7 +60,7 @@ def run_analysis_pipeline(market='KR'):
         
     rs_map = get_rs_score(pivot_df, benchmark_ticker=benchmark_ticker, window=90)
     
-    # [타입 안전성 수정] pd.Series나 dict 모두 대응 가능한 순회 방식
+    # 타입 안전성 확보: Series나 Dict 모두 대응 가능한 순회 방식
     rs_items = rs_map.items() if hasattr(rs_map, 'items') else pd.Series(rs_map).items()
     
     # 6. 결과 DB 적재
