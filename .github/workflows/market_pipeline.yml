@@ -1,0 +1,45 @@
+name: Market Data Pipeline
+
+on:
+  schedule:
+    # 한국 시간 기준 17:00 (UTC 08:00) -> KR 시장 분석
+    - cron: '0 8 * * *'
+    # 한국 시간 기준 08:00 (UTC 23:00) -> US 시장 분석
+    - cron: '0 23 * * *'
+  workflow_dispatch:
+    inputs:
+      market:
+        description: 'Target Market (KR or US)'
+        required: true
+        default: 'KR'
+
+jobs:
+  sync-and-analyze:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: market-pipeline-${{ github.event.inputs.market || 'schedule' }}
+      cancel-in-progress: true
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with: 
+          python-version: '3.9'
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+
+      - name: Install dependencies
+        run: pip install yfinance supabase pandas python-dotenv scipy
+      
+      - name: Execute Pipeline
+        run: |
+          # 인자 전달 방식 수정
+          python run_pipeline.py --market ${{ github.event.inputs.market || (github.event.schedule == '0 8 * * *' && 'KR' || 'US') }}
+          

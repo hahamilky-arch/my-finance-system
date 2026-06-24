@@ -3,3 +3,5 @@ supabase
 pandas
 python-dotenv
 plotly
+scipy
+yfinance

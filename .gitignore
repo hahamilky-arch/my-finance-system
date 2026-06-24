@@ -12,8 +12,12 @@ __pycache__/
 # 시스템 파일
 .DS_Store
 
-# 테스트 파일
+# 테스트 , 미배포 파일
 testFetch.py
+main.yml
+# test 디렉터리 전체 제외
+test/
 
 # steamlit 설정파일
 .streamlit/secrets.toml
+
