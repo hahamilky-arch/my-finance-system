@@ -22,14 +22,13 @@ def run_analysis_pipeline(market='KR'):
     # 3. 데이터 가져오기 (Supabase 페이징 처리 적용)
     prices = []
     chunk_size = 50 
-    page_limit = 5000 # Supabase 한 페이지 최대 제한
+    page_limit = 5000 
     
     print(f"총 {len(ticker_list)}개 종목에 대해 데이터를 조회합니다.")
     
     for i in range(0, len(ticker_list), chunk_size):
         chunk = ticker_list[i : i + chunk_size]
         
-        # 페이징(Pagination) 루프 추가
         start_range = 0
         while True:
             response = supabase.table("stock_prices") \
@@ -43,7 +42,6 @@ def run_analysis_pipeline(market='KR'):
                 
             prices.extend(response.data)
             
-            # 받아온 데이터가 limit보다 작으면 더 이상 페이지가 없음
             if len(response.data) < page_limit:
                 break
                 
@@ -71,8 +69,8 @@ def run_analysis_pipeline(market='KR'):
         
     rs_map = get_rs_score(pivot_df, benchmark_ticker=benchmark_ticker, window=90)
     
-    # [타입 안전성 수정] rs_map이 Series/Array여도 순회 가능하도록 처리
-    rs_items = rs_map.items() if hasattr(rs_map, 'items') else rs_map.iteritems()
+    # [타입 안전성 수정] pd.Series나 dict 모두 대응 가능한 순회 방식
+    rs_items = rs_map.items() if hasattr(rs_map, 'items') else pd.Series(rs_map).items()
     
     # 6. 결과 DB 적재
     today = datetime.now().strftime('%Y-%m-%d')
