@@ -43,22 +43,27 @@ jobs:
       
       - name: Execute Pipeline
         run: |
-          # 1. 시장 결정 (스케줄 자동 실행 vs 수동 실행)
+          # 1. 기본 파이썬 실행 명령어 설정
+          CMD="python run_pipeline.py"
+          
+          # 2. 시장 결정
           if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
             MARKET="${{ github.event.inputs.market }}"
-            DATE_ARG="--target_date ${{ github.event.inputs.target_date }}"
+          elif [ "${{ github.event.schedule }}" == "0 8 * * *" ]; then
+            MARKET="KR"
           else
-            # 스케줄 실행 시 (0 8 * * * 은 KR, 나머지는 US)
-            if [ "${{ github.event.schedule }}" == "0 8 * * *" ]; then
-              MARKET="KR"
-            else
-              MARKET="US"
-            fi
-            DATE_ARG=""
+            MARKET="US"
+          fi
+          CMD="$CMD --market $MARKET"
+          
+          # 3. 날짜 인자 추가 (입력값이 있을 때만 추가)
+          if [ -n "${{ github.event.inputs.target_date }}" ]; then
+            CMD="$CMD --target_date ${{ github.event.inputs.target_date }}"
           fi
           
-          # 2. 파이프라인 실행
-          python run_pipeline.py --market $MARKET $DATE_ARG
+          # 4. 명령어 실행
+          echo "Executing: $CMD"
+          $CMD
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
