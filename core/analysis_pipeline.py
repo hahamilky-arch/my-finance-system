@@ -66,7 +66,15 @@ def run_analysis_pipeline(market='KR'):
         
     rs_map = get_rs_score(pivot_df, benchmark_ticker=benchmark_ticker, window=90)
     print(f"RS Map 샘플: {list(rs_map.items())[:5]}")
-    
+    # [디버깅 추가]
+    # 결과값 중 숫자가 아닌 것이 얼마나 있는지 확인
+    nan_count = sum(1 for val in rs_map.values() if pd.isna(val))
+    print(f"전체 종목 수: {len(rs_map)}")
+    print(f"RS 계산 실패(NaN) 종목 수: {nan_count}")
+
+    # 벤치마크 데이터도 잘 있는지 확인
+    print(f"벤치마크(^KS11) 데이터 상태: {'정상' if benchmark_ticker in pivot_df.columns else '없음'}")
+
     # 6. 결과 DB 적재
     today = datetime.now().strftime('%Y-%m-%d')
     # NaN일 경우 0.0으로 저장하여 데이터 누락 방지
