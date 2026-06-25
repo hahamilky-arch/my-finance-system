@@ -118,4 +118,4 @@ if event.selection and event.selection["rows"]:
         st.plotly_chart(fig, use_container_width=True)
 
 with st.sidebar:
-    st.caption("App Version: 1.1.4")
+    st.caption("App Version: 1.1.5")
