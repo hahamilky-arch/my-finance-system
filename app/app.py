@@ -15,22 +15,21 @@ def highlight_new(df):
         df_styles.loc[mask, :] = 'background-color: #ffcccc'
     return df_styles
 
-# 2. 데이터 조회 함수
-def get_data(target_date=None):
-    # 날짜 리스트 확보 및 정렬
-    all_dates_data = supabase.table("daily_analysis").select("price_date").order("price_date", desc=True).limit(100).execute().data
-    df_dates = pd.DataFrame(all_dates_data)
-    df_dates['price_date'] = pd.to_datetime(df_dates['price_date'])
-    all_dates = df_dates['price_date'].dt.strftime('%Y-%m-%d').unique()
-    
-    if len(all_dates) == 0:
-        return pd.DataFrame(), None, []
+# 2. 날짜 리스트 및 데이터 조회 공통 함수
+@st.cache_data(ttl=600)
+def get_available_dates():
+    # 전체 날짜를 명확하게 가져와서 datetime 변환 후 정렬
+    data = supabase.table("daily_analysis").select("price_date").order("price_date", desc=True).limit(200).execute().data
+    df = pd.DataFrame(data)
+    df['price_date'] = pd.to_datetime(df['price_date'])
+    return df['price_date'].dt.strftime('%Y-%m-%d').unique().tolist()
 
-    target_date = target_date if target_date else all_dates[0]
+def get_data(target_date):
+    all_dates = get_available_dates()
     
-    # 이전 날짜 설정
-    current_idx = list(all_dates).index(target_date)
-    previous_date = all_dates[current_idx + 1] if current_idx + 1 < len(all_dates) else target_date
+    # 인덱스 확보
+    target_idx = all_dates.index(target_date)
+    previous_date = all_dates[target_idx + 1] if target_idx + 1 < len(all_dates) else target_date
     
     # 데이터 조회
     df_current = pd.DataFrame(supabase.table("daily_analysis").select("ticker, momentum_rank, weighted_momentum, rs_score").eq("price_date", target_date).order("momentum_rank").limit(50).execute().data)
@@ -51,23 +50,20 @@ def get_data(target_date=None):
     df_final['MOT'] = pd.to_numeric(df_final['MOT'], errors='coerce').fillna(0.0)
     df_final['RS'] = pd.to_numeric(df_final['RS'], errors='coerce').fillna(0.0)
     
-    return df_final, target_date, all_dates
+    return df_final
 
 # 3. 메인 UI
 st.set_page_config(layout="wide")
 st.markdown('<p style="font-size:24px; font-weight:bold;">📈 모멘텀 분석</p>', unsafe_allow_html=True)
 
-# 날짜 리스트 조회 및 14일치 제한
-all_dates_data = supabase.table("daily_analysis").select("price_date").order("price_date", desc=True).limit(100).execute().data
-df_dates = pd.DataFrame(all_dates_data)
-df_dates['price_date'] = pd.to_datetime(df_dates['price_date'])
-all_dates_list = df_dates['price_date'].dt.strftime('%Y-%m-%d').unique()[:14]
+# 통합된 날짜 리스트 사용
+available_dates = get_available_dates()
+selected_date = st.selectbox("기준일 선택", available_dates)
 
-selected_date = st.selectbox("기준일 선택", all_dates_list)
-df_display, _, _ = get_data(selected_date)
+# 데이터 로드
+df_display = get_data(selected_date)
 
 display_cols = ['순위', '종목명', 'MOT', 'RS']
-
 tab1, tab2 = st.tabs(["전체 보기 (TOP 50)", "신규 진입주 (TOP 30)"])
 
 with tab1:
@@ -113,6 +109,3 @@ if event.selection["rows"]:
         fig.update_yaxes(autorange="reversed", row=2, col=1)
         
         st.plotly_chart(fig, use_container_width=True)
-
-with st.sidebar:
-    st.caption("App Version: 1.1.3")
