@@ -17,14 +17,24 @@ def highlight_new(df):
 
 # 2. 데이터 조회 함수
 def get_data(target_date=None):
-    all_dates = pd.DataFrame(supabase.table("daily_analysis").select("price_date").order("price_date", desc=True).execute().data)['price_date'].unique()
+    # 날짜 리스트 확보 (충분한 데이터 확보를 위해 limit 100 적용)
+    all_dates_data = supabase.table("daily_analysis").select("price_date").order("price_date", desc=True).limit(100).execute().data
+    all_dates = pd.DataFrame(all_dates_data)['price_date'].unique()
     
+    if len(all_dates) == 0:
+        return pd.DataFrame(), None, []
+
     target_date = target_date if target_date else all_dates[0]
-    previous_date = all_dates[1] if target_date == all_dates[0] else all_dates[all_dates.tolist().index(target_date) + 1]
     
+    # 이전 날짜 설정 (데이터가 1개일 경우 현재 날짜 사용)
+    current_idx = list(all_dates).index(target_date)
+    previous_date = all_dates[current_idx + 1] if current_idx + 1 < len(all_dates) else target_date
+    
+    # 데이터 조회
     df_current = pd.DataFrame(supabase.table("daily_analysis").select("ticker, momentum_rank, weighted_momentum, rs_score").eq("price_date", target_date).order("momentum_rank").limit(50).execute().data)
     df_prev = pd.DataFrame(supabase.table("daily_analysis").select("ticker, momentum_rank").eq("price_date", previous_date).execute().data)
     
+    # 데이터 전처리
     df_current['momentum_rank'] = pd.to_numeric(df_current['momentum_rank'])
     df_prev['momentum_rank'] = pd.to_numeric(df_prev['momentum_rank'])
     
@@ -45,14 +55,10 @@ def get_data(target_date=None):
 st.set_page_config(layout="wide")
 st.markdown('<p style="font-size:24px; font-weight:bold;">📈 모멘텀 분석</p>', unsafe_allow_html=True)
 
-#all_dates_full = pd.DataFrame(supabase.table("daily_analysis").select("price_date").order("price_date", desc=True).execute().data)['price_date'].unique()
-#all_dates_list = all_dates_full[:len(all_dates_full)-1] if len(all_dates_full) > 1 else all_dates_full
-# 수정 후: .limit(100)을 추가하여 충분한 날짜를 확보
+# 날짜 리스트 조회 및 14일치 제한
 all_dates_data = supabase.table("daily_analysis").select("price_date").order("price_date", desc=True).limit(100).execute().data
 all_dates_full = pd.DataFrame(all_dates_data)['price_date'].unique()
-# 무조건 앞에서부터 7개만 가져옴 (데이터가 14개 미만이면 있는 만큼만 보여줌)
 all_dates_list = all_dates_full[:14]
-
 
 selected_date = st.selectbox("기준일 선택", all_dates_list)
 df_display, _, _ = get_data(selected_date)
