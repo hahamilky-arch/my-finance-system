@@ -19,13 +19,12 @@ def run_analysis_pipeline(market='KR'):
         
     ticker_list = [t["ticker"] for t in target_tickers]
     
-    # 3. 데이터 가져오기 (종목별 개별 조회 방식 - 가장 안정적)
+    # 3. 데이터 가져오기
     prices = []
-    print(f"총 {len(ticker_list)}개 종목의 데이터를 안전하게 로드합니다.")
+    print(f"총 {len(ticker_list)}개 종목의 데이터를 로드합니다.")
     
     for ticker in ticker_list:
         try:
-            # 개별 종목별로 최신 300일치 데이터를 순차적으로 조회
             response = supabase.table("stock_prices") \
                 .select("ticker, price_date, close_price") \
                 .eq("ticker", ticker) \
@@ -43,42 +42,53 @@ def run_analysis_pipeline(market='KR'):
         return
 
     df = pd.DataFrame(prices)
-    print(f"Supabase에서 가져온 총 데이터 행 개수: {len(df)}")
-    print(f"가격 데이터에 존재하는 고유 종목 수: {df['ticker'].nunique()}")
     
     # 4. 데이터 피벗 및 전처리
     pivot_df = df.pivot(index='price_date', columns='ticker', values='close_price') \
                  .sort_index() \
                  .ffill()
 
-    print(f"Pivot 데이터 형태: {pivot_df.shape}")
-
-    # 5. RS 점수 계산
+    # 5. RS 점수 및 모멘텀 순위 계산
     if benchmark_ticker not in pivot_df.columns:
-        print(f"에러: 벤치마크 데이터({benchmark_ticker})가 피벗 데이터에 없습니다.")
+        print(f"에러: 벤치마크 데이터({benchmark_ticker})가 없습니다.")
         return
         
     rs_map = get_rs_score(pivot_df, benchmark_ticker=benchmark_ticker, window=90)
     
-    # 타입 안전성 확보: Series나 Dict 모두 대응 가능한 순회 방식
-    rs_items = rs_map.items() if hasattr(rs_map, 'items') else pd.Series(rs_map).items()
+    # 모멘텀 순위 계산 (90일 수익률 기준)
+    returns_90d = pivot_df.pct_change(90).iloc[-1]
+    rank_map = returns_90d.rank(ascending=False)
     
     # 6. 결과 DB 적재
     today = datetime.now().strftime('%Y-%m-%d')
-    analysis_data = [
-        {
+    analysis_data = []
+    
+    for ticker in ticker_list:
+        if ticker == benchmark_ticker:
+            continue
+            
+        # 데이터 존재 여부 확인 및 값 할당
+        current_close = pivot_df.loc[pivot_df.index[-1], ticker] if ticker in pivot_df.columns else 0.0
+        rs_val = rs_map.get(ticker, 0.0)
+        rank_val = rank_map.get(ticker, 999)
+        momentum_val = returns_90d.get(ticker, 0.0)
+        
+        analysis_data.append({
             "ticker": ticker,
-            "rs_score": float(score) if pd.notna(score) else 0.0,
+            "rs_score": float(rs_val) if pd.notna(rs_val) else 0.0,
+            "momentum_rank": int(rank_val) if pd.notna(rank_val) else 999,
+            "weighted_momentum": float(momentum_val) if pd.notna(momentum_val) else 0.0,
+            "close_price": float(current_close) if pd.notna(current_close) else 0.0,
             "price_date": today,
             "market": market
-        }
-        for ticker, score in rs_items 
-        if ticker != benchmark_ticker
-    ]
+        })
     
     if analysis_data:
-        # 400여 건의 데이터를 한 번에 upsert
         supabase.table("daily_analysis").upsert(analysis_data, on_conflict="ticker,price_date").execute()
         print(f"[{market}] 분석 완료 및 {len(analysis_data)}건 DB 적재 완료.")
     else:
-        print("적재할 유효한 분석 데이터가 없습니다.")
+        print("적재할 유효한 데이터가 없습니다.")
+
+# 파이프라인 실행
+if __name__ == "__main__":
+    run_analysis_pipeline('KR')
