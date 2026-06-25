@@ -15,25 +15,17 @@ def highlight_new(df):
         df_styles.loc[mask, :] = 'background-color: #ffcccc'
     return df_styles
 
-# 2. 날짜 리스트 및 데이터 조회 공통 함수
-# 캐시를 강제로 갱신하기 위해 ttl을 짧게 조정
+# 2. 날짜 리스트 및 데이터 조회 함수 (캐시 없이 실시간 조회)
 def get_available_dates():
-    # 데이터를 가져온 후 리스트로 명시적 변환
-    response = supabase.table("daily_analysis").select("price_date").order("price_date", desc=True).limit(200).execute()
+    # Supabase에서 데이터 조회
+    response = supabase.table("daily_analysis").select("price_date").order("price_date", desc=True).execute()
     if not response.data:
         return []
-    
-    # 딕셔너리 리스트에서 날짜만 추출
-    raw_dates = [item['price_date'] for item in response.data]
-    # 중복 제거 후 정렬 (최신순)
-    unique_dates = sorted(list(set(raw_dates)), reverse=True)
+    # set으로 중복 제거 후 역순 정렬
+    unique_dates = sorted(list({item['price_date'] for item in response.data}), reverse=True)
     return unique_dates
 
-def get_data(target_date):
-    # 선택된 날짜의 데이터를 가져옴
-    # 이전 날짜를 구하기 위해 전체 리스트 다시 사용
-    all_dates = get_available_dates()
-    
+def get_data(target_date, all_dates):
     if target_date not in all_dates:
         return pd.DataFrame()
         
@@ -44,7 +36,7 @@ def get_data(target_date):
     df_current = pd.DataFrame(supabase.table("daily_analysis").select("ticker, momentum_rank, weighted_momentum, rs_score").eq("price_date", target_date).order("momentum_rank").limit(50).execute().data)
     df_prev = pd.DataFrame(supabase.table("daily_analysis").select("ticker, momentum_rank").eq("price_date", previous_date).execute().data)
     
-    # 전처리
+    # 데이터 전처리
     df_current['momentum_rank'] = pd.to_numeric(df_current['momentum_rank'])
     df_prev['momentum_rank'] = pd.to_numeric(df_prev['momentum_rank'])
     
@@ -65,12 +57,18 @@ def get_data(target_date):
 st.set_page_config(layout="wide")
 st.markdown('<p style="font-size:24px; font-weight:bold;">📈 모멘텀 분석</p>', unsafe_allow_html=True)
 
-# 날짜 선택
+# 실시간 날짜 리스트 로드
 all_dates = get_available_dates()
+if not all_dates:
+    st.error("데이터가 없습니다.")
+    st.stop()
+
+# 디버깅: 사이드바에 날짜 정보 표시
+st.sidebar.write(f"조회된 날짜 수: {len(all_dates)}")
 selected_date = st.selectbox("기준일 선택", options=all_dates)
 
 # 데이터 로드
-df_display = get_data(selected_date)
+df_display = get_data(selected_date, all_dates)
 
 display_cols = ['순위', '종목명', 'MOT', 'RS']
 tab1, tab2 = st.tabs(["전체 보기 (TOP 50)", "신규 진입주 (TOP 30)"])
@@ -120,4 +118,4 @@ if event.selection and event.selection["rows"]:
         st.plotly_chart(fig, use_container_width=True)
 
 with st.sidebar:
-    st.caption("App Version: 1.1.3")
+    st.caption("App Version: 1.1.4")
