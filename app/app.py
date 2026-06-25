@@ -16,28 +16,25 @@ def highlight_new(df):
     return df_styles
 
 # 2. 날짜 리스트 및 데이터 조회 공통 함수
-@st.cache_data(ttl=60)
+# 캐시를 강제로 갱신하기 위해 ttl을 짧게 조정
+@st.cache_data(ttl=10)
 def get_available_dates():
-    # 데이터베이스에서 날짜를 가져와 정렬
-    #data = supabase.table("daily_analysis").select("price_date").order("price_date", desc=True).limit(200).execute().data
-    response = supabase.table("daily_analysis") \
-        .select("price_date") \
-        .order("price_date", desc=True) \
-        .limit(200) \
-        .execute()
-    
-    # 데이터가 리스트로 잘 들어왔는지 확인
-    data = response.data
-    
-    if not data:
+    # 데이터를 가져온 후 리스트로 명시적 변환
+    response = supabase.table("daily_analysis").select("price_date").order("price_date", desc=True).limit(200).execute()
+    if not response.data:
         return []
-    df = pd.DataFrame(data)
-    df['price_date'] = pd.to_datetime(df['price_date'])
-    # 중복 제거 후 최신순 정렬하여 리스트 반환
-    return df['price_date'].dt.strftime('%Y-%m-%d').sort_values(ascending=False).unique().tolist()
+    
+    # 딕셔너리 리스트에서 날짜만 추출
+    raw_dates = [item['price_date'] for item in response.data]
+    # 중복 제거 후 정렬 (최신순)
+    unique_dates = sorted(list(set(raw_dates)), reverse=True)
+    return unique_dates
 
-def get_data(target_date, all_dates):
-    # 인덱스 확보
+def get_data(target_date):
+    # 선택된 날짜의 데이터를 가져옴
+    # 이전 날짜를 구하기 위해 전체 리스트 다시 사용
+    all_dates = get_available_dates()
+    
     if target_date not in all_dates:
         return pd.DataFrame()
         
@@ -48,7 +45,7 @@ def get_data(target_date, all_dates):
     df_current = pd.DataFrame(supabase.table("daily_analysis").select("ticker, momentum_rank, weighted_momentum, rs_score").eq("price_date", target_date).order("momentum_rank").limit(50).execute().data)
     df_prev = pd.DataFrame(supabase.table("daily_analysis").select("ticker, momentum_rank").eq("price_date", previous_date).execute().data)
     
-    # 데이터 전처리
+    # 전처리
     df_current['momentum_rank'] = pd.to_numeric(df_current['momentum_rank'])
     df_prev['momentum_rank'] = pd.to_numeric(df_prev['momentum_rank'])
     
@@ -69,16 +66,12 @@ def get_data(target_date, all_dates):
 st.set_page_config(layout="wide")
 st.markdown('<p style="font-size:24px; font-weight:bold;">📈 모멘텀 분석</p>', unsafe_allow_html=True)
 
-# 날짜 리스트 로드
+# 날짜 선택
 all_dates = get_available_dates()
-if not all_dates:
-    st.error("데이터가 없습니다. 파이프라인 적재 상태를 확인하세요.")
-    st.stop()
-
-selected_date = st.selectbox("기준일 선택", all_dates)
+selected_date = st.selectbox("기준일 선택", options=all_dates)
 
 # 데이터 로드
-df_display = get_data(selected_date, all_dates)
+df_display = get_data(selected_date)
 
 display_cols = ['순위', '종목명', 'MOT', 'RS']
 tab1, tab2 = st.tabs(["전체 보기 (TOP 50)", "신규 진입주 (TOP 30)"])
