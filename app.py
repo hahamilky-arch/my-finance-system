@@ -67,7 +67,8 @@ if not all_dates:
     st.stop()
 
 # 디버깅: 사이드바에 날짜 정보 표시
-st.sidebar.write(f"조회된 날짜 수: {len(all_dates)}")
+#st.sidebar.write(f"조회된 날짜 수: {len(all_dates)}")
+
 selected_date = st.selectbox("기준일 선택", options=all_dates)
 
 # 데이터 로드
@@ -121,4 +122,4 @@ if event.selection and event.selection["rows"]:
         st.plotly_chart(fig, use_container_width=True)
 
 with st.sidebar:
-    st.caption("App Version: 1.1.5")
+    st.caption("App Version: 1.1.6")
