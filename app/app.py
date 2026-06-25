@@ -17,16 +17,18 @@ def highlight_new(df):
 
 # 2. 데이터 조회 함수
 def get_data(target_date=None):
-    # 날짜 리스트 확보 (충분한 데이터 확보를 위해 limit 100 적용)
+    # 날짜 리스트 확보 및 정렬
     all_dates_data = supabase.table("daily_analysis").select("price_date").order("price_date", desc=True).limit(100).execute().data
-    all_dates = pd.DataFrame(all_dates_data)['price_date'].unique()
+    df_dates = pd.DataFrame(all_dates_data)
+    df_dates['price_date'] = pd.to_datetime(df_dates['price_date'])
+    all_dates = df_dates['price_date'].dt.strftime('%Y-%m-%d').unique()
     
     if len(all_dates) == 0:
         return pd.DataFrame(), None, []
 
     target_date = target_date if target_date else all_dates[0]
     
-    # 이전 날짜 설정 (데이터가 1개일 경우 현재 날짜 사용)
+    # 이전 날짜 설정
     current_idx = list(all_dates).index(target_date)
     previous_date = all_dates[current_idx + 1] if current_idx + 1 < len(all_dates) else target_date
     
@@ -57,8 +59,9 @@ st.markdown('<p style="font-size:24px; font-weight:bold;">📈 모멘텀 분석<
 
 # 날짜 리스트 조회 및 14일치 제한
 all_dates_data = supabase.table("daily_analysis").select("price_date").order("price_date", desc=True).limit(100).execute().data
-all_dates_full = pd.DataFrame(all_dates_data)['price_date'].unique()
-all_dates_list = all_dates_full[:14]
+df_dates = pd.DataFrame(all_dates_data)
+df_dates['price_date'] = pd.to_datetime(df_dates['price_date'])
+all_dates_list = df_dates['price_date'].dt.strftime('%Y-%m-%d').unique()[:14]
 
 selected_date = st.selectbox("기준일 선택", all_dates_list)
 df_display, _, _ = get_data(selected_date)
