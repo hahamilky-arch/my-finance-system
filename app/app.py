@@ -45,9 +45,11 @@ def get_data(target_date=None):
 st.set_page_config(layout="wide")
 st.markdown('<p style="font-size:24px; font-weight:bold;">📈 모멘텀 분석</p>', unsafe_allow_html=True)
 
-all_dates_full = pd.DataFrame(supabase.table("daily_analysis").select("price_date").order("price_date", desc=True).execute().data)['price_date'].unique()
+#all_dates_full = pd.DataFrame(supabase.table("daily_analysis").select("price_date").order("price_date", desc=True).execute().data)['price_date'].unique()
 #all_dates_list = all_dates_full[:len(all_dates_full)-1] if len(all_dates_full) > 1 else all_dates_full
-
+# 수정 후: .limit(100)을 추가하여 충분한 날짜를 확보
+all_dates_data = supabase.table("daily_analysis").select("price_date").order("price_date", desc=True).limit(100).execute().data
+all_dates_full = pd.DataFrame(all_dates_data)['price_date'].unique()
 # 무조건 앞에서부터 7개만 가져옴 (데이터가 14개 미만이면 있는 만큼만 보여줌)
 all_dates_list = all_dates_full[:14]
 
