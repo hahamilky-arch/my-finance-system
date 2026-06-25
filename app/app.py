@@ -51,15 +51,31 @@ df_display, _, _ = get_data(selected_date)
 
 # 탭 구성
 tab1, tab2 = st.tabs(["전체 보기 (TOP 50)", "신규 진입주 (TOP 30)"])
-
+    
 with tab1:
     df_table = df_display.copy()
+    
+    # 1. 포맷팅 전 데이터 타입 확실하게 강제 변환 (이게 핵심입니다)
+    df_table['MOT'] = pd.to_numeric(df_table['MOT'], errors='coerce').fillna(0.0)
+    df_table['RS'] = pd.to_numeric(df_table['RS'], errors='coerce').fillna(0.0)
+    
     display_cols = ['순위', '종목명', 'MOT', 'RS']
     
-    event = st.dataframe(
-        df_table.style.apply(highlight_new, axis=None).format({'MOT': '{:.2f}', 'RS': '{:.2f}'}),
-        hide_index=True, column_order=display_cols, selection_mode="single-row", on_select="rerun"
+    # 2. 스타일링 적용
+    # format 함수에 precision 옵션을 명시하여 에러 방지
+    styled_df = df_table.style.apply(highlight_new, axis=None).format(
+        {'MOT': '{:.2f}', 'RS': '{:.2f}'}, na_rep='0.00'
     )
+    
+    event = st.dataframe(
+        styled_df,
+        hide_index=True, 
+        column_order=display_cols, 
+        selection_mode="single-row", 
+        on_select="rerun"
+    )
+
+
 
 with tab2:
     df_new = df_display[df_display['is_new_top30'] == True].copy()
