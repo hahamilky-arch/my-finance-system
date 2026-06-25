@@ -48,8 +48,8 @@ st.markdown('<p style="font-size:24px; font-weight:bold;">📈 모멘텀 분석<
 all_dates_full = pd.DataFrame(supabase.table("daily_analysis").select("price_date").order("price_date", desc=True).execute().data)['price_date'].unique()
 #all_dates_list = all_dates_full[:len(all_dates_full)-1] if len(all_dates_full) > 1 else all_dates_full
 
-# 무조건 앞에서부터 7개만 가져옴 (데이터가 7개 미만이면 있는 만큼만 보여줌)
-all_dates_list = all_dates_full[:7]
+# 무조건 앞에서부터 7개만 가져옴 (데이터가 14개 미만이면 있는 만큼만 보여줌)
+all_dates_list = all_dates_full[:14]
 
 
 selected_date = st.selectbox("기준일 선택", all_dates_list)
