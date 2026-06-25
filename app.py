@@ -18,7 +18,7 @@ def highlight_new(df):
 # 2. 날짜 리스트 및 데이터 조회 함수 (캐시 없이 실시간 조회)
 def get_available_dates():
     # Supabase에서 데이터 조회
-    response = supabase.table("daily_analysis").select("price_date").order("price_date", desc=True).execute()
+    response = supabase.table("daily_analysis").select("price_date").range(0, 1000).order("price_date", desc=True).execute()
     if not response.data:
         return []
     # set으로 중복 제거 후 역순 정렬
