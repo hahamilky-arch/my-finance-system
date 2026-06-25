@@ -17,7 +17,7 @@ def highlight_new(df):
 
 # 2. 날짜 리스트 및 데이터 조회 공통 함수
 # 캐시를 강제로 갱신하기 위해 ttl을 짧게 조정
-@st.cache_data(ttl=10)
+#@st.cache_data(ttl=10)
 def get_available_dates():
     # 데이터를 가져온 후 리스트로 명시적 변환
     response = supabase.table("daily_analysis").select("price_date").order("price_date", desc=True).limit(200).execute()
