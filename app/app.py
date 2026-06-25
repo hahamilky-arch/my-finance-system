@@ -9,7 +9,6 @@ supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
 # 1. 스타일 함수
 def highlight_new(df):
     df_styles = pd.DataFrame('', index=df.index, columns=df.columns)
-    # df에 'is_new_top30' 컬럼이 있는 경우에만 적용
     if 'is_new_top30' in df.columns:
         mask = df['is_new_top30']
         df_styles.loc[mask, :] = 'background-color: #ffcccc'
@@ -22,16 +21,19 @@ def get_data(target_date=None):
     target_date = target_date if target_date else all_dates[0]
     previous_date = all_dates[1] if target_date == all_dates[0] else all_dates[all_dates.tolist().index(target_date) + 1]
     
+    # 데이터 로드
     df_current = pd.DataFrame(supabase.table("daily_analysis").select("ticker, momentum_rank, weighted_momentum, rs_score").eq("price_date", target_date).order("momentum_rank").limit(50).execute().data)
     df_prev = pd.DataFrame(supabase.table("daily_analysis").select("ticker, momentum_rank").eq("price_date", previous_date).execute().data)
     
     df_current['momentum_rank'] = pd.to_numeric(df_current['momentum_rank'])
     df_prev['momentum_rank'] = pd.to_numeric(df_prev['momentum_rank'])
     
+    # 병합
     df_merged = pd.merge(df_current, df_prev, on="ticker", how="left", suffixes=('', '_prev'))
     df_merged['momentum_rank_prev'] = df_merged['momentum_rank_prev'].fillna(999)
     df_merged['is_new_top30'] = (df_merged['momentum_rank'] <= 30) & (df_merged['momentum_rank_prev'] > 30)
 
+    # 종목명 병합
     df_stocks = pd.DataFrame(supabase.table("stocks").select("ticker, name").execute().data)
     df_final = pd.merge(df_merged, df_stocks, on="ticker", how="left")
     
@@ -57,15 +59,20 @@ display_cols = ['순위', '종목명', 'MOT', 'RS']
 tab1, tab2 = st.tabs(["전체 보기 (TOP 50)", "신규 진입주 (TOP 30)"])
 
 with tab1:
-    st.dataframe(
-        df_display.style.apply(highlight_new, axis=None).format({'MOT': '{:.2f}', 'RS': '{:.2f}'}),
+    # 주도주 필터 추가
+    use_filter = st.checkbox("주도주 필터 적용 (RS > 0 & MOT > 0)")
+    df_to_show = df_display.copy()
+    if use_filter:
+        df_to_show = df_to_show[(df_to_show['RS'] > 0) & (df_to_show['MOT'] > 0)]
+    
+    event = st.dataframe(
+        df_to_show.style.apply(highlight_new, axis=None).format({'MOT': '{:.2f}', 'RS': '{:.2f}'}),
         hide_index=True, column_order=display_cols, selection_mode="single-row", on_select="rerun"
     )
 
 with tab2:
     df_new = df_display[df_display['is_new_top30'] == True].copy()
     if not df_new.empty:
-        # 동일하게 스타일 및 포맷 적용
         st.dataframe(
             df_new.style.format({'MOT': '{:.2f}', 'RS': '{:.2f}'}), 
             hide_index=True, column_order=display_cols
@@ -73,5 +80,17 @@ with tab2:
     else:
         st.info("오늘 신규 진입한 종목이 없습니다.")
 
+# 4. 종목 선택 상세 차트
+if event.selection["rows"]:
+    selected_index = event.selection["rows"][0]
+    selected_ticker = df_to_show.iloc[selected_index]['ticker']
+    selected_name = df_to_show.iloc[selected_index]['종목명']
+
+    with st.popover(f"📊 {selected_name} 상세 분석", use_container_width=True):
+        history_df = pd.DataFrame(supabase.table("daily_analysis").select("*").eq("ticker", selected_ticker).order("price_date", desc=True).limit(10).execute().data).sort_values("price_date")
+        fig = px.line(history_df, x='price_date', y='momentum_rank', markers=True, labels={'price_date': '날짜', 'momentum_rank': '순위'})
+        fig.update_layout(yaxis=dict(range=[35, 0]))
+        st.plotly_chart(fig, use_container_width=True)
+
 with st.sidebar:
-    st.caption("App Version: 1.1.1")
+    st.caption("App Version: 1.1.2")
