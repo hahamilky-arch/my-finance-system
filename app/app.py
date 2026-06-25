@@ -16,18 +16,22 @@ def highlight_new(df):
     return df_styles
 
 # 2. 날짜 리스트 및 데이터 조회 공통 함수
-@st.cache_data(ttl=600)
+@st.cache_data(ttl=60)
 def get_available_dates():
-    # 전체 날짜를 명확하게 가져와서 datetime 변환 후 정렬
+    # 데이터베이스에서 날짜를 가져와 정렬
     data = supabase.table("daily_analysis").select("price_date").order("price_date", desc=True).limit(200).execute().data
+    if not data:
+        return []
     df = pd.DataFrame(data)
     df['price_date'] = pd.to_datetime(df['price_date'])
-    return df['price_date'].dt.strftime('%Y-%m-%d').unique().tolist()
+    # 중복 제거 후 최신순 정렬하여 리스트 반환
+    return df['price_date'].dt.strftime('%Y-%m-%d').sort_values(ascending=False).unique().tolist()
 
-def get_data(target_date):
-    all_dates = get_available_dates()
-    
+def get_data(target_date, all_dates):
     # 인덱스 확보
+    if target_date not in all_dates:
+        return pd.DataFrame()
+        
     target_idx = all_dates.index(target_date)
     previous_date = all_dates[target_idx + 1] if target_idx + 1 < len(all_dates) else target_date
     
@@ -56,12 +60,16 @@ def get_data(target_date):
 st.set_page_config(layout="wide")
 st.markdown('<p style="font-size:24px; font-weight:bold;">📈 모멘텀 분석</p>', unsafe_allow_html=True)
 
-# 통합된 날짜 리스트 사용
-available_dates = get_available_dates()
-selected_date = st.selectbox("기준일 선택", available_dates)
+# 날짜 리스트 로드
+all_dates = get_available_dates()
+if not all_dates:
+    st.error("데이터가 없습니다. 파이프라인 적재 상태를 확인하세요.")
+    st.stop()
+
+selected_date = st.selectbox("기준일 선택", all_dates)
 
 # 데이터 로드
-df_display = get_data(selected_date)
+df_display = get_data(selected_date, all_dates)
 
 display_cols = ['순위', '종목명', 'MOT', 'RS']
 tab1, tab2 = st.tabs(["전체 보기 (TOP 50)", "신규 진입주 (TOP 30)"])
@@ -88,7 +96,7 @@ with tab2:
         st.info("오늘 신규 진입한 종목이 없습니다.")
 
 # 4. 상세 차트
-if event.selection["rows"]:
+if event.selection and event.selection["rows"]:
     selected_index = event.selection["rows"][0]
     selected_ticker = df_to_show.iloc[selected_index]['ticker']
     selected_name = df_to_show.iloc[selected_index]['종목명']
@@ -109,3 +117,6 @@ if event.selection["rows"]:
         fig.update_yaxes(autorange="reversed", row=2, col=1)
         
         st.plotly_chart(fig, use_container_width=True)
+
+with st.sidebar:
+    st.caption("App Version: 1.1.3")
