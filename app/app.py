@@ -19,7 +19,16 @@ def highlight_new(df):
 @st.cache_data(ttl=60)
 def get_available_dates():
     # 데이터베이스에서 날짜를 가져와 정렬
-    data = supabase.table("daily_analysis").select("price_date").order("price_date", desc=True).limit(200).execute().data
+    #data = supabase.table("daily_analysis").select("price_date").order("price_date", desc=True).limit(200).execute().data
+    response = supabase.table("daily_analysis") \
+        .select("price_date") \
+        .order("price_date", desc=True) \
+        .limit(200) \
+        .execute()
+    
+    # 데이터가 리스트로 잘 들어왔는지 확인
+    data = response.data
+    
     if not data:
         return []
     df = pd.DataFrame(data)
