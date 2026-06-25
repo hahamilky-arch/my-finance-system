@@ -60,10 +60,14 @@ tab1, tab2 = st.tabs(["전체 보기 (TOP 50)", "신규 진입주 (TOP 30)"])
 
 with tab1:
     # 주도주 필터 추가
-    use_filter = st.checkbox("주도주 필터 적용 (RS > 0 & MOT > 0)")
+    # 0 대신, 0.03 (3%) 또는 상위 20위 등으로 필터링
+    use_filter = st.checkbox("주도주 필터 적용 (RS > 0.03 & MOT 상위 20)")
+
     df_to_show = df_display.copy()
     if use_filter:
-        df_to_show = df_to_show[(df_to_show['RS'] > 0) & (df_to_show['MOT'] > 0)]
+        # 1. RS가 3% 이상 초과 수익을 낸 종목
+        # 2. 모멘텀 순위가 20위 이내인 종목
+        df_to_show = df_to_show[(df_to_show['RS'] > 0.03) & (df_to_show['순위'] <= 20)]
     
     event = st.dataframe(
         df_to_show.style.apply(highlight_new, axis=None).format({'MOT': '{:.2f}', 'RS': '{:.2f}'}),
