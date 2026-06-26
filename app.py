@@ -24,7 +24,7 @@ def get_available_dates():
 
 def get_data(target_date, all_dates, market_type):
     if target_date not in all_dates:
-        return None  # 데이터가 없음을 나타내기 위해 None 반환
+        return None
         
     target_idx = all_dates.index(target_date)
     previous_date = all_dates[target_idx + 1] if target_idx + 1 < len(all_dates) else target_date
@@ -60,7 +60,7 @@ def get_data(target_date, all_dates, market_type):
     df_stocks = pd.DataFrame(supabase.table("stocks").select("ticker, name").execute().data)
     df_final = pd.merge(df_merged, df_stocks, on="ticker", how="left")
     
-    df_final = df_final.rename(columns={'momentum_rank': '순위', 'name': '종목명', 'weighted_momentum': 'MOT', 'rs_score': 'RS'})
+    df_final = df_final.rename(columns={'momentum_rank': '순위', 'name': '종목명', 'weighted_momentum': 'MOT', 'rs_score': 'RS', 'close_price': '종가'})
     df_final['MOT'] = pd.to_numeric(df_final['MOT'], errors='coerce').fillna(0.0)
     df_final['RS'] = pd.to_numeric(df_final['RS'], errors='coerce').fillna(0.0)
     
@@ -76,14 +76,14 @@ with st.sidebar:
     selected_date = st.selectbox("기준일 선택", options=all_dates)
     if st.button("새로고침"): st.rerun()
 
-# 데이터 로드 및 예외 처리
+# 데이터 로드
 df_display = get_data(selected_date, all_dates, market_type)
 
 if df_display is None:
     st.warning(f"선택하신 날짜({selected_date})에 대한 분석 데이터가 존재하지 않습니다.")
 else:
     # 4. 탭 구성
-    tab1, tab2, tab3 = st.tabs(["전체 보기 (TOP 50)", "신규 진입주 (TOP 30)", "매매 신호 (No2)"])
+    tab1, tab2, tab3 = st.tabs(["전체 보기 (TOP 50)", "신규 진입주 (TOP 30)", "매수 전략 시그널"])
 
     with tab1:
         use_filter = st.checkbox("주도주 필터 적용 (RS > 0.03 & 순위 20위 내)")
@@ -91,23 +91,28 @@ else:
         if use_filter:
             df_to_show = df_to_show[(df_to_show['RS'] > 0.03) & (df_to_show['순위'] <= 20)]
         
+        # Tab1: 컬럼 order에 '종가' 추가
         event = st.dataframe(
-            df_to_show.style.apply(highlight_new, axis=None).format({'MOT': '{:.2f}', 'RS': '{:.2f}'}),
-            hide_index=True, column_order=['순위', '종목명', 'MOT', 'RS'], selection_mode="single-row", on_select="rerun"
+            df_to_show.style.apply(highlight_new, axis=None).format({'MOT': '{:.2f}', 'RS': '{:.2f}', '종가': '{:,.0f}'}),
+            hide_index=True, column_order=['순위', '종목명', 'MOT', 'RS', '종가'], selection_mode="single-row", on_select="rerun"
         )
 
     with tab2:
         df_new = df_display[df_display['is_new_top30'] == True].copy()
         if not df_new.empty:
-            st.dataframe(df_new.style.format({'MOT': '{:.2f}', 'RS': '{:.2f}'}), hide_index=True)
+            # Tab2: 보기 좋게 컬럼 정리
+            st.dataframe(
+                df_new[['순위', '종목명', 'MOT', 'RS', '종가']].style.format({'MOT': '{:.2f}', 'RS': '{:.2f}', '종가': '{:,.0f}'}), 
+                hide_index=True, use_container_width=True
+            )
         else:
             st.info("오늘 신규 진입한 종목이 없습니다.")
 
     with tab3:
-        st.subheader("🚀 백테스터No2 매수 신호")
+        st.subheader("모멘텀 급등")
         buy_signals = df_display[df_display['is_buy_signal'] == True]
         if not buy_signals.empty:
-            st.dataframe(buy_signals[['종목명', '순위', 'rank_change', 'close_price']], hide_index=True)
+            st.dataframe(buy_signals[['종목명', '순위', 'rank_change', '종가']], hide_index=True, use_container_width=True)
         else:
             st.info("조건에 맞는 종목이 없습니다.")
 
