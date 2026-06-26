@@ -5,3 +5,17 @@ python-dotenv
 plotly
 scipy
 yfinance
+pandas
+plotly
+streamlit
+pandas
+plotly
+python-dotenv
+scipy
+streamlit
+supabase
+yfinance
+python-dotenv
+scipy
+supabase
+yfinance
