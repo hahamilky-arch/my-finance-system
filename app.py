@@ -109,7 +109,7 @@ else:
             st.info("오늘 신규 진입한 종목이 없습니다.")
 
     with tab3:
-        st.subheader("모멘텀 급등")
+        st.subheader("Backtest No2.")
         buy_signals = df_display[df_display['is_buy_signal'] == True]
         if not buy_signals.empty:
             st.dataframe(buy_signals[['종목명', '순위', 'rank_change', '종가']], hide_index=True, use_container_width=True)
