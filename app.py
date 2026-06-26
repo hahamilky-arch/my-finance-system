@@ -34,6 +34,7 @@ def get_data(target_date, all_dates, market_type):
                                 .select("ticker, momentum_rank, weighted_momentum, rs_score, close_price")
                                 .eq("price_date", target_date)
                                 .eq("market", market_type)
+                                .order("momentum_rank")
                                 .execute().data)
     
     df_prev = pd.DataFrame(supabase.table("daily_analysis")
