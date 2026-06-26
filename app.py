@@ -68,6 +68,12 @@ def get_data(target_date, all_dates, market_type):
     df_final = df_final.rename(columns={'momentum_rank': '순위', 'name': '종목명', 'weighted_momentum': 'MOT', 'rs_score': 'RS'})
     df_final['MOT'] = pd.to_numeric(df_final['MOT'], errors='coerce').fillna(0.0)
     df_final['RS'] = pd.to_numeric(df_final['RS'], errors='coerce').fillna(0.0)
+
+    # 필수 컬럼 확인: 데이터가 비어있더라도 해당 컬럼들이 존재하도록 강제
+    required_columns = ['is_new_top30', 'is_buy_signal']
+    for col in required_columns:
+        if col not in df_final.columns:
+            df_final[col] = False
     
     return df_final
 
