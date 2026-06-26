@@ -36,8 +36,8 @@ def get_data(target_date, all_dates):
     previous_date = all_dates[target_idx + 1] if target_idx + 1 < len(all_dates) else target_date
     
     # 데이터 조회
-    df_current = pd.DataFrame(supabase.table("daily_analysis").select("ticker, momentum_rank, weighted_momentum, rs_score").eq("price_date", target_date).order("momentum_rank").limit(50).execute().data)
-    df_prev = pd.DataFrame(supabase.table("daily_analysis").select("ticker, momentum_rank").eq("price_date", previous_date).execute().data)
+    df_current = pd.DataFrame(supabase.table("daily_analysis").select("ticker, momentum_rank, weighted_momentum, rs_score").eq("price_date", target_date).eq("market","KR").order("momentum_rank").limit(50).execute().data)
+    df_prev = pd.DataFrame(supabase.table("daily_analysis").select("ticker, momentum_rank").eq("price_date", previous_date).eq("market","KR").execute().data)
     
     # 데이터 전처리
     df_current['momentum_rank'] = pd.to_numeric(df_current['momentum_rank'])
