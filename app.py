@@ -49,8 +49,9 @@ def get_data(target_date, all_dates, market_type):
     df_current['close_price'] = pd.to_numeric(df_current['close_price'])
     df_merged = pd.merge(df_current, df_prev, on="ticker", how="left", suffixes=('', '_prev'))
     df_merged['rank_change'] = df_merged['momentum_rank_prev'].fillna(999) - df_merged['momentum_rank']
-    
-    # 거래량(volume) 데이터 로드 및 vol_ratio 계산
+
+
+    # 거래량(volume) 데이터 로드
     df_vol = pd.DataFrame(supabase.table("stock_prices")
                           .select("ticker, volume, price_date")
                           .in_("ticker", df_merged['ticker'].tolist())
@@ -59,10 +60,21 @@ def get_data(target_date, all_dates, market_type):
     
     if not df_vol.empty:
         df_vol['volume'] = pd.to_numeric(df_vol['volume'])
-        avg_vol = df_vol.groupby('ticker')['volume'].rolling(window=20).mean().reset_index(level=0, drop=True)
-        df_today_vol = df_vol[df_vol['price_date'] == target_date].set_index('ticker')
-        df_vol_ratio = pd.DataFrame({'vol_ratio': df_today_vol['volume'] / avg_vol.loc[df_today_vol.index]})
-        df_merged = df_merged.merge(df_vol_ratio, on='ticker', how='left')
+        # 변경점: groupby 후 바로 인덱스를 정리하여 조인 시 에러 방지
+        avg_vol = df_vol.groupby('ticker')['volume'].rolling(window=20).mean().reset_index()
+        avg_vol = avg_vol.rename(columns={'volume': 'avg_vol_20'})
+        
+        # 오늘 거래량만 추출
+        df_today_vol = df_vol[df_vol['price_date'] == target_date].copy()
+        
+        # 티커 기준으로 정확히 조인
+        df_vol_ratio = pd.merge(df_today_vol, avg_vol[avg_vol['price_date'] == target_date][['ticker', 'avg_vol_20']], on='ticker', how='left')
+        df_vol_ratio['vol_ratio'] = df_vol_ratio['volume'] / df_vol_ratio['avg_vol_20']
+        
+        # 최종 병합 (티커 기준)
+        df_merged = df_merged.merge(df_vol_ratio[['ticker', 'vol_ratio']], on='ticker', how='left')
+    # ... (이하 동일)
+
     
     # 종목명 병합
     df_stocks = pd.DataFrame(supabase.table("stocks").select("ticker, name").execute().data)
