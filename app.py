@@ -19,16 +19,17 @@ def apply_styles(df):
     return df_styles
 
 # 2. 데이터 조회 및 처리
-def get_available_dates():
-    response = supabase.rpc("get_all_dates").execute()
-    return [item['price_date'] for item in response.data] if response.data else []
-
-def get_data(target_date, all_dates, market_type):
-    if target_date not in all_dates: return None
-    target_idx = all_dates.index(target_date)
-    previous_date = all_dates[target_idx + 1] if target_idx + 1 < len(all_dates) else target_date
+def get_data(target_date, market_type):
+    target_date_str = str(target_date)
+    # 날짜 조회를 위한 이전 날짜 로직
+    all_dates_res = supabase.rpc("get_all_dates").execute()
+    all_dates = [item['price_date'] for item in all_dates_res.data]
     
-    df_current = pd.DataFrame(supabase.table("daily_analysis").select("ticker, momentum_rank, weighted_momentum, rs_score, close_price").eq("price_date", target_date).eq("market", market_type).order("momentum_rank").execute().data)
+    if target_date_str not in all_dates: return None
+    target_idx = all_dates.index(target_date_str)
+    previous_date = all_dates[target_idx + 1] if target_idx + 1 < len(all_dates) else target_date_str
+    
+    df_current = pd.DataFrame(supabase.table("daily_analysis").select("ticker, momentum_rank, weighted_momentum, rs_score, close_price").eq("price_date", target_date_str).eq("market", market_type).order("momentum_rank").execute().data)
     if df_current.empty: return None
     
     df_prev = pd.DataFrame(supabase.table("daily_analysis").select("ticker, momentum_rank").eq("price_date", previous_date).eq("market", market_type).execute().data)
@@ -40,12 +41,12 @@ def get_data(target_date, all_dates, market_type):
     df_merged['rank_change'] = df_merged['momentum_rank_prev'].fillna(999) - df_merged['momentum_rank']
     
     ticker_list = list(df_merged['ticker'].unique())
-    df_vol = pd.DataFrame(supabase.table("stock_prices").select("ticker, volume, price_date").in_("ticker", ticker_list).order("price_date", desc=True).limit(400).execute().data)
+    df_vol = pd.DataFrame(supabase.table("stock_prices").select("ticker, volume, price_date").in_("ticker", list(ticker_list)).order("price_date", desc=True).limit(400).execute().data)
     
     if not df_vol.empty:
         df_vol['volume'] = pd.to_numeric(df_vol['volume'])
         df_vol['avg_vol_20'] = df_vol.groupby('ticker')['volume'].transform(lambda x: x.rolling(window=20).mean())
-        df_today_vol = df_vol[df_vol['price_date'] == target_date][['ticker', 'volume', 'avg_vol_20']]
+        df_today_vol = df_vol[df_vol['price_date'] == target_date_str][['ticker', 'volume', 'avg_vol_20']]
         df_merged = pd.merge(df_merged, df_today_vol, on='ticker', how='left')
         df_merged['vol_ratio'] = df_merged['volume'] / df_merged['avg_vol_20']
     else:
@@ -57,17 +58,17 @@ def get_data(target_date, all_dates, market_type):
     df_final['is_new_top30'] = (df_final['순위'] <= 30) & (df_final['momentum_rank_prev'] > 30)
     return df_final
 
-# 3. 메인 UI 구성
+# 3. 메인 UI
 st.set_page_config(layout="wide")
 st.markdown('<p style="font-size:24px; font-weight:bold;">📈 모멘텀 분석 대시보드</p>', unsafe_allow_html=True)
 
 with st.sidebar:
     market_type = st.radio("시장 선택", ["KR", "US"], horizontal=True)
-    all_dates = get_available_dates()
-    selected_date = st.selectbox("기준일 선택", options=all_dates)
-    if st.button("새로고침"): st.rerun()
+    # 기존 원하시던 달력(Date Input)으로 사이드바 구성
+    selected_date = st.date_input("분석 기준일 선택")
+    if st.button("데이터 새로고침"): st.rerun()
 
-df_display = get_data(selected_date, all_dates, market_type)
+df_display = get_data(selected_date, market_type)
 
 if df_display is not None:
     tab1, tab2, tab3, tab4, tab5 = st.tabs(["전체 보기", "신규 진입주", "매수 시그널", "🚀 No3", "🚀 No4: High-Octane"])
