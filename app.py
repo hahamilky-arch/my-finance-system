@@ -43,14 +43,22 @@ def get_data(target_date, market_type):
     ticker_list = list(df_merged['ticker'].unique())
     df_vol = pd.DataFrame(supabase.table("stock_prices").select("ticker, volume, price_date").in_("ticker", list(ticker_list)).order("price_date", desc=True).limit(400).execute().data)
     
+    # 기존 거래량 계산 코드 부분을 아래 코드로 교체하세요
     if not df_vol.empty:
-        df_vol['volume'] = pd.to_numeric(df_vol['volume'])
-        df_vol['avg_vol_20'] = df_vol.groupby('ticker')['volume'].transform(lambda x: x.rolling(window=20).mean())
+        df_vol['volume'] = pd.to_numeric(df_vol['volume'], errors='coerce')
+        # 20일 평균 계산 시, 데이터가 적은 경우(상장 초기 등)를 위해 min_periods 설정
+        df_vol['avg_vol_20'] = df_vol.groupby('ticker')['volume'].transform(lambda x: x.rolling(window=20, min_periods=5).mean())
+        
         df_today_vol = df_vol[df_vol['price_date'] == target_date_str][['ticker', 'volume', 'avg_vol_20']]
+        
+        # 병합 방식을 inner가 아닌 left로 유지하되, 계산 결과를 엄격히 검사
         df_merged = pd.merge(df_merged, df_today_vol, on='ticker', how='left')
-        df_merged['vol_ratio'] = df_merged['volume'] / df_merged['avg_vol_20']
+        
+        # 0 나누기 방지: 거래량(volume)이나 평균(avg_vol_20)이 0이면 ratio를 0으로 처리
+        df_merged['vol_ratio'] = (df_merged['volume'] / df_merged['avg_vol_20']).fillna(0)
     else:
         df_merged['vol_ratio'] = 0.0
+
     
     df_stocks = pd.DataFrame(supabase.table("stocks").select("ticker, name").execute().data)
     df_final = pd.merge(df_merged, df_stocks, on="ticker", how="left")
