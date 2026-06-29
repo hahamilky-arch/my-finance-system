@@ -28,37 +28,35 @@ def get_data(target_date, all_dates, market_type):
     target_idx = all_dates.index(target_date)
     previous_date = all_dates[target_idx + 1] if target_idx + 1 < len(all_dates) else target_date
     
-    # 1. 기본 데이터 로드
+    # 기본 데이터 로드
     df_current = pd.DataFrame(supabase.table("daily_analysis").select("ticker, momentum_rank, weighted_momentum, rs_score, close_price").eq("price_date", target_date).eq("market", market_type).order("momentum_rank").execute().data)
     if df_current.empty: return None
     
     df_prev = pd.DataFrame(supabase.table("daily_analysis").select("ticker, momentum_rank").eq("price_date", previous_date).eq("market", market_type).execute().data)
     
-    # 2. 데이터 전처리
+    # 데이터 전처리
     df_current['momentum_rank'] = pd.to_numeric(df_current['momentum_rank'])
     df_current['close_price'] = pd.to_numeric(df_current['close_price'])
     df_merged = pd.merge(df_current, df_prev, on="ticker", how="left", suffixes=('', '_prev'))
     df_merged['rank_change'] = df_merged['momentum_rank_prev'].fillna(999) - df_merged['momentum_rank']
     
-    # 3. 거래량 데이터 안전한 로드 및 계산
-    df_vol = pd.DataFrame(supabase.table("stock_prices").select("ticker, volume, price_date").in_("ticker", df_merged['ticker'].tolist()).order("price_date", asc=True).execute().data)
+    # 거래량 데이터 로드 및 계산 (tuple 변환으로 에러 방지)
+    ticker_list = tuple(df_merged['ticker'].tolist())
+    df_vol = pd.DataFrame(supabase.table("stock_prices").select("ticker, volume, price_date").in_("ticker", ticker_list).order("price_date", desc=True).limit(400).execute().data)
     
     if not df_vol.empty:
         df_vol['volume'] = pd.to_numeric(df_vol['volume'])
-        # 티커별로 이동평균 계산
         df_vol['avg_vol_20'] = df_vol.groupby('ticker')['volume'].transform(lambda x: x.rolling(window=20).mean())
         
-        # 오늘 날짜 거래량 데이터만 추출
         df_today_vol = df_vol[df_vol['price_date'] == target_date][['ticker', 'volume', 'avg_vol_20']]
         df_merged = pd.merge(df_merged, df_today_vol, on='ticker', how='left')
         df_merged['vol_ratio'] = df_merged['volume'] / df_merged['avg_vol_20']
     else:
         df_merged['vol_ratio'] = 0.0
     
-    # 4. 종목명 병합
+    # 종목명 병합
     df_stocks = pd.DataFrame(supabase.table("stocks").select("ticker, name").execute().data)
     df_final = pd.merge(df_merged, df_stocks, on="ticker", how="left")
-    
     df_final = df_final.rename(columns={'momentum_rank': '순위', 'name': '종목명', 'weighted_momentum': 'MOT', 'rs_score': 'RS', 'close_price': '종가'})
     df_final['is_new_top30'] = (df_final['순위'] <= 30) & (df_final['momentum_rank_prev'] > 30)
     return df_final
@@ -101,7 +99,7 @@ if df_display is not None:
         else:
             st.info("현재 No3 전략(상위 50위+순위급등+거래량1.5배)에 부합하는 종목이 없습니다.")
 
-    # 5. 상세 차트
+    # 4. 상세 차트
     if 'event' in locals() and event.selection and event.selection["rows"]:
         selected_index = event.selection["rows"][0]
         selected_ticker = df_to_show.iloc[selected_index]['ticker']
