@@ -20,13 +20,13 @@ def apply_styles(df):
 
 # 2. 데이터 조회 및 계산
 def get_data(target_date, market_type):
-    target_date_str = str(target_date) # YYYY-MM-DD
+    target_date_str = str(target_date)
     
     # 기본 분석 데이터 로드
     df_current = pd.DataFrame(supabase.table("daily_analysis").select("ticker, momentum_rank, weighted_momentum, rs_score, close_price").eq("price_date", target_date_str).eq("market", market_type).execute().data)
     if df_current.empty: return None
     
-    # 이전 날짜 데이터 가져오기 (가장 최근 데이터 기준)
+    # 이전 날짜 데이터 가져오기
     all_dates_res = supabase.rpc("get_all_dates").execute()
     all_dates = sorted([d['price_date'] for d in all_dates_res.data], reverse=True)
     try:
@@ -44,26 +44,20 @@ def get_data(target_date, market_type):
     df_merged = pd.merge(df_current, df_prev, on="ticker", how="left", suffixes=('', '_prev'))
     df_merged['rank_change'] = df_merged['momentum_rank_prev'].fillna(999) - df_merged['momentum_rank']
     
-    # 거래량 계산 (핵심: 날짜 형식 통일)
-    ##ticker_list = list(df_merged['ticker'].unique())
-    # 리스트가 비어있지 않을 때만 쿼리 실행
+    # 거래량 계산 (in_ 메서드 정확히 사용)
+    ticker_list = list(df_merged['ticker'].unique())
+    df_vol = pd.DataFrame()
     if ticker_list:
-        # ticker_list를 명확하게 리스트로 변환하여 전달
         df_vol = pd.DataFrame(supabase.table("stock_prices")
                               .select("ticker, volume, price_date")
-                              .in_("ticker", ticker_list)
+                              .in_("ticker", ticker_list) # 여기서 in_ 사용
                               .execute().data)
-    else:
-        df_vol = pd.DataFrame()
-        
-    df_vol = pd.DataFrame(supabase.table("stock_prices").select("ticker, volume, price_date").in("ticker", ticker_list).execute().data)
     
+    df_merged['vol_ratio'] = 0.0
     if not df_vol.empty:
         df_vol['volume'] = pd.to_numeric(df_vol['volume'], errors='coerce')
-        # 날짜 문자열 통일
         df_vol['date_str'] = df_vol['price_date'].astype(str).str[:10]
         
-        df_merged['vol_ratio'] = 0.0
         for ticker in ticker_list:
             sub = df_vol[df_vol['ticker'] == ticker].sort_values('date_str')
             if len(sub) >= 5:
@@ -94,9 +88,9 @@ df_display = get_data(selected_date, market_type)
 if df_display is not None:
     tab1, tab2, tab3, tab4, tab5 = st.tabs(["전체 보기", "신규 진입주", "매수 시그널", "🚀 No3", "🚀 No4: High-Octane"])
 
-    # 탭 구성 (위 코드와 동일하게 유지)
     with tab1:
         st.dataframe(df_display.head(100).style.apply(apply_styles, axis=None).format({'MOT': '{:.2f}', 'RS': '{:.2f}', '종가': '{:,.0f}', 'rank_change': '{:+.0f}'}), hide_index=True, use_container_width=True)
+
     with tab5:
         st.subheader("🚀 High-Octane No4 전략 (순위 100위/RS 0.4/거래량 2배)")
         no4 = df_display[(df_display['순위'] <= 100) & (df_display['RS'] >= 0.4) & (df_display['vol_ratio'] >= 2.0)]
