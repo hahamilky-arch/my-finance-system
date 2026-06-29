@@ -115,7 +115,7 @@ if df_display is not None:
             price_df = pd.DataFrame(supabase.table("stock_prices").select("price_date, close_price").eq("ticker", selected_ticker).order("price_date", desc=True).limit(20).execute().data).sort_values("price_date")
             combined_df = pd.merge(history_df, price_df, on="price_date")
             fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.1, subplot_titles=("주가 추이", "모멘텀 순위"), row_heights=[0.6, 0.4])
-            fig.add_trace(px.line(combined_df, x='price_date', y='close_price').data[0], row=1, col=1)
+            ².add_trace(px.line(combined_df, x='price_date', y='close_price').data[0], row=1, col=1)
             fig.add_trace(px.line(combined_df, x='price_date', y='momentum_rank').data[0], row=2, col=1)
             fig.update_layout(height=500, showlegend=False)
             fig.update_yaxes(autorange="reversed", row=2, col=1)
