@@ -44,16 +44,35 @@ def get_data(target_date, market_type):
     
     # 거래량 계산 (종목별 루프 방식: 가장 확실함)
     ticker_list = list(df_merged['ticker'].unique())
-    df_vol = pd.DataFrame(supabase.table("stock_prices").select("ticker, volume, price_date").in_("ticker", ticker_list).order("price_date", desc=True).limit(5000).execute().data)
     
-    df_merged['vol_ratio'] = 0.0
+    # 전체 티커의 지난 20일 데이터를 확실하게 가져옵니다.
+    df_vol = pd.DataFrame(supabase.table("stock_prices")
+                          .select("ticker, volume, price_date")
+                          .in_("ticker", ticker_list)
+                          .order("price_date", desc=True)
+                          .limit(5000)
+                          .execute().data)
+
+    df_vol['volume'] = pd.to_numeric(df_vol['volume'], errors='coerce')
+    
+    # 각 티커별 거래량 매칭을 위해 계산
+    vol_ratios = {}
     for ticker in ticker_list:
-        ticker_vol = df_vol[df_vol['ticker'] == ticker].sort_values('price_date')
-        if not ticker_vol.empty:
-            ma20 = ticker_vol['volume'].rolling(window=20, min_periods=5).mean().iloc[-1]
-            today_v = ticker_vol[ticker_vol['price_date'] == target_date_str]['volume']
-            if not today_v.empty and ma20 > 0:
-                df_merged.loc[df_merged['ticker'] == ticker, 'vol_ratio'] = today_v.values[0] / ma20
+        sub = df_vol[df_vol['ticker'] == ticker].sort_values('price_date')
+        if len(sub) >= 5:
+            # 20일 이동평균 (데이터가 부족하면 있는 것만 사용)
+            ma20 = sub['volume'].rolling(window=20, min_periods=5).mean().iloc[-1]
+            # 당일 거래량 (target_date_str이 정확히 매칭되도록 처리)
+            today_data = sub[sub['price_date'] == target_date_str]
+            if not today_data.empty and ma20 > 0:
+                vol_ratios[ticker] = today_data['volume'].values[0] / ma20
+            else:
+                vol_ratios[ticker] = 0.0
+        else:
+            vol_ratios[ticker] = 0.0
+            
+    # 결과를 데이터프레임에 매핑
+    df_merged['vol_ratio'] = df_merged['ticker'].map(vol_ratios).fillna(0.0)
 
     # 종목명 병합 및 최종 정리
     df_stocks = pd.DataFrame(supabase.table("stocks").select("ticker, name").execute().data)
