@@ -104,16 +104,26 @@ if df_display is not None:
         no4 = df_display[(df_display['순위'] <= 100) & (df_display['RS'] >= 0.4) & (df_display['vol_ratio'] >= 2.0)]
         st.dataframe(no4[['순위', '종목명', 'RS', 'vol_ratio', '종가']].style.apply(apply_styles, axis=None).format({'RS': '{:.2f}', 'vol_ratio': '{:.2f}배', '종가': '{:,.0f}'}), hide_index=True, use_container_width=True)
 
-    # 4. 상세 차트
+    # 4. 상세 차트 (수정된 부분)
     if 'event' in locals() and event.selection and event.selection["rows"]:
         selected_index = event.selection["rows"][0]
         ticker = df_to_show.iloc[selected_index]['ticker']
-        with st.popover(f"📊 상세 분석", use_container_width=True):
+        selected_name = df_to_show.iloc[selected_index]['종목명'] # 종목명 추가
+        
+        with st.popover(f"📊 {selected_name} 상세 분석", use_container_width=True):
             history_df = pd.DataFrame(supabase.table("daily_analysis").select("price_date, momentum_rank, rs_score").eq("ticker", ticker).eq("market", market_type).order("price_date", desc=True).limit(20).execute().data).sort_values("price_date")
             price_df = pd.DataFrame(supabase.table("stock_prices").select("price_date, close_price").eq("ticker", ticker).order("price_date", desc=True).limit(20).execute().data).sort_values("price_date")
             combined = pd.merge(history_df, price_df, on="price_date")
-            fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.6, 0.4])
+            
+            # 그래프 제목 표시 및 레이아웃 설정
+            fig = make_subplots(rows=2, cols=1, shared_xaxes=True, 
+                                subplot_titles=("주가 추이 (Close Price)", "모멘텀 순위 (Momentum Rank)"),
+                                row_heights=[0.6, 0.4])
+            
             fig.add_trace(px.line(combined, x='price_date', y='close_price').data[0], row=1, col=1)
             fig.add_trace(px.line(combined, x='price_date', y='momentum_rank').data[0], row=2, col=1)
-            fig.update_yaxes(autorange="reversed", row=2, col=1)
+            
+            fig.update_yaxes(autorange="reversed", row=2, col=1) # 모멘텀 순위는 낮을수록 좋으므로 역전
+            fig.update_layout(height=500, showlegend=False)
+            
             st.plotly_chart(fig, use_container_width=True)
