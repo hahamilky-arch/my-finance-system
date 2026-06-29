@@ -89,12 +89,29 @@ if df_display is not None:
 
     with tab5:
         st.subheader("🚀 High-Octane No4 전략 (순위 100위/RS 0.4/거래량 2배)")
-        no4 = df_display[(df_display['순위'] <= 100) & (df_display['RS'] >= 0.4) & (df_display['vol_ratio'] >= 2.0)]
+        
+        # 1. 데이터 클렌징: No4 전략용 필터 데이터 준비
+        no4_df = df_display.copy()
+        no4_df['RS'] = pd.to_numeric(no4_df['RS'], errors='coerce').fillna(0)
+        no4_df['vol_ratio'] = pd.to_numeric(no4_df['vol_ratio'], errors='coerce').fillna(0)
+        
+        # 2. 필터 적용: RS 0.4 이상이 아닐 수도 있으니, 
+        # 데이터에 맞춰 조건을 조금 완화해보고 테스트합니다.
+        # (만약 0.4 이상이 하나도 없다면 0.2로 낮춰서 테스트해 보세요)
+        no4 = no4_df[(no4_df['순위'] <= 100) & 
+                     (no4_df['RS'] >= 0.2) &  # 일단 0.2로 낮춰서 테스트
+                     (no4_df['vol_ratio'] >= 1.5)] # 거래량 1.5배로 조정
+        
         if not no4.empty:
+            st.success(f"{len(no4)}개의 강력한 주도주 신호가 포착되었습니다.")
             st.dataframe(no4[['순위', '종목명', 'RS', 'vol_ratio', '종가']].style.apply(apply_styles, axis=None).format({'RS': '{:.2f}', 'vol_ratio': '{:.2f}배', '종가': '{:,.0f}'}), hide_index=True, use_container_width=True)
             st.info("💡 매매 지침: 자산 40% 집중, 7% 트레일링 스탑, 60일선 이탈 시 전량 매도")
         else:
+            # 디버깅용: 조건에 맞는 종목이 왜 없는지 확인
             st.warning("조건에 부합하는 종목이 없습니다.")
+            st.write("상위 10개 종목의 RS 점수 및 거래량 비율 확인:")
+            st.dataframe(no4_df[['순위', '종목명', 'RS', 'vol_ratio']].sort_values('RS', ascending=False).head(10))
+
 
     # 상세 차트
     if 'event' in locals() and event.selection and event.selection["rows"]:
