@@ -1,8 +1,6 @@
 import streamlit as st
 import pandas as pd
 from supabase import create_client
-import plotly.express as px
-from plotly.subplots import make_subplots
 
 # Supabase 연결
 supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
@@ -44,27 +42,23 @@ def get_data(target_date, market_type):
     df_merged = pd.merge(df_current, df_prev, on="ticker", how="left", suffixes=('', '_prev'))
     df_merged['rank_change'] = df_merged['momentum_rank_prev'].fillna(999) - df_merged['momentum_rank']
     
-    # 거래량 계산 (in_ 메서드 정확히 사용)
+    # 거래량 계산
     ticker_list = list(df_merged['ticker'].unique())
-    df_vol = pd.DataFrame()
-    if ticker_list:
-        df_vol = pd.DataFrame(supabase.table("stock_prices")
-                              .select("ticker, volume, price_date")
-                              .in_("ticker", ticker_list) # 여기서 in_ 사용
-                              .execute().data)
-    
     df_merged['vol_ratio'] = 0.0
-    if not df_vol.empty:
-        df_vol['volume'] = pd.to_numeric(df_vol['volume'], errors='coerce')
-        df_vol['date_str'] = df_vol['price_date'].astype(str).str[:10]
-        
-        for ticker in ticker_list:
-            sub = df_vol[df_vol['ticker'] == ticker].sort_values('date_str')
-            if len(sub) >= 5:
-                ma20 = sub['volume'].rolling(window=20, min_periods=5).mean().iloc[-1]
-                today_v = sub[sub['date_str'] == target_date_str]
-                if not today_v.empty and ma20 > 0:
-                    df_merged.loc[df_merged['ticker'] == ticker, 'vol_ratio'] = today_v['volume'].values[0] / ma20
+    
+    if ticker_list:
+        df_vol = pd.DataFrame(supabase.table("stock_prices").select("ticker, volume, price_date").in_("ticker", ticker_list).execute().data)
+        if not df_vol.empty:
+            df_vol['volume'] = pd.to_numeric(df_vol['volume'], errors='coerce')
+            df_vol['date_str'] = df_vol['price_date'].astype(str).str[:10]
+            
+            for ticker in ticker_list:
+                sub = df_vol[df_vol['ticker'] == ticker].sort_values('date_str')
+                if len(sub) >= 5:
+                    ma20 = sub['volume'].rolling(window=20, min_periods=5).mean().iloc[-1]
+                    today_v = sub[sub['date_str'] == target_date_str]
+                    if not today_v.empty and ma20 > 0:
+                        df_merged.loc[df_merged['ticker'] == ticker, 'vol_ratio'] = today_v['volume'].values[0] / ma20
 
     # 종목명 병합 및 최종 정리
     df_stocks = pd.DataFrame(supabase.table("stocks").select("ticker, name").execute().data)
@@ -90,7 +84,12 @@ if df_display is not None:
 
     with tab1:
         st.dataframe(df_display.head(100).style.apply(apply_styles, axis=None).format({'MOT': '{:.2f}', 'RS': '{:.2f}', '종가': '{:,.0f}', 'rank_change': '{:+.0f}'}), hide_index=True, use_container_width=True)
-
+    with tab2:
+        st.dataframe(df_display[df_display['is_new_top30'] == True][['순위', 'rank_change', '종목명', 'MOT', 'RS', '종가']].style.apply(apply_styles, axis=None).format({'MOT': '{:.2f}', 'RS': '{:.2f}', '종가': '{:,.0f}', 'rank_change': '{:+.0f}'}), hide_index=True, use_container_width=True)
+    with tab3:
+        st.dataframe(df_display[(df_display['순위'] >= 70) & (df_display['순위'] <= 100) & (df_display['rank_change'] >= 20)][['순위', 'rank_change', '종목명', '종가']].style.apply(apply_styles, axis=None).format({'rank_change': '{:+.0f}', '종가': '{:,.0f}'}), hide_index=True, use_container_width=True)
+    with tab4:
+        st.dataframe(df_display[(df_display['순위'] <= 50) & (df_display['rank_change'] >= 20) & (df_display['vol_ratio'] >= 1.5)][['순위', 'rank_change', '종목명', 'vol_ratio', 'MOT', 'RS', '종가']].style.apply(apply_styles, axis=None).format({'MOT': '{:.2f}', 'RS': '{:.2f}', '종가': '{:,.0f}', 'rank_change': '{:+.0f}', 'vol_ratio': '{:.2f}배'}), hide_index=True, use_container_width=True)
     with tab5:
         st.subheader("🚀 High-Octane No4 전략 (순위 100위/RS 0.4/거래량 2배)")
         no4 = df_display[(df_display['순위'] <= 100) & (df_display['RS'] >= 0.4) & (df_display['vol_ratio'] >= 2.0)]
