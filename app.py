@@ -25,12 +25,13 @@ def get_available_dates():
     return [item['price_date'] for item in response.data]
 
 def get_data(target_date, all_dates, market_type):
-    if target_date not in all_dates: return None
+    target_date_str = str(target_date)
+    if target_date_str not in all_dates: return None
         
-    target_idx = all_dates.index(target_date)
-    previous_date = all_dates[target_idx + 1] if target_idx + 1 < len(all_dates) else target_date
+    target_idx = all_dates.index(target_date_str)
+    previous_date = all_dates[target_idx + 1] if target_idx + 1 < len(all_dates) else target_date_str
     
-    df_current = pd.DataFrame(supabase.table("daily_analysis").select("ticker, momentum_rank, weighted_momentum, rs_score, close_price").eq("price_date", target_date).eq("market", market_type).order("momentum_rank").execute().data)
+    df_current = pd.DataFrame(supabase.table("daily_analysis").select("ticker, momentum_rank, weighted_momentum, rs_score, close_price").eq("price_date", target_date_str).eq("market", market_type).order("momentum_rank").execute().data)
     if df_current.empty: return None
     
     df_prev = pd.DataFrame(supabase.table("daily_analysis").select("ticker, momentum_rank").eq("price_date", previous_date).eq("market", market_type).execute().data)
@@ -45,20 +46,21 @@ def get_data(target_date, all_dates, market_type):
     df_merged['is_buy_signal'] = (df_merged['momentum_rank'] >= 70) & (df_merged['momentum_rank'] <= 100) & (df_merged['rank_change'] >= 20) & (df_merged['rank_change'] <= 25)
 
     ticker_list = list(df_merged['ticker'].unique())
-    df_vol = pd.DataFrame(supabase.table("stock_prices").select("ticker, volume, price_date").in_("ticker", ticker_list).execute().data)
     df_merged['vol_ratio'] = 0.0
     
-    if not df_vol.empty:
-        df_vol['volume'] = pd.to_numeric(df_vol['volume'], errors='coerce')
-        df_vol['dt'] = pd.to_datetime(df_vol['price_date'])
-        target_dt = pd.to_datetime(target_date)
-        for ticker in ticker_list:
-            sub = df_vol[df_vol['ticker'] == ticker].sort_values('dt')
-            if len(sub) >= 5:
-                ma20 = sub['volume'].rolling(window=20, min_periods=5).mean().iloc[-1]
-                today_v = sub[sub['dt'] == target_dt]['volume']
-                if not today_v.empty and ma20 > 0:
-                    df_merged.loc[df_merged['ticker'] == ticker, 'vol_ratio'] = today_v.values[0] / ma20
+    if ticker_list:
+        df_vol = pd.DataFrame(supabase.table("stock_prices").select("ticker, volume, price_date").in_("ticker", ticker_list).execute().data)
+        if not df_vol.empty:
+            df_vol['volume'] = pd.to_numeric(df_vol['volume'], errors='coerce')
+            df_vol['dt'] = pd.to_datetime(df_vol['price_date'])
+            target_dt = pd.to_datetime(target_date_str)
+            for ticker in ticker_list:
+                sub = df_vol[df_vol['ticker'] == ticker].sort_values('dt')
+                if len(sub) >= 5:
+                    ma20 = sub['volume'].rolling(window=20, min_periods=5).mean().iloc[-1]
+                    today_v = sub[sub['dt'] == target_dt]['volume']
+                    if not today_v.empty and ma20 > 0:
+                        df_merged.loc[df_merged['ticker'] == ticker, 'vol_ratio'] = today_v.values[0] / ma20
 
     df_stocks = pd.DataFrame(supabase.table("stocks").select("ticker, name").execute().data)
     df_final = pd.merge(df_merged, df_stocks, on="ticker", how="left")
@@ -75,13 +77,13 @@ st.markdown('<p style="font-size:24px; font-weight:bold;">📈 모멘텀 분석 
 with st.sidebar:
     market_type = st.radio("시장 선택", ["KR", "US"], horizontal=True)
     all_dates = get_available_dates()
-    selected_date = st.selectbox("기준일 선택", options=all_dates)
-    if st.button("새로고침"): st.rerun()
+    # 달력에서 날짜 선택
+    selected_date = st.date_input("분석 기준일 선택", value=pd.to_datetime(all_dates[0]) if all_dates else None)
+    if st.button("데이터 새로고침"): st.rerun()
 
 df_display = get_data(selected_date, all_dates, market_type)
 
 if df_display is not None:
-    # 컬럼 순서 통일
     col_order = ['순위', 'rank_change', '종목명', 'MOT', 'RS', '종가']
     tab1, tab2, tab3, tab4 = st.tabs(["전체 보기", "신규 진입주", "매수 전략 시그널", "🚀 No4: High-Octane"])
 
