@@ -4,10 +4,11 @@ from supabase import create_client
 import plotly.express as px
 from plotly.subplots import make_subplots
 
-# Supabase 연결
+# Supabase 연결 설정
+# st.secrets에 SUPABASE_URL, SUPABASE_KEY가 설정되어 있어야 합니다.
 supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
 
-# 1. 스타일 함수: 순위 변화 색상 및 신규 진입 하이라이트
+# 1. 스타일 함수: 순위 변화(빨강/파랑) 및 신규 진입(배경색)
 def apply_styles(df):
     df_styles = pd.DataFrame('', index=df.index, columns=df.columns)
     
@@ -23,60 +24,58 @@ def apply_styles(df):
         
     return df_styles
 
-# 2. 날짜 리스트 및 데이터 조회 함수
+# 2. 데이터 조회 함수
 def get_available_dates():
     response = supabase.rpc("get_all_dates").execute()
-    if not response.data:
-        return []
-    return [item['price_date'] for item in response.data]
+    return [item['price_date'] for item in response.data] if response.data else []
 
 def get_data(target_date, all_dates, market_type):
-    if target_date not in all_dates:
-        return None
-        
+    if target_date not in all_dates: return None
     target_idx = all_dates.index(target_date)
     previous_date = all_dates[target_idx + 1] if target_idx + 1 < len(all_dates) else target_date
     
-    # 데이터 로드
+    # daily_analysis 데이터 로드
     df_current = pd.DataFrame(supabase.table("daily_analysis")
                                 .select("ticker, momentum_rank, weighted_momentum, rs_score, close_price")
-                                .eq("price_date", target_date)
-                                .eq("market", market_type)
-                                .order("momentum_rank")
-                                .execute().data)
+                                .eq("price_date", target_date).eq("market", market_type).order("momentum_rank").execute().data)
+    if df_current.empty: return None
     
-    if df_current.empty:
-        return None
-
     df_prev = pd.DataFrame(supabase.table("daily_analysis")
                             .select("ticker, momentum_rank")
-                            .eq("price_date", previous_date)
-                            .eq("market", market_type)
-                            .execute().data)
+                            .eq("price_date", previous_date).eq("market", market_type).execute().data)
     
+    # 데이터 전처리
     df_current['momentum_rank'] = pd.to_numeric(df_current['momentum_rank'])
     df_current['close_price'] = pd.to_numeric(df_current['close_price'])
-    df_prev['momentum_rank'] = pd.to_numeric(df_prev['momentum_rank'])
-    
-    # 병합 및 로직 계산
     df_merged = pd.merge(df_current, df_prev, on="ticker", how="left", suffixes=('', '_prev'))
-    df_merged['momentum_rank_prev'] = df_merged['momentum_rank_prev'].fillna(999)
-    df_merged['rank_change'] = df_merged['momentum_rank_prev'] - df_merged['momentum_rank']
-    df_merged['is_new_top30'] = (df_merged['momentum_rank'] <= 30) & (df_merged['momentum_rank_prev'] > 30)
-    df_merged['is_buy_signal'] = (df_merged['momentum_rank'] >= 70) & (df_merged['momentum_rank'] <= 100) & (df_merged['rank_change'] >= 20) & (df_merged['rank_change'] <= 25)
-
+    df_merged['rank_change'] = df_merged['momentum_rank_prev'].fillna(999) - df_merged['momentum_rank']
+    
+    # 거래량(volume) 데이터 로드 및 vol_ratio 계산
+    df_vol = pd.DataFrame(supabase.table("stock_prices")
+                          .select("ticker, volume, price_date")
+                          .in_("ticker", df_merged['ticker'].tolist())
+                          .order("price_date", desc=True)
+                          .limit(400).execute().data)
+    
+    if not df_vol.empty:
+        df_vol['volume'] = pd.to_numeric(df_vol['volume'])
+        avg_vol = df_vol.groupby('ticker')['volume'].rolling(window=20).mean().reset_index(level=0, drop=True)
+        df_today_vol = df_vol[df_vol['price_date'] == target_date].set_index('ticker')
+        df_vol_ratio = pd.DataFrame({'vol_ratio': df_today_vol['volume'] / avg_vol.loc[df_today_vol.index]})
+        df_merged = df_merged.merge(df_vol_ratio, on='ticker', how='left')
+    
+    # 종목명 병합
     df_stocks = pd.DataFrame(supabase.table("stocks").select("ticker, name").execute().data)
     df_final = pd.merge(df_merged, df_stocks, on="ticker", how="left")
     
+    # 최종 컬럼 정리
     df_final = df_final.rename(columns={'momentum_rank': '순위', 'name': '종목명', 'weighted_momentum': 'MOT', 'rs_score': 'RS', 'close_price': '종가'})
-    df_final['MOT'] = pd.to_numeric(df_final['MOT'], errors='coerce').fillna(0.0)
-    df_final['RS'] = pd.to_numeric(df_final['RS'], errors='coerce').fillna(0.0)
-    
+    df_final['is_new_top30'] = (df_final['순위'] <= 30) & (df_final['momentum_rank_prev'] > 30)
     return df_final
 
-# 3. 메인 UI
+# 3. 메인 UI 구성
 st.set_page_config(layout="wide")
-st.markdown('<p style="font-size:24px; font-weight:bold;">📈 모멘텀 분석</p>', unsafe_allow_html=True)
+st.markdown('<p style="font-size:24px; font-weight:bold;">📈 모멘텀 분석 (No3 전략 적용)</p>', unsafe_allow_html=True)
 
 with st.sidebar:
     market_type = st.radio("시장 선택", ["KR", "US"], horizontal=True)
@@ -84,52 +83,36 @@ with st.sidebar:
     selected_date = st.selectbox("기준일 선택", options=all_dates)
     if st.button("새로고침"): st.rerun()
 
-# 데이터 로드
 df_display = get_data(selected_date, all_dates, market_type)
 
 if df_display is None:
-    st.warning(f"선택하신 날짜({selected_date})에 대한 분석 데이터가 존재하지 않습니다.")
+    st.warning("데이터를 불러올 수 없습니다.")
 else:
     # 4. 탭 구성
-    tab1, tab2, tab3 = st.tabs(["전체 보기 (TOP 100)", "신규 진입주 (TOP 30)", "매수 전략 시그널"])
+    tab1, tab2, tab3, tab4 = st.tabs(["전체 보기 (TOP 100)", "신규 진입주 (TOP 30)", "매수 시그널", "🚀 전략 No3"])
 
     with tab1:
-        use_filter = st.checkbox("주도주 필터 적용 (RS > 0.03 & 순위 20위 내)")
-        # 100위까지만 제한
         df_to_show = df_display.head(100).copy()
-        if use_filter:
-            df_to_show = df_to_show[(df_to_show['RS'] > 0.03) & (df_to_show['순위'] <= 20)]
-        
-        display_cols = ['순위', 'rank_change', '종목명', 'MOT', 'RS', '종가']
-        
-        event = st.dataframe(
-            df_to_show.style.apply(apply_styles, axis=None).format(
-                {'MOT': '{:.2f}', 'RS': '{:.2f}', '종가': '{:,.0f}', 'rank_change': '{:+.0f}'}
-            ),
-            hide_index=True, 
-            column_order=display_cols, 
-            selection_mode="single-row", 
-            on_select="rerun",
-            use_container_width=True
-        )
+        event = st.dataframe(df_to_show.style.apply(apply_styles, axis=None).format({'MOT': '{:.2f}', 'RS': '{:.2f}', '종가': '{:,.0f}', 'rank_change': '{:+.0f}'}), 
+                     hide_index=True, column_order=['순위', 'rank_change', '종목명', 'MOT', 'RS', '종가'], selection_mode="single-row", on_select="rerun", use_container_width=True)
 
     with tab2:
         df_new = df_display[df_display['is_new_top30'] == True].copy()
-        if not df_new.empty:
-            st.dataframe(
-                df_new[['순위', 'rank_change', '종목명', 'MOT', 'RS', '종가']].style.apply(apply_styles, axis=None).format({'MOT': '{:.2f}', 'RS': '{:.2f}', '종가': '{:,.0f}', 'rank_change': '{:+.0f}'}), 
-                hide_index=True, use_container_width=True
-            )
-        else:
-            st.info("오늘 신규 진입한 종목이 없습니다.")
+        st.dataframe(df_new[['순위', 'rank_change', '종목명', 'MOT', 'RS', '종가']].style.apply(apply_styles, axis=None).format({'MOT': '{:.2f}', 'RS': '{:.2f}', '종가': '{:,.0f}', 'rank_change': '{:+.0f}'}), 
+                     hide_index=True, use_container_width=True)
 
     with tab3:
-        st.subheader("Backtest No2.")
-        buy_signals = df_display[df_display['is_buy_signal'] == True]
-        if not buy_signals.empty:
-            st.dataframe(buy_signals[['종목명', '순위', 'rank_change', '종가']].style.apply(apply_styles, axis=None).format({'rank_change': '{:+.0f}', '종가': '{:,.0f}'}), hide_index=True, use_container_width=True)
+        buy_signals = df_display[(df_display['순위'] >= 70) & (df_display['순위'] <= 100) & (df_display['rank_change'] >= 20)]
+        st.dataframe(buy_signals[['순위', 'rank_change', '종목명', '종가']].style.apply(apply_styles, axis=None).format({'rank_change': '{:+.0f}', '종가': '{:,.0f}'}), hide_index=True, use_container_width=True)
+
+    with tab4:
+        st.subheader("전략 No3: 주도주 에너지 폭발 포착")
+        no3 = df_display[(df_display['순위'] <= 50) & (df_display['rank_change'] >= 20) & (df_display['vol_ratio'] >= 1.5)].copy()
+        if not no3.empty:
+            st.dataframe(no3[['순위', 'rank_change', '종목명', 'vol_ratio', 'MOT', 'RS', '종가']].style.apply(apply_styles, axis=None).format({'MOT': '{:.2f}', 'RS': '{:.2f}', '종가': '{:,.0f}', 'rank_change': '{:+.0f}', 'vol_ratio': '{:.2f}배'}), 
+                         hide_index=True, use_container_width=True)
         else:
-            st.info("조건에 맞는 종목이 없습니다.")
+            st.info("현재 No3 전략(상위 50위+순위급등+거래량1.5배)에 부합하는 종목이 없습니다.")
 
     # 5. 상세 차트
     if 'event' in locals() and event.selection and event.selection["rows"]:
@@ -140,7 +123,6 @@ else:
         with st.popover(f"📊 {selected_name} 상세 분석", use_container_width=True):
             history_df = pd.DataFrame(supabase.table("daily_analysis").select("price_date, momentum_rank, rs_score").eq("ticker", selected_ticker).eq("market", market_type).order("price_date", desc=True).limit(20).execute().data).sort_values("price_date")
             price_df = pd.DataFrame(supabase.table("stock_prices").select("price_date, close_price").eq("ticker", selected_ticker).order("price_date", desc=True).limit(20).execute().data).sort_values("price_date")
-            
             combined_df = pd.merge(history_df, price_df, on="price_date")
             fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.1, subplot_titles=("주가 추이", "모멘텀 순위"), row_heights=[0.6, 0.4])
             fig.add_trace(px.line(combined_df, x='price_date', y='close_price').data[0], row=1, col=1)
