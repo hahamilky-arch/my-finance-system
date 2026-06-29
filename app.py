@@ -42,23 +42,26 @@ def get_data(target_date, market_type):
     df_merged = pd.merge(df_current, df_prev, on="ticker", how="left", suffixes=('', '_prev'))
     df_merged['rank_change'] = df_merged['momentum_rank_prev'].fillna(999) - df_merged['momentum_rank']
     
-    # 거래량 계산
+    # 거래량 계산 (날짜 매칭 오류 해결)
     ticker_list = list(df_merged['ticker'].unique())
     df_merged['vol_ratio'] = 0.0
     
     if ticker_list:
         df_vol = pd.DataFrame(supabase.table("stock_prices").select("ticker, volume, price_date").in_("ticker", ticker_list).execute().data)
+        
         if not df_vol.empty:
             df_vol['volume'] = pd.to_numeric(df_vol['volume'], errors='coerce')
-            df_vol['date_str'] = df_vol['price_date'].astype(str).str[:10]
+            # 날짜를 datetime 객체로 변환하여 매칭
+            df_vol['dt'] = pd.to_datetime(df_vol['price_date'])
+            target_dt = pd.to_datetime(target_date_str)
             
             for ticker in ticker_list:
-                sub = df_vol[df_vol['ticker'] == ticker].sort_values('date_str')
+                sub = df_vol[df_vol['ticker'] == ticker].sort_values('dt')
                 if len(sub) >= 5:
                     ma20 = sub['volume'].rolling(window=20, min_periods=5).mean().iloc[-1]
-                    today_v = sub[sub['date_str'] == target_date_str]
+                    today_v = sub[sub['dt'] == target_dt]['volume']
                     if not today_v.empty and ma20 > 0:
-                        df_merged.loc[df_merged['ticker'] == ticker, 'vol_ratio'] = today_v['volume'].values[0] / ma20
+                        df_merged.loc[df_merged['ticker'] == ticker, 'vol_ratio'] = today_v.values[0] / ma20
 
     # 종목명 병합 및 최종 정리
     df_stocks = pd.DataFrame(supabase.table("stocks").select("ticker, name").execute().data)
