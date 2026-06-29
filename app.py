@@ -45,7 +45,17 @@ def get_data(target_date, market_type):
     df_merged['rank_change'] = df_merged['momentum_rank_prev'].fillna(999) - df_merged['momentum_rank']
     
     # 거래량 계산 (핵심: 날짜 형식 통일)
-    ticker_list = list(df_merged['ticker'].unique())
+    ##ticker_list = list(df_merged['ticker'].unique())
+    # 리스트가 비어있지 않을 때만 쿼리 실행
+    if ticker_list:
+        # ticker_list를 명확하게 리스트로 변환하여 전달
+        df_vol = pd.DataFrame(supabase.table("stock_prices")
+                              .select("ticker, volume, price_date")
+                              .in_("ticker", ticker_list)
+                              .execute().data)
+    else:
+        df_vol = pd.DataFrame()
+        
     df_vol = pd.DataFrame(supabase.table("stock_prices").select("ticker, volume, price_date").in("ticker", ticker_list).execute().data)
     
     if not df_vol.empty:
