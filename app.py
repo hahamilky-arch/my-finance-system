@@ -7,12 +7,20 @@ from plotly.subplots import make_subplots
 # Supabase 연결
 supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
 
-# 1. 스타일 함수
-def highlight_new(df):
+# 1. 스타일 함수: 순위 변화 색상 및 신규 진입 하이라이트
+def apply_styles(df):
     df_styles = pd.DataFrame('', index=df.index, columns=df.columns)
+    
+    # 신규 진입 하이라이트
     if 'is_new_top30' in df.columns:
         mask = df['is_new_top30']
         df_styles.loc[mask, :] = 'background-color: #ffcccc'
+        
+    # 순위 변화 색상 (상승: 빨강, 하락: 파랑)
+    if 'rank_change' in df.columns:
+        df_styles.loc[df['rank_change'] > 0, 'rank_change'] = 'color: red'
+        df_styles.loc[df['rank_change'] < 0, 'rank_change'] = 'color: blue'
+        
     return df_styles
 
 # 2. 날짜 리스트 및 데이터 조회 함수
@@ -83,26 +91,33 @@ if df_display is None:
     st.warning(f"선택하신 날짜({selected_date})에 대한 분석 데이터가 존재하지 않습니다.")
 else:
     # 4. 탭 구성
-    tab1, tab2, tab3 = st.tabs(["전체 보기 (TOP 50)", "신규 진입주 (TOP 30)", "매수 전략 시그널"])
+    tab1, tab2, tab3 = st.tabs(["전체 보기 (TOP 100)", "신규 진입주 (TOP 30)", "매수 전략 시그널"])
 
     with tab1:
         use_filter = st.checkbox("주도주 필터 적용 (RS > 0.03 & 순위 20위 내)")
-        df_to_show = df_display.copy()
+        # 100위까지만 제한
+        df_to_show = df_display.head(100).copy()
         if use_filter:
             df_to_show = df_to_show[(df_to_show['RS'] > 0.03) & (df_to_show['순위'] <= 20)]
         
-        # Tab1: 컬럼 order에 '종가' 추가
+        display_cols = ['순위', 'rank_change', '종목명', 'MOT', 'RS', '종가']
+        
         event = st.dataframe(
-            df_to_show.style.apply(highlight_new, axis=None).format({'MOT': '{:.2f}', 'RS': '{:.2f}', '종가': '{:,.0f}'}),
-            hide_index=True, column_order=['순위', '종목명', 'MOT', 'RS', '종가'], selection_mode="single-row", on_select="rerun"
+            df_to_show.style.apply(apply_styles, axis=None).format(
+                {'MOT': '{:.2f}', 'RS': '{:.2f}', '종가': '{:,.0f}', 'rank_change': '{:+.0f}'}
+            ),
+            hide_index=True, 
+            column_order=display_cols, 
+            selection_mode="single-row", 
+            on_select="rerun",
+            use_container_width=True
         )
 
     with tab2:
         df_new = df_display[df_display['is_new_top30'] == True].copy()
         if not df_new.empty:
-            # Tab2: 보기 좋게 컬럼 정리
             st.dataframe(
-                df_new[['순위', '종목명', 'MOT', 'RS', '종가']].style.format({'MOT': '{:.2f}', 'RS': '{:.2f}', '종가': '{:,.0f}'}), 
+                df_new[['순위', 'rank_change', '종목명', 'MOT', 'RS', '종가']].style.apply(apply_styles, axis=None).format({'MOT': '{:.2f}', 'RS': '{:.2f}', '종가': '{:,.0f}', 'rank_change': '{:+.0f}'}), 
                 hide_index=True, use_container_width=True
             )
         else:
@@ -112,7 +127,7 @@ else:
         st.subheader("Backtest No2.")
         buy_signals = df_display[df_display['is_buy_signal'] == True]
         if not buy_signals.empty:
-            st.dataframe(buy_signals[['종목명', '순위', 'rank_change', '종가']], hide_index=True, use_container_width=True)
+            st.dataframe(buy_signals[['종목명', '순위', 'rank_change', '종가']].style.apply(apply_styles, axis=None).format({'rank_change': '{:+.0f}', '종가': '{:,.0f}'}), hide_index=True, use_container_width=True)
         else:
             st.info("조건에 맞는 종목이 없습니다.")
 
