@@ -92,12 +92,30 @@ if df_display is not None:
 
     with tab5:
         st.subheader("🚀 High-Octane No4 전략 (순위 100위/RS 0.4/거래량 2배)")
-        no4 = df_display[(df_display['순위'] <= 100) & (df_display['RS'] >= 0.4) & (df_display['vol_ratio'] >= 2.0)]
+        
+        # 필터링 전 데이터 상태 확인
+        st.write(f"현재 로드된 데이터 개수: {len(df_display)}개")
+        
+        # 필터링 조건
+        no4 = df_display[(df_display['순위'] <= 100) & 
+                         (df_display['RS'] >= 0.4) & 
+                         (df_display['vol_ratio'] >= 2.0)]
+        
         if not no4.empty:
-            st.dataframe(no4[['순위', '종목명', 'RS', 'vol_ratio', '종가']].style.apply(apply_styles, axis=None).format({'RS': '{:.2f}', 'vol_ratio': '{:.2f}배', '종가': '{:,.0f}'}), hide_index=True, use_container_width=True)
-            st.info("💡 매매 지침: 자산 40% 집중, 7% 트레일링 스탑, 60일선 이탈 시 전량 매도")
+            st.success(f"{len(no4)}개의 강력한 주도주 신호가 포착되었습니다.")
+            st.dataframe(no4[['순위', '종목명', 'RS', 'vol_ratio', '종가']], use_container_width=True)
         else:
             st.warning("조건에 부합하는 종목이 없습니다.")
+            # 디버깅: 조건별로 몇 개씩 걸러지는지 확인
+            st.write("--- 필터링 디버깅 ---")
+            st.write(f"순위 100위 이내: {len(df_display[df_display['순위'] <= 100])}개")
+            st.write(f"RS 0.4 이상: {len(df_display[df_display['RS'] >= 0.4])}개")
+            st.write(f"vol_ratio 2.0 이상: {len(df_display[df_display['vol_ratio'] >= 2.0])}개")
+            
+            # 상위 10개 종목의 실제 값 출력
+            st.write("상위 10개 종목 값:")
+            st.dataframe(df_display[['순위', '종목명', 'RS', 'vol_ratio']].sort_values('RS', ascending=False).head(10))
+
 
     # 상세 차트 (이벤트 발생 시)
     if 'event' in locals() and event.selection and event.selection["rows"]:
