@@ -45,11 +45,6 @@ def get_data(target_date, market_type):
     # 거래량 계산 (종목별 루프 방식: 가장 확실함)
     ticker_list = list(df_merged['ticker'].unique())
     
-    # --- 여기서 삽입하세요 ---
-    st.write("데이터베이스 내 날짜 형식 확인:")
-    st.write(df_vol['price_date'].unique()) 
-    # -----------------------
-
     # 전체 티커의 지난 20일 데이터를 확실하게 가져옵니다.
     df_vol = pd.DataFrame(supabase.table("stock_prices")
                           .select("ticker, volume, price_date")
@@ -59,6 +54,11 @@ def get_data(target_date, market_type):
                           .execute().data)
 
     df_vol['volume'] = pd.to_numeric(df_vol['volume'], errors='coerce')
+    
+    # --- 여기서 삽입하세요 ---
+    st.write("데이터베이스 내 날짜 형식 확인:")
+    st.write(df_vol['price_date'].unique()) 
+    # -----------------------
     
     # 각 티커별 거래량 매칭을 위해 계산
     vol_ratios = {}
