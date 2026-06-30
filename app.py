@@ -125,7 +125,7 @@ with st.sidebar:
 col1, col2 = st.columns([4, 1]) # Column layout: Left 4/5 for title, Right 1/5 for date
 with col1:
     # Use st.header or a smaller custom markdown header for a refined title.
-    st.header("📈 모멘텀 분석") # Replaces st.markdown('<p style="font-size:24px; font-weight:bold;">...</p>')
+    st.header("📈 모멘텀 분석") # Replaces st.markdown('<p style="font-size:14px; font-weight:bold;">...</p>')
 with col2:
     # Title-aligned compact date display
     st.markdown("<br>", unsafe_allow_html=True) # Minor adjustment for alignment
