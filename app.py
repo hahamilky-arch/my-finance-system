@@ -117,7 +117,7 @@ with st.sidebar:
     if st.button("데이터 새로고침"):
         st.rerun()
         
-    st.caption("App Version: 1.1.5")
+    st.caption("App Version: 1.1.6")
 
 
 # Main Page Header Section
