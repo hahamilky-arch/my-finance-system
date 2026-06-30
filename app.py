@@ -83,6 +83,13 @@ def get_data(target_date, all_dates, market_type):
 st.set_page_config(layout="wide")
 # st.markdown('<p style="font-size:24px; font-weight:bold;">📈 모멘텀 분석 대시보드</p>', unsafe_allow_html=True)
 
+with st.sidebar:
+    market_type = st.radio("시장 선택", ["KR", "US"], horizontal=True)
+    all_dates = get_available_dates()
+    # 달력에서 날짜 선택
+    selected_date = st.date_input("분석 기준일 선택", value=pd.to_datetime(all_dates[0]) if all_dates else None)
+    if st.button("데이터 새로고침"): st.rerun()
+
 # 컬럼을 나누어 타이틀과 날짜를 같은 줄에 배치
 col1, col2 = st.columns([4, 1]) 
 with col1:
@@ -91,13 +98,6 @@ with col2:
     # 타이틀 옆에 작게 날짜 표시 (caption 사용)
     st.markdown("<br>", unsafe_allow_html=True) # 줄 맞춤용 공백
     st.caption(f"기준일: {selected_date}")
-
-with st.sidebar:
-    market_type = st.radio("시장 선택", ["KR", "US"], horizontal=True)
-    all_dates = get_available_dates()
-    # 달력에서 날짜 선택
-    selected_date = st.date_input("분석 기준일 선택", value=pd.to_datetime(all_dates[0]) if all_dates else None)
-    if st.button("데이터 새로고침"): st.rerun()
 
 df_display = get_data(selected_date, all_dates, market_type)
 
