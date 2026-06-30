@@ -64,7 +64,16 @@ def get_data(target_date, all_dates, market_type):
 
     df_stocks = pd.DataFrame(supabase.table("stocks").select("ticker, name").execute().data)
     df_final = pd.merge(df_merged, df_stocks, on="ticker", how="left")
-    df_final = df_final.rename(columns={'momentum_rank': '순위', 'name': '종목명', 'weighted_momentum': 'MOT', 'rs_score': 'RS', 'close_price': '종가'})
+    
+    df_final = df_final.rename(columns={
+        'momentum_rank': '순위', 
+        'name': '종목명', 
+        'weighted_momentum': 'MOT', 
+        'rs_score': 'RS', 
+        'close_price': '종가',
+        'rank_change': '변동'  # 이 줄을 추가하세요
+    })
+
     df_final['MOT'] = pd.to_numeric(df_final['MOT'], errors='coerce').fillna(0.0)
     df_final['RS'] = pd.to_numeric(df_final['RS'], errors='coerce').fillna(0.0)
     
