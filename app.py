@@ -153,14 +153,14 @@ if df_display is not None:
             hide_index=True, 
             selection_mode="single-row", 
             on_select="rerun", 
-            width=None
+            use_container_width=True
         )
 
     with tab2:
         df_new = df_display[df_display['is_new_top30'] == True].copy()
         st.dataframe(
             df_new[col_order].style.apply(apply_styles, axis=None).format({'MOT': '{:.2f}', 'RS': '{:.2f}', '종가': '{:,.0f}', '변동': '{:+.0f}'}),
-            width=None
+            use_container_width=True
         )
 
     with tab3:
@@ -168,7 +168,7 @@ if df_display is not None:
         st.dataframe(
             df_signals[col_order].style.apply(apply_styles, axis=None).format({'MOT': '{:.2f}', 'RS': '{:.2f}', '종가': '{:,.0f}', '변동': '{:+.0f}'}), 
             hide_index=True, 
-            width=None
+            use_container_width=True
         )
 
     with tab4:
@@ -179,7 +179,7 @@ if df_display is not None:
         st.dataframe(
             no4_filtered[no4_cols].style.apply(apply_styles, axis=None).format({'RS': '{:.2f}', 'vol_ratio': '{:.2f}배', '종가': '{:,.0f}'}), # Custom formatting
             hide_index=True, 
-            width=None
+            use_container_width=True
         )
 
 # Check for data presence for other markets/dates (optional check, function handles it with return None)
