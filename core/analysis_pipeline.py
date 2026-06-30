@@ -35,8 +35,10 @@ def run_analysis_pipeline(market='KR'):
         try:
             # 12개월(약 250일) 이상의 데이터가 필요하므로 limit를 300으로 유지
             response = supabase.table("stock_prices").select("ticker, price_date, close_price").eq("ticker", ticker).order("price_date", desc=False).limit(300).execute()
-            if response.data: prices.extend(response.data)
-        except Exception as e: print(f"[{ticker}] 조회 실패: {e}")
+            if response.data: 
+                prices.extend(response.data)
+        except Exception as e: 
+            print(f"[{ticker}] 조회 실패: {e}")
         
     if not prices: return
 
