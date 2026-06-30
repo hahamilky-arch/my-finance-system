@@ -5,17 +5,16 @@ from core.indicators import get_rs_score
 
 def calculate_weighted_momentum(pivot_df):
     """
-    사용자 정의 가중 모멘텀 계산
-    공식: (1M*12) + (2M*6) + (4M*4) + (6M*2) + (12M*1)
+    12(1M) + 6(2M) + 4(4M) + 2(6M) + 1(12M) 가중 모멘텀 계산
     거래일 기준: 1M(20), 2M(40), 4M(80), 6M(120), 12M(240)
     """
-    # 각 기간별 수익률 계산 (데이터 부족 시 fillna(0)으로 0 처리)
     r1 = pivot_df.pct_change(20).iloc[-1]
     r2 = pivot_df.pct_change(40).iloc[-1]
     r4 = pivot_df.pct_change(80).iloc[-1]
     r6 = pivot_df.pct_change(120).iloc[-1]
     r12 = pivot_df.pct_change(240).iloc[-1]
     
+    # 각 수익률의 결측치를 0으로 채운 후 가중치 적용
     weighted_score = (r1.fillna(0) * 12) + (r2.fillna(0) * 6) + \
                      (r4.fillna(0) * 4) + (r6.fillna(0) * 2) + \
                      (r12.fillna(0) * 1)
@@ -38,7 +37,7 @@ def run_analysis_pipeline(market='KR'):
         
     ticker_list = [t["ticker"] for t in target_tickers]
     
-    # 3. 데이터 가져오기 (12개월 계산을 위해 300일 데이터 유지)
+    # 3. 데이터 가져오기
     prices = []
     print(f"총 {len(ticker_list)}개 종목의 데이터를 로드합니다.")
     
@@ -67,14 +66,14 @@ def run_analysis_pipeline(market='KR'):
                  .sort_index() \
                  .ffill()
 
-    # 5. RS 점수 및 가중 모멘텀 계산
+    # 5. RS 점수 및 가중 모멘텀 순위 계산
     if benchmark_ticker not in pivot_df.columns:
         print(f"에러: 벤치마크 데이터({benchmark_ticker})가 없습니다.")
         return
         
     rs_map = get_rs_score(pivot_df, benchmark_ticker=benchmark_ticker, window=90)
     
-    # 가중 모멘텀 계산 및 순위 매기기
+    # 가중 모멘텀 점수 계산 후 순위 산정
     momentum_scores = calculate_weighted_momentum(pivot_df)
     rank_map = momentum_scores.rank(ascending=False)
     
@@ -86,6 +85,7 @@ def run_analysis_pipeline(market='KR'):
         if ticker == benchmark_ticker:
             continue
             
+        # 데이터 존재 여부 확인 및 값 할당
         current_close = pivot_df.loc[pivot_df.index[-1], ticker] if ticker in pivot_df.columns else 0.0
         
         analysis_data.append({
@@ -104,5 +104,6 @@ def run_analysis_pipeline(market='KR'):
     else:
         print("적재할 유효한 데이터가 없습니다.")
 
+# 파이프라인 실행
 if __name__ == "__main__":
     run_analysis_pipeline('KR')
