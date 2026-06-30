@@ -93,7 +93,7 @@ with st.sidebar:
 df_display = get_data(selected_date, all_dates, market_type)
 
 if df_display is not None:
-    col_order = ['순위', 'rank_change', '종목명', 'MOT', 'RS', '종가']
+    col_order = ['순위', '변동', '종목명', 'MOT', 'RS', '종가']
     tab1, tab2, tab3, tab4 = st.tabs(["전체 보기", "신규 진입주", "매수 전략 시그널", "🚀 No4: High-Octane"])
 
     with tab1:
