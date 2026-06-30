@@ -11,7 +11,10 @@ def safe_float(val):
         return 0.0
     return val
 
-def run_analysis_pipeline(market='KR'):
+def run_analysis_pipeline(market='KR',target_date=None):
+    # 날짜가 지정되지 않으면 오늘 날짜 사용
+    analysis_date = target_date if target_date else datetime.now().strftime('%Y-%m-%d')
+    
     # 1. 벤치마크 설정
     benchmark_ticker = "^KS11" if market == "KR" else "^GSPC"
     
