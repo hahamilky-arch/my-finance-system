@@ -5,8 +5,11 @@ from core.indicators import get_rs_score
 
 def calculate_weighted_momentum(pivot_df):
     """
-    12(1M) + 6(2M) + 4(4M) + 2(6M) + 1(12M) 가중 모멘텀 계산
+    사용자 정의 가중 모멘텀 계산
+    공식: (1M*12) + (2M*6) + (4M*4) + (6M*2) + (12M*1)
+    거래일 기준: 1M(20), 2M(40), 4M(80), 6M(120), 12M(240)
     """
+    # 각 기간별 수익률 계산 (데이터 부족 시 fillna(0)으로 0 처리)
     r1 = pivot_df.pct_change(20).iloc[-1]
     r2 = pivot_df.pct_change(40).iloc[-1]
     r4 = pivot_df.pct_change(80).iloc[-1]
@@ -20,15 +23,22 @@ def calculate_weighted_momentum(pivot_df):
     return weighted_score
 
 def run_analysis_pipeline(market='KR'):
+    # 1. 벤치마크 설정
     benchmark_ticker = "^KS11" if market == "KR" else "^GSPC"
     
-    target_tickers = supabase.table("stocks").select("ticker").or_(f"market.eq.{market},market.eq.INDEX").execute().data
+    # 2. 분석 대상 티커 리스트 가져오기
+    target_tickers = supabase.table("stocks") \
+        .select("ticker") \
+        .or_(f"market.eq.{market},market.eq.INDEX") \
+        .execute().data
+    
     if not target_tickers:
         print("대상 티커 목록이 없습니다.")
         return
         
     ticker_list = [t["ticker"] for t in target_tickers]
     
+    # 3. 데이터 가져오기 (12개월 계산을 위해 300일 데이터 유지)
     prices = []
     print(f"총 {len(ticker_list)}개 종목의 데이터를 로드합니다.")
     
@@ -40,6 +50,7 @@ def run_analysis_pipeline(market='KR'):
                 .order("price_date", desc=False) \
                 .limit(300) \
                 .execute()
+            
             if response.data:
                 prices.extend(response.data)
         except Exception as e:
@@ -50,19 +61,24 @@ def run_analysis_pipeline(market='KR'):
         return
 
     df = pd.DataFrame(prices)
-    pivot_df = df.pivot(index='price_date', columns='ticker', values='close_price').sort_index().ffill()
+    
+    # 4. 데이터 피벗 및 전처리
+    pivot_df = df.pivot(index='price_date', columns='ticker', values='close_price') \
+                 .sort_index() \
+                 .ffill()
 
+    # 5. RS 점수 및 가중 모멘텀 계산
     if benchmark_ticker not in pivot_df.columns:
         print(f"에러: 벤치마크 데이터({benchmark_ticker})가 없습니다.")
         return
         
-    # RS 점수 계산
     rs_map = get_rs_score(pivot_df, benchmark_ticker=benchmark_ticker, window=90)
     
     # 가중 모멘텀 계산 및 순위 매기기
     momentum_scores = calculate_weighted_momentum(pivot_df)
     rank_map = momentum_scores.rank(ascending=False)
     
+    # 6. 결과 DB 적재
     today = datetime.now().strftime('%Y-%m-%d')
     analysis_data = []
     
