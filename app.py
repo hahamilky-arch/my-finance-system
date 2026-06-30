@@ -13,9 +13,9 @@ def apply_styles(df):
     if 'is_new_top30' in df.columns:
         mask = df['is_new_top30']
         df_styles.loc[mask, :] = 'background-color: #ffcccc'
-    if 'rank_change' in df.columns:
-        df_styles.loc[df['rank_change'] > 0, 'rank_change'] = 'color: red'
-        df_styles.loc[df['rank_change'] < 0, 'rank_change'] = 'color: blue'
+    if '변동' in df.columns:
+        df_styles.loc[df['변동'] > 0, '변동'] = 'color: red'
+        df_styles.loc[df['변동'] < 0, '변동'] = 'color: blue'
     return df_styles
 
 # 2. 데이터 조회 및 계산 함수
