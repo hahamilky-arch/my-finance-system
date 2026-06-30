@@ -39,7 +39,8 @@ def main():
             sync_us_stocks()
 
     # 3. RS 계산 및 분석 수행
-    run_analysis_pipeline(market)
+    # run_analysis_pipeline(market)
+    run_analysis_pipeline(market, target_date=args.target_date)
 
     # 4. 데이터 정리
     cleanup_old_data(months=13)  
