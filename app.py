@@ -191,7 +191,8 @@ else:
 
 # 4. Detail Chart Area (Using popover)
 # This part depends on the selection event defined in Tab 1 dataframe.
-if event.selection and event.selection["rows"]:
+# if event.selection and event.selection["rows"]:
+if 'event' in locals() and event and hasattr(event, 'selection') and event.selection and event.selection["rows"]:
     selected_index = event.selection["rows"][0]
     selected_ticker = df_to_show.iloc[selected_index]['ticker']
     selected_name = df_to_show.iloc[selected_index]['종목명']
