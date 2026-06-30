@@ -108,4 +108,14 @@ def run_analysis_pipeline(market='KR',target_date=None):
 
 # 파이프라인 실행
 if __name__ == "__main__":
-    run_analysis_pipeline('KR')
+    #run_analysis_pipeline('KR')
+    # 실행 인자에서 날짜를 가져옵니다 (python run_pipeline.py --target_date 2026-06-26)
+    # 런타임에 인자가 전달되지 않으면 None으로 설정하여 오늘 날짜가 사용되게 합니다.
+    target_date = None
+    if len(sys.argv) > 1:
+        # 명령행 인자에서 target_date 값을 추출 (간단한 예시)
+        for i in range(len(sys.argv)):
+            if sys.argv[i] == "--target_date" and i + 1 < len(sys.argv):
+                target_date = sys.argv[i+1]
+    
+    run_analysis_pipeline('KR', target_date=target_date)
