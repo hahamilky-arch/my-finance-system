@@ -159,7 +159,7 @@ if df_display is not None:
     with tab2:
         df_new = df_display[df_display['is_new_top30'] == True].copy()
         st.dataframe(
-            df_new[col_order].style.apply(apply_styles, axis=None).format({'MOT': '{:.2f}', 'RS': '{:.2f}', '종가': '{:,.0f}', , '변동': '{:+.0f}'}),
+            df_new[col_order].style.apply(apply_styles, axis=None).format({'MOT': '{:.2f}', 'RS': '{:.2f}', '종가': '{:,.0f}', '변동': '{:+.0f}'}),
             width=None
         )
 
