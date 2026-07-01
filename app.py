@@ -28,7 +28,7 @@ def get_data(target_date, all_dates, market_type):
     if target_date_str not in all_dates: return None
         
     target_idx = all_dates.index(target_date_str)
-    prev_idx = target_idx + 1 if target_idx + 1 < len(all_dates) else target_idx
+    prev_idx = min(target_idx + 1, len(all_dates) - 1)
     days5_idx = min(target_idx + 5, len(all_dates) - 1)
     
     df_curr = pd.DataFrame(supabase.table("daily_analysis").select("ticker, momentum_rank, weighted_momentum, rs_score, close_price").eq("price_date", target_date_str).eq("market", market_type).execute().data)
@@ -39,7 +39,7 @@ def get_data(target_date, all_dates, market_type):
 
     df_curr = df_curr.rename(columns={'momentum_rank': '순위', 'weighted_momentum': 'MOT', 'rs_score': 'RS', 'close_price': '종가'})
     df_prev = df_prev.rename(columns={'momentum_rank': '순위_prev'})
-    df_days5 = df_days5.rename(columns={'momentum_rank': '순위_5일전', 'close_price': '종가_5일전'})
+    df_days5 = df_days5.rename(columns={'close_price': '종가_5일전'})
     
     df_final = pd.merge(pd.merge(df_curr, df_prev, on="ticker", how="left"), df_days5, on="ticker", how="left")
     df_final['변동'] = df_final['순위_prev'].fillna(999) - df_final['순위']
@@ -53,9 +53,9 @@ def get_data(target_date, all_dates, market_type):
 # --- 2. UI 레이아웃 ---
 st.set_page_config(layout="wide")
 
-if 'selected_ticker' not in st.session_state:
-    st.session_state.selected_ticker = None
-    st.session_state.selected_name = None
+# 선택 종목 상태 관리
+if 'sel_ticker' not in st.session_state: st.session_state.sel_ticker = None
+if 'sel_name' not in st.session_state: st.session_state.sel_name = None
 
 with st.sidebar:
     market_type = st.radio("시장 선택", ["KR", "US"], horizontal=True)
@@ -77,23 +77,24 @@ if df_display is not None:
     col_order = ['순위', '변동', '종목명', 'MOT', 'RS', '종가']
     tab1, tab2, tab3 = st.tabs(["전체 보기 (TOP 50)", "신규 진입주 (TOP 30)", "🎯 눌림목/추세추종 포착"])
     
-    dfs = [df_display.head(50), df_display[df_display['is_new_top30']], df_display[df_display['is_pullback']]]
+    tabs_data = [df_display.head(50), df_display[df_display['is_new_top30']], df_display[df_display['is_pullback']]]
     tabs = [tab1, tab2, tab3]
 
     for i, tab in enumerate(tabs):
         with tab:
-            event = st.dataframe(dfs[i][col_order].style.apply(apply_styles, axis=None).format({'MOT': '{:.2f}', 'RS': '{:.2f}', '종가': '{:,.0f}', '변동': '{:+.0f}'}), 
+            event = st.dataframe(tabs_data[i][col_order].style.apply(apply_styles, axis=None).format({'MOT': '{:.2f}', 'RS': '{:.2f}', '종가': '{:,.0f}', '변동': '{:+.0f}'}), 
                                 hide_index=True, use_container_width=True, selection_mode="single-row", on_select="rerun")
+            
             if event.selection and event.selection["rows"]:
-                st.session_state.selected_ticker = dfs[i].iloc[event.selection["rows"][0]]['ticker']
-                st.session_state.selected_name = dfs[i].iloc[event.selection["rows"][0]]['종목명']
+                st.session_state.sel_ticker = tabs_data[i].iloc[event.selection["rows"][0]]['ticker']
+                st.session_state.sel_name = tabs_data[i].iloc[event.selection["rows"][0]]['종목명']
                 st.rerun()
 
-    # 상세 분석 차트 영역
-    if st.session_state.selected_ticker:
-        with st.expander(f"📊 {st.session_state.selected_name} 상세 분석", expanded=True):
-            history_df = pd.DataFrame(supabase.table("daily_analysis").select("price_date, momentum_rank, rs_score").eq("ticker", st.session_state.selected_ticker).eq("market", market_type).order("price_date", desc=True).limit(20).execute().data).sort_values("price_date")
-            price_df = pd.DataFrame(supabase.table("stock_prices").select("price_date, close_price").eq("ticker", st.session_state.selected_ticker).order("price_date", desc=True).limit(20).execute().data).sort_values("price_date")
+    # 상세 분석 차트 (클릭 시 하단에 출력)
+    if st.session_state.sel_ticker:
+        with st.expander(f"📊 {st.session_state.sel_name} 상세 분석 (Click to close)", expanded=True):
+            history_df = pd.DataFrame(supabase.table("daily_analysis").select("price_date, momentum_rank, rs_score").eq("ticker", st.session_state.sel_ticker).eq("market", market_type).order("price_date", desc=True).limit(20).execute().data).sort_values("price_date")
+            price_df = pd.DataFrame(supabase.table("stock_prices").select("price_date, close_price").eq("ticker", st.session_state.sel_ticker).order("price_date", desc=True).limit(20).execute().data).sort_values("price_date")
             combined_df = pd.merge(history_df, price_df, on="price_date")
             
             fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.1, subplot_titles=("주가", "모멘텀 순위"), row_heights=[0.6, 0.4])
