@@ -39,6 +39,8 @@ def get_data(target_date, all_dates, market_type):
     df_final['변동'] = df_final['순위_prev'].fillna(999) - df_final['순위']
     df_final['주가변동률'] = (df_final['종가'] - df_final['종가_5일전']) / df_final['종가_5일전']
     df_final['is_new_top30'] = (df_final['순위'] <= 30) & (df_final['순위_prev'] > 30)
+    
+    # [전략 로직 적용] 1. 하락폭(-5%~0%), 2. 모멘텀 개선(변동 > 0)
     df_final['is_pullback'] = (df_final['주가변동률'] < 0) & (df_final['주가변동률'] > -0.05) & (df_final['변동'] > 0)
     
     df_stocks = pd.DataFrame(supabase.table("stocks").select("ticker, name").execute().data)
@@ -57,8 +59,6 @@ def show_chart(ticker, name, market_type):
         fig.add_trace(px.line(combined, x='price_date', y='momentum_rank').data[0], row=2, col=1)
         fig.update_yaxes(autorange="reversed", row=2, col=1)
         st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.write("No data available.")
 
 # --- 3. UI 구성 ---
 st.set_page_config(layout="wide")
@@ -68,7 +68,7 @@ with st.sidebar:
     all_dates = get_available_dates()
     selected_date = st.date_input("Date", value=pd.to_datetime(all_dates[0]) if all_dates else None)
     if st.button("Refresh"): st.rerun()
-    st.caption("App Version: 1.1.6")
+    st.caption("App Version: 1.1.7")
 
 col1, col2 = st.columns([4, 1])
 with col1: st.markdown('<p style="font-size:20px; font-weight:bold;">Momentum Analysis</p>', unsafe_allow_html=True)
@@ -80,24 +80,21 @@ if df_display is not None:
     col_order = ['순위', '변동', '종목명', 'MOT', 'RS', '종가']
     tab1, tab2, tab3 = st.tabs(["Overview (TOP 50)", "New Entries (TOP 30)", "🎯 Pullback/Trend"])
     
-    tabs_data = [df_display.head(50), df_display[df_display['is_new_top30']], df_display[df_display['is_pullback']]]
+    # 탭별 데이터셋 정의
+    tab_dfs = [df_display.head(50), df_display[df_display['is_new_top30']], df_display[df_display['is_pullback']]]
     
     for i, tab in enumerate([tab1, tab2, tab3]):
         with tab:
-            # 상단 버튼 (선택 행 기반 차트 호출)
-            if st.button(f"📊 View Chart", key=f"btn_{i}"):
-                if f"sel_{i}" in st.session_state and st.session_state[f"sel_{i}"]:
-                    idx = st.session_state[f"sel_{i}"][0]
-                    row = tabs_data[i].iloc[idx]
-                    show_chart(row['ticker'], row['종목명'], market_type)
-                else:
-                    st.warning("Please click a row first.")
-            
-            # 데이터프레임
-            event = st.dataframe(tabs_data[i][col_order].style.apply(apply_styles, axis=None).format({'MOT': '{:.2f}', 'RS': '{:.2f}', '종가': '{:,.0f}', '변동': '{:+.0f}'}), 
+            # 선택된 행 정보를 session_state에 저장
+            event = st.dataframe(tab_dfs[i][col_order].style.apply(apply_styles, axis=None).format({'MOT': '{:.2f}', 'RS': '{:.2f}', '종가': '{:,.0f}', '변동': '{:+.0f}'}), 
                                 hide_index=True, use_container_width=True, selection_mode="single-row", on_select="rerun")
             
-            if event and hasattr(event, 'selection') and 'rows' in event.selection:
-                st.session_state[f"sel_{i}"] = event.selection['rows']
+            # 차트 보기 버튼
+            if st.button(f"📊 View Analysis", key=f"btn_{i}"):
+                if event.selection and event.selection['rows']:
+                    row = tab_dfs[i].iloc[event.selection['rows'][0]]
+                    show_chart(row['ticker'], row['종목명'], market_type)
+                else:
+                    st.warning("Please select a row first.")
 else:
     st.warning("No data found.")
