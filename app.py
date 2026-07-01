@@ -7,12 +7,11 @@ from plotly.subplots import make_subplots
 # Supabase 연결
 supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
 
-# --- 1. 스타일 및 데이터 처리 함수 ---
+# --- 1. 데이터 처리 함수 ---
 def apply_styles(df):
     df_styles = pd.DataFrame('', index=df.index, columns=df.columns)
     if 'is_new_top30' in df.columns:
-        mask = df['is_new_top30']
-        df_styles.loc[mask, :] = 'background-color: #ffcccc'
+        df_styles.loc[df['is_new_top30'], :] = 'background-color: #ffcccc'
     if '변동' in df.columns:
         df_styles.loc[df['변동'] > 0, '변동'] = 'color: red'
         df_styles.loc[df['변동'] < 0, '변동'] = 'color: blue'
@@ -25,17 +24,13 @@ def get_available_dates():
 def get_data(target_date, all_dates, market_type):
     target_date_str = str(target_date)
     if target_date_str not in all_dates: return None
-    
     target_idx = all_dates.index(target_date_str)
-    prev_idx = min(target_idx + 1, len(all_dates) - 1)
-    days5_idx = min(target_idx + 5, len(all_dates) - 1)
     
     df_curr = pd.DataFrame(supabase.table("daily_analysis").select("ticker, momentum_rank, weighted_momentum, rs_score, close_price").eq("price_date", target_date_str).eq("market", market_type).execute().data)
-    df_prev = pd.DataFrame(supabase.table("daily_analysis").select("ticker, momentum_rank").eq("price_date", all_dates[prev_idx]).eq("market", market_type).execute().data)
-    df_days5 = pd.DataFrame(supabase.table("daily_analysis").select("ticker, momentum_rank, close_price").eq("price_date", all_dates[days5_idx]).eq("market", market_type).execute().data)
+    df_prev = pd.DataFrame(supabase.table("daily_analysis").select("ticker, momentum_rank").eq("price_date", all_dates[min(target_idx + 1, len(all_dates)-1)]).eq("market", market_type).execute().data)
+    df_days5 = pd.DataFrame(supabase.table("daily_analysis").select("ticker, momentum_rank, close_price").eq("price_date", all_dates[min(target_idx + 5, len(all_dates)-1)]).eq("market", market_type).execute().data)
     
     if df_curr.empty: return None
-
     df_curr = df_curr.rename(columns={'momentum_rank': '순위', 'weighted_momentum': 'MOT', 'rs_score': 'RS', 'close_price': '종가'})
     df_prev = df_prev.rename(columns={'momentum_rank': '순위_prev'})
     df_days5 = df_days5.rename(columns={'close_price': '종가_5일전'})
@@ -50,29 +45,29 @@ def get_data(target_date, all_dates, market_type):
     return pd.merge(df_final, df_stocks, on="ticker", how="left").rename(columns={'name': '종목명'}).sort_values('순위')
 
 # --- 2. 팝업(Dialog) 함수 ---
-@st.dialog("상세 분석 차트", width="large")
+@st.dialog("Chart Analysis", width="large")
 def show_chart(ticker, name, market_type):
     history = pd.DataFrame(supabase.table("daily_analysis").select("price_date, momentum_rank, rs_score").eq("ticker", ticker).eq("market", market_type).order("price_date", desc=True).limit(20).execute().data).sort_values("price_date")
     price = pd.DataFrame(supabase.table("stock_prices").select("price_date, close_price").eq("ticker", ticker).order("price_date", desc=True).limit(20).execute().data).sort_values("price_date")
     
     if not history.empty and not price.empty:
         combined = pd.merge(history, price, on="price_date")
-        fig = make_subplots(rows=2, cols=1, shared_xaxes=True, subplot_titles=("주가", "모멘텀 순위"), row_heights=[0.6, 0.4])
+        fig = make_subplots(rows=2, cols=1, shared_xaxes=True, subplot_titles=("Price", "Momentum Rank"), row_heights=[0.6, 0.4])
         fig.add_trace(px.line(combined, x='price_date', y='close_price').data[0], row=1, col=1)
         fig.add_trace(px.line(combined, x='price_date', y='momentum_rank').data[0], row=2, col=1)
         fig.update_yaxes(autorange="reversed", row=2, col=1)
         st.plotly_chart(fig, use_container_width=True)
     else:
-        st.write("데이터가 없습니다.")
+        st.write("No data available.")
 
 # --- 3. UI 구성 ---
 st.set_page_config(layout="wide")
 
 with st.sidebar:
-    market_type = st.radio("시장 선택", ["KR", "US"], horizontal=True)
+    market_type = st.radio("Market", ["KR", "US"], horizontal=True)
     all_dates = get_available_dates()
-    selected_date = st.date_input("기준일 선택", value=pd.to_datetime(all_dates[0]) if all_dates else None)
-    if st.button("새로고침"): st.rerun()
+    selected_date = st.date_input("Date", value=pd.to_datetime(all_dates[0]) if all_dates else None)
+    if st.button("Refresh"): st.rerun()
     st.caption("App Version: 1.1.6")
 
 col1, col2 = st.columns([4, 1])
@@ -83,17 +78,26 @@ df_display = get_data(selected_date, all_dates, market_type)
 
 if df_display is not None:
     col_order = ['순위', '변동', '종목명', 'MOT', 'RS', '종가']
-    tab1, tab2, tab3 = st.tabs(["전체 보기 (TOP 50)", "신규 진입주 (TOP 30)", "🎯 눌림목/추세추종 포착"])
+    tab1, tab2, tab3 = st.tabs(["Overview (TOP 50)", "New Entries (TOP 30)", "🎯 Pullback/Trend"])
     
     tabs_data = [df_display.head(50), df_display[df_display['is_new_top30']], df_display[df_display['is_pullback']]]
     
     for i, tab in enumerate([tab1, tab2, tab3]):
         with tab:
-            selected_name = st.selectbox(f"종목 선택 ({tab.label})", tabs_data[i]['종목명'].unique(), key=f"sel_{i}")
-            st.dataframe(tabs_data[i][col_order].style.apply(apply_styles, axis=None).format({'MOT': '{:.2f}', 'RS': '{:.2f}', '종가': '{:,.0f}', '변동': '{:+.0f}'}), hide_index=True, use_container_width=True)
+            # 상단 버튼 (선택 행 기반 차트 호출)
+            if st.button(f"📊 View Chart", key=f"btn_{i}"):
+                if f"sel_{i}" in st.session_state and st.session_state[f"sel_{i}"]:
+                    idx = st.session_state[f"sel_{i}"][0]
+                    row = tabs_data[i].iloc[idx]
+                    show_chart(row['ticker'], row['종목명'], market_type)
+                else:
+                    st.warning("Please click a row first.")
             
-            if st.button(f"📊 {selected_name} 상세 보기", key=f"btn_{i}"):
-                row = tabs_data[i][tabs_data[i]['종목명'] == selected_name].iloc[0]
-                show_chart(row['ticker'], selected_name, market_type)
+            # 데이터프레임
+            event = st.dataframe(tabs_data[i][col_order].style.apply(apply_styles, axis=None).format({'MOT': '{:.2f}', 'RS': '{:.2f}', '종가': '{:,.0f}', '변동': '{:+.0f}'}), 
+                                hide_index=True, use_container_width=True, selection_mode="single-row", on_select="rerun")
+            
+            if event and hasattr(event, 'selection') and 'rows' in event.selection:
+                st.session_state[f"sel_{i}"] = event.selection['rows']
 else:
-    st.warning("데이터가 없습니다.")
+    st.warning("No data found.")
