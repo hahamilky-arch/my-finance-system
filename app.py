@@ -60,7 +60,8 @@ def show_chart(ticker, name, market_type):
 
 # --- 3. UI 및 리밸런싱 시스템 ---
 st.set_page_config(layout="wide")
-st.title("📈 Momentum Dashboard v1.2.0")
+#st.title("📈 Momentum Dashboard v1.2.0")
+st.markdown("##### 📈 Momentum Dashboard v1.2.0") 
 
 with st.sidebar:
     market_type = st.radio("Market", ["KR", "US"], horizontal=True)
@@ -87,7 +88,8 @@ if df_display is not None:
                     show_chart(row['ticker'], row['종목명'], market_type)
     
     with tab4:
-        st.subheader("📋 오늘의 리밸런싱 지시서")
+        #st.subheader("📋 오늘의 리밸런싱 지시서")
+        st.markdown("###### 📋 오늘의 리밸런싱 지시서")
         c1, c2 = st.columns(2)
         # SELL: 30위권 이탈
         sell_df = df_display[(df_display['순위'] > 30) & (df_display['순위_prev'] <= 30)]
