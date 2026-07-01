@@ -75,7 +75,7 @@ if df_display is not None:
     tab1, tab2, tab3, tab4 = st.tabs(["Overview", "New Entries", "🎯 Pullback", "🔄 Rebalancing"])
     
     # 탭별 데이터 구성
-    tab_dfs = [df_display.head(50), df_display[df_display['is_new_top30']], df_display[df_display['is_pullback']]]
+    tab_dfs = [df_display.head(100), df_display[df_display['is_new_top30']], df_display[df_display['is_pullback']]]
     col_order = ['순위', '변동', '종목명', 'MOT', 'RS', '종가']
     
     for i, tab in enumerate([tab1, tab2, tab3]):
