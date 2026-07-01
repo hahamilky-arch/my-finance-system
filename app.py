@@ -54,7 +54,6 @@ def get_data(target_date, all_dates, market_type):
     df_stocks = pd.DataFrame(supabase.table("stocks").select("ticker, name").execute().data)
     df_final = pd.merge(df_final, df_stocks, on="ticker", how="left")
     
-    # 순위 기준으로 정렬 복구
     return df_final.rename(columns={'name': '종목명'}).sort_values('순위')
 
 # UI 구성
@@ -66,13 +65,13 @@ with st.sidebar:
     if st.button("데이터 새로고침"): st.rerun()
     st.caption("App Version: 1.1.6")
 
-# 타이틀 및 조회일자 복구
+# 타이틀 변경 (작게, 영어로) 및 날짜 배치 복구
 col1, col2 = st.columns([4, 1])
 with col1:
-    st.header("📈 모멘텀 분석")
+    st.markdown('<p style="font-size:20px; font-weight:bold;">Momentum Analysis</p>', unsafe_allow_html=True)
 with col2:
     st.markdown("<br>", unsafe_allow_html=True)
-    st.caption(f"기준일: {selected_date}")
+    st.caption(f"Date: {selected_date}")
 
 df_display = get_data(selected_date, all_dates, market_type)
 
@@ -81,7 +80,8 @@ if df_display is not None:
     tab1, tab2, tab3 = st.tabs(["전체 보기 (TOP 50)", "신규 진입주 (TOP 30)", "🎯 눌림목/추세추종 포착"])
 
     with tab1:
-        st.dataframe(df_display[col_order].style.apply(apply_styles, axis=None).format({'MOT': '{:.2f}', 'RS': '{:.2f}', '종가': '{:,.0f}', '변동': '{:+.0f}'}), hide_index=True, use_container_width=True)
+        # 상위 50개만 표시하도록 수정
+        st.dataframe(df_display[col_order].head(50).style.apply(apply_styles, axis=None).format({'MOT': '{:.2f}', 'RS': '{:.2f}', '종가': '{:,.0f}', '변동': '{:+.0f}'}), hide_index=True, use_container_width=True)
     with tab2:
         df_new = df_display[df_display['is_new_top30'] == True]
         st.dataframe(df_new[col_order].style.apply(apply_styles, axis=None).format({'MOT': '{:.2f}', 'RS': '{:.2f}', '종가': '{:,.0f}', '변동': '{:+.0f}'}), hide_index=True, use_container_width=True)
