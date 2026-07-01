@@ -50,7 +50,7 @@ def get_data(target_date, all_dates, market_type):
     df_stocks = pd.DataFrame(supabase.table("stocks").select("ticker, name").execute().data)
     return pd.merge(df_final, df_stocks, on="ticker", how="left").rename(columns={'name': '종목명'}).sort_values('순위')
 
-# --- 2. UI 및 상태 관리 ---
+# --- 2. UI 및 세션 상태 ---
 st.set_page_config(layout="wide")
 
 if 'sel_ticker' not in st.session_state: st.session_state.sel_ticker = None
@@ -71,7 +71,7 @@ with col2:
 
 df_display = get_data(selected_date, all_dates, market_type)
 
-# --- 3. 데이터 렌더링 및 클릭 이벤트 ---
+# --- 3. 데이터 렌더링 및 팝업 이벤트 ---
 if df_display is not None:
     col_order = ['순위', '변동', '종목명', 'MOT', 'RS', '종가']
     tab1, tab2, tab3 = st.tabs(["전체 보기 (TOP 50)", "신규 진입주 (TOP 30)", "🎯 눌림목/추세추종 포착"])
@@ -81,21 +81,21 @@ if df_display is not None:
 
     for i, tab in enumerate(tabs):
         with tab:
-            event = st.dataframe(tabs_data[i][col_order].style.apply(apply_styles, axis=None).format({'MOT': '{:.2f}', 'RS': '{:.2f}', '종가': '{:,.0f}', '변동': '{:+.0f}'}), 
-                                hide_index=True, use_container_width=True, selection_mode="single-row")
+            # 셀렉트박스로 종목 선택 후 상세 보기 버튼으로 팝업 호출 (이벤트 충돌 방지)
+            selected_name = st.selectbox(f"Select stock in {tab.label}", tabs_data[i]['종목명'].unique(), key=f"sel_{i}")
             
-            # 이벤트 발생 시 데이터 확인 후 세션 업데이트
-            if event and hasattr(event, 'selection') and isinstance(event.selection, dict) and 'rows' in event.selection and event.selection['rows']:
-                idx = event.selection['rows'][0]
-                new_ticker = tabs_data[i].iloc[idx]['ticker']
-                if st.session_state.sel_ticker != new_ticker:
-                    st.session_state.sel_ticker = new_ticker
-                    st.session_state.sel_name = tabs_data[i].iloc[idx]['종목명']
-                    st.rerun()
+            st.dataframe(tabs_data[i][col_order].style.apply(apply_styles, axis=None).format({'MOT': '{:.2f}', 'RS': '{:.2f}', '종가': '{:,.0f}', '변동': '{:+.0f}'}), 
+                                hide_index=True, use_container_width=True)
+            
+            if st.button(f"📊 {selected_name} 상세 보기", key=f"btn_{i}"):
+                row = tabs_data[i][tabs_data[i]['종목명'] == selected_name].iloc[0]
+                st.session_state.sel_ticker = row['ticker']
+                st.session_state.sel_name = selected_name
+                st.rerun()
 
-    # 상세 분석 차트 영역 (위치 고정)
-    with st.expander(f"📊 {st.session_state.sel_name if st.session_state.sel_name else '상세 분석'}", expanded=True):
-        if st.session_state.sel_ticker:
+    # 팝업 형태의 상세 분석
+    if st.session_state.sel_ticker:
+        with st.popover(f"📊 {st.session_state.sel_name} 상세 분석 (Click to close)", expanded=True):
             history = pd.DataFrame(supabase.table("daily_analysis").select("price_date, momentum_rank, rs_score").eq("ticker", st.session_state.sel_ticker).eq("market", market_type).order("price_date", desc=True).limit(20).execute().data).sort_values("price_date")
             price = pd.DataFrame(supabase.table("stock_prices").select("price_date, close_price").eq("ticker", st.session_state.sel_ticker).order("price_date", desc=True).limit(20).execute().data).sort_values("price_date")
             
@@ -107,9 +107,5 @@ if df_display is not None:
                 fig.update_yaxes(autorange="reversed", row=2, col=1)
                 fig.update_layout(height=400, showlegend=False)
                 st.plotly_chart(fig, use_container_width=True)
-            else:
-                st.info("데이터가 없습니다.")
-        else:
-            st.write("표에서 종목을 클릭하면 상세 차트가 표시됩니다.")
 else:
     st.warning("데이터가 없습니다.")
