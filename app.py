@@ -65,7 +65,6 @@ with st.sidebar:
     if st.button("데이터 새로고침"): st.rerun()
     st.caption("App Version: 1.1.6")
 
-# 타이틀 변경 (작게, 영어로) 및 날짜 배치 복구
 col1, col2 = st.columns([4, 1])
 with col1:
     st.markdown('<p style="font-size:20px; font-weight:bold;">Momentum Analysis</p>', unsafe_allow_html=True)
@@ -79,15 +78,46 @@ if df_display is not None:
     col_order = ['순위', '변동', '종목명', 'MOT', 'RS', '종가']
     tab1, tab2, tab3 = st.tabs(["전체 보기 (TOP 50)", "신규 진입주 (TOP 30)", "🎯 눌림목/추세추종 포착"])
 
+    # 선택된 데이터를 저장할 변수
+    selected_df = None
+
     with tab1:
-        # 상위 50개만 표시하도록 수정
-        st.dataframe(df_display[col_order].head(50).style.apply(apply_styles, axis=None).format({'MOT': '{:.2f}', 'RS': '{:.2f}', '종가': '{:,.0f}', '변동': '{:+.0f}'}), hide_index=True, use_container_width=True)
+        event1 = st.dataframe(df_display[col_order].head(50).style.apply(apply_styles, axis=None).format({'MOT': '{:.2f}', 'RS': '{:.2f}', '종가': '{:,.0f}', '변동': '{:+.0f}'}), hide_index=True, use_container_width=True, selection_mode="single-row", on_select="rerun")
+        if event1.selection and event1.selection["rows"]:
+            selected_df = df_display.head(50)
+            selected_idx = event1.selection["rows"][0]
+    
     with tab2:
         df_new = df_display[df_display['is_new_top30'] == True]
-        st.dataframe(df_new[col_order].style.apply(apply_styles, axis=None).format({'MOT': '{:.2f}', 'RS': '{:.2f}', '종가': '{:,.0f}', '변동': '{:+.0f}'}), hide_index=True, use_container_width=True)
+        event2 = st.dataframe(df_new[col_order].style.apply(apply_styles, axis=None).format({'MOT': '{:.2f}', 'RS': '{:.2f}', '종가': '{:,.0f}', '변동': '{:+.0f}'}), hide_index=True, use_container_width=True, selection_mode="single-row", on_select="rerun")
+        if event2.selection and event2.selection["rows"]:
+            selected_df = df_new
+            selected_idx = event2.selection["rows"][0]
+
     with tab3:
         st.info("조정 중(5일 내 하락)이나 모멘텀 순위가 상승하는 주도주 후보군입니다.")
         df_pullback = df_display[df_display['is_pullback'] == True]
-        st.dataframe(df_pullback[col_order].style.apply(apply_styles, axis=None).format({'MOT': '{:.2f}', 'RS': '{:.2f}', '종가': '{:,.0f}', '변동': '{:+.0f}'}), hide_index=True, use_container_width=True)
+        event3 = st.dataframe(df_pullback[col_order].style.apply(apply_styles, axis=None).format({'MOT': '{:.2f}', 'RS': '{:.2f}', '종가': '{:,.0f}', '변동': '{:+.0f}'}), hide_index=True, use_container_width=True, selection_mode="single-row", on_select="rerun")
+        if event3.selection and event3.selection["rows"]:
+            selected_df = df_pullback
+            selected_idx = event3.selection["rows"][0]
+
+    # 차트 표시 영역 (어떤 탭에서 클릭하든 여기에 표시)
+    if selected_df is not None:
+        ticker = selected_df.iloc[selected_idx]['ticker']
+        name = selected_df.iloc[selected_idx]['종목명']
+        
+        with st.expander(f"📊 {name} 상세 분석", expanded=True):
+            history_df = pd.DataFrame(supabase.table("daily_analysis").select("price_date, momentum_rank, rs_score").eq("ticker", ticker).eq("market", market_type).order("price_date", desc=True).limit(20).execute().data).sort_values("price_date")
+            price_df = pd.DataFrame(supabase.table("stock_prices").select("price_date, close_price").eq("ticker", ticker).order("price_date", desc=True).limit(20).execute().data).sort_values("price_date")
+            combined_df = pd.merge(history_df, price_df, on="price_date")
+
+            fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.1, subplot_titles=("주가", "모멘텀 순위"), row_heights=[0.6, 0.4])
+            fig.add_trace(px.line(combined_df, x='price_date', y='close_price').data[0], row=1, col=1)
+            fig.add_trace(px.line(combined_df, x='price_date', y='momentum_rank').data[0], row=2, col=1)
+            fig.update_layout(height=400, showlegend=False)
+            fig.update_yaxes(autorange="reversed", row=2, col=1)
+            st.plotly_chart(fig, use_container_width=True)
+
 else:
     st.warning("데이터가 없습니다.")
