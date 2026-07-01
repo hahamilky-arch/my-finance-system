@@ -1,6 +1,5 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
 from supabase import create_client
 import plotly.express as px
 from plotly.subplots import make_subplots
@@ -50,62 +49,51 @@ def get_data(target_date, all_dates, market_type):
     df_stocks = pd.DataFrame(supabase.table("stocks").select("ticker, name").execute().data)
     return pd.merge(df_final, df_stocks, on="ticker", how="left").rename(columns={'name': '종목명'}).sort_values('순위')
 
-# --- 2. UI 및 세션 상태 ---
-st.set_page_config(layout="wide")
+# --- 2. 팝업(Dialog) 함수 ---
+@st.dialog("상세 분석 차트", width="large")
+def show_chart(ticker, name, market_type):
+    history = pd.DataFrame(supabase.table("daily_analysis").select("price_date, momentum_rank, rs_score").eq("ticker", ticker).eq("market", market_type).order("price_date", desc=True).limit(20).execute().data).sort_values("price_date")
+    price = pd.DataFrame(supabase.table("stock_prices").select("price_date, close_price").eq("ticker", ticker).order("price_date", desc=True).limit(20).execute().data).sort_values("price_date")
+    
+    if not history.empty and not price.empty:
+        combined = pd.merge(history, price, on="price_date")
+        fig = make_subplots(rows=2, cols=1, shared_xaxes=True, subplot_titles=("주가", "모멘텀 순위"), row_heights=[0.6, 0.4])
+        fig.add_trace(px.line(combined, x='price_date', y='close_price').data[0], row=1, col=1)
+        fig.add_trace(px.line(combined, x='price_date', y='momentum_rank').data[0], row=2, col=1)
+        fig.update_yaxes(autorange="reversed", row=2, col=1)
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.write("데이터가 없습니다.")
 
-if 'sel_ticker' not in st.session_state: st.session_state.sel_ticker = None
-if 'sel_name' not in st.session_state: st.session_state.sel_name = None
+# --- 3. UI 구성 ---
+st.set_page_config(layout="wide")
 
 with st.sidebar:
     market_type = st.radio("시장 선택", ["KR", "US"], horizontal=True)
     all_dates = get_available_dates()
     selected_date = st.date_input("기준일 선택", value=pd.to_datetime(all_dates[0]) if all_dates else None)
-    if st.button("데이터 새로고침"): st.rerun()
+    if st.button("새로고침"): st.rerun()
     st.caption("App Version: 1.1.6")
 
 col1, col2 = st.columns([4, 1])
 with col1: st.markdown('<p style="font-size:20px; font-weight:bold;">Momentum Analysis</p>', unsafe_allow_html=True)
-with col2: 
-    st.markdown("<br>", unsafe_allow_html=True)
-    st.caption(f"Date: {selected_date}")
+with col2: st.caption(f"Date: {selected_date}")
 
 df_display = get_data(selected_date, all_dates, market_type)
 
-# --- 3. 데이터 렌더링 및 팝업 이벤트 ---
 if df_display is not None:
     col_order = ['순위', '변동', '종목명', 'MOT', 'RS', '종가']
     tab1, tab2, tab3 = st.tabs(["전체 보기 (TOP 50)", "신규 진입주 (TOP 30)", "🎯 눌림목/추세추종 포착"])
     
     tabs_data = [df_display.head(50), df_display[df_display['is_new_top30']], df_display[df_display['is_pullback']]]
-    tabs = [tab1, tab2, tab3]
-
-    for i, tab in enumerate(tabs):
+    
+    for i, tab in enumerate([tab1, tab2, tab3]):
         with tab:
-            # 셀렉트박스로 종목 선택 후 상세 보기 버튼으로 팝업 호출 (이벤트 충돌 방지)
-            selected_name = st.selectbox(f"Select stock in {tab.label}", tabs_data[i]['종목명'].unique(), key=f"sel_{i}")
-            
-            st.dataframe(tabs_data[i][col_order].style.apply(apply_styles, axis=None).format({'MOT': '{:.2f}', 'RS': '{:.2f}', '종가': '{:,.0f}', '변동': '{:+.0f}'}), 
-                                hide_index=True, use_container_width=True)
+            selected_name = st.selectbox(f"종목 선택 ({tab.label})", tabs_data[i]['종목명'].unique(), key=f"sel_{i}")
+            st.dataframe(tabs_data[i][col_order].style.apply(apply_styles, axis=None).format({'MOT': '{:.2f}', 'RS': '{:.2f}', '종가': '{:,.0f}', '변동': '{:+.0f}'}), hide_index=True, use_container_width=True)
             
             if st.button(f"📊 {selected_name} 상세 보기", key=f"btn_{i}"):
                 row = tabs_data[i][tabs_data[i]['종목명'] == selected_name].iloc[0]
-                st.session_state.sel_ticker = row['ticker']
-                st.session_state.sel_name = selected_name
-                st.rerun()
-
-    # 팝업 형태의 상세 분석
-    if st.session_state.sel_ticker:
-        with st.popover(f"📊 {st.session_state.sel_name} 상세 분석 (Click to close)", expanded=True):
-            history = pd.DataFrame(supabase.table("daily_analysis").select("price_date, momentum_rank, rs_score").eq("ticker", st.session_state.sel_ticker).eq("market", market_type).order("price_date", desc=True).limit(20).execute().data).sort_values("price_date")
-            price = pd.DataFrame(supabase.table("stock_prices").select("price_date, close_price").eq("ticker", st.session_state.sel_ticker).order("price_date", desc=True).limit(20).execute().data).sort_values("price_date")
-            
-            if not history.empty and not price.empty:
-                combined = pd.merge(history, price, on="price_date")
-                fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.1, subplot_titles=("주가", "모멘텀 순위"), row_heights=[0.6, 0.4])
-                fig.add_trace(px.line(combined, x='price_date', y='close_price').data[0], row=1, col=1)
-                fig.add_trace(px.line(combined, x='price_date', y='momentum_rank').data[0], row=2, col=1)
-                fig.update_yaxes(autorange="reversed", row=2, col=1)
-                fig.update_layout(height=400, showlegend=False)
-                st.plotly_chart(fig, use_container_width=True)
+                show_chart(row['ticker'], selected_name, market_type)
 else:
     st.warning("데이터가 없습니다.")
