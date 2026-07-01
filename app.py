@@ -41,8 +41,15 @@ def get_data(target_date, all_dates, market_type):
     df_final['is_new_top30'] = (df_final['순위'] <= 30) & (df_final['순위_prev'] > 30)
     
     # [전략 로직 적용] 1. 하락폭(-5%~0%), 2. 모멘텀 개선(변동 > 0)
-    df_final['is_pullback'] = (df_final['주가변동률'] < 0) & (df_final['주가변동률'] > -0.05) & (df_final['변동'] > 0)
-    
+    #df_final['is_pullback'] = (df_final['주가변동률'] < 0) & (df_final['주가변동률'] > -0.05) & (df_final['변동'] > 0)
+    # 수정된 강력 필터 로직:
+    df_final['is_pullback'] = (
+        (df_final['주가변동률'] < 0) & 
+        (df_final['주가변동률'] > -0.05) & 
+        (df_final['변동'] > 0) &
+        (df_final['순위'] <= 100) &    # 1. 순위 100위 이내만
+        (df_final['RS'] > 0)           # 2. RS가 0보다 큰(상대적 강세) 종목만
+    )
     df_stocks = pd.DataFrame(supabase.table("stocks").select("ticker, name").execute().data)
     return pd.merge(df_final, df_stocks, on="ticker", how="left").rename(columns={'name': '종목명'}).sort_values('순위')
 
