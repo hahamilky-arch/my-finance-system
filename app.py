@@ -163,4 +163,6 @@ if df_display is not None:
     
         # 1. 💼 보유 종목 (HTML 포맷팅 적용 완료)
         holdings_res = supabase.table("current_holdings").select("*").execute()
-        holdings_db = pd.DataFrame(holdings_res.data) if holdings
+        #holdings_db = pd.DataFrame(holdings_res.data) if holdings
+        holdings_db = pd.DataFrame(holdings_res.data) if holdings_res.data else pd.DataFrame()
+
