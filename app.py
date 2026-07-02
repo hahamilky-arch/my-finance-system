@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from supabase import create_client
 
-# 🚨 백지화 방지를 위해 최상단에 배치
+# 백지화 방지를 위해 최상단 배치
 st.set_page_config(layout="wide")
 
 # Supabase 연결
@@ -16,17 +16,18 @@ def apply_styles(df):
         df_styles.loc[df['변동'] < 0, '변동'] = 'color: blue;'
     return df_styles
 
-# 보유 종목 리스트 (티커만) 가져오기
+# 보유 종목 리스트 (매도일이 없는 '진짜 보유 중'인 종목의 티커만) 가져오기
 def get_current_holdings():
-    res = supabase.table("current_holdings").select("ticker").execute()
+    res = supabase.table("current_holdings").select("ticker").is_("sell_date", "null").execute()
     return [item['ticker'] for item in res.data] if res.data else []
 
-# 매수/매도 처리 및 수익률 자동 계산 로직
+# 매수/매도 처리 및 단일 테이블(current_holdings) 업데이트 로직
 def update_holdings(ticker, action, price, trade_date, quantity):
     trade_date_str = trade_date.strftime('%Y-%m-%d')
     
     if action == 'BUY':
         try:
+            # 매수: 새로운 행 추가
             supabase.table("current_holdings").insert({
                 "ticker": str(ticker).strip(),
                 "buy_date": trade_date_str,
@@ -40,42 +41,47 @@ def update_holdings(ticker, action, price, trade_date, quantity):
         
     elif action == 'SELL':
         try:
-            res = supabase.table("current_holdings").select("*").eq("ticker", ticker).execute()
+            # 매도: 아직 sell_date가 없는 데이터(현재 보유 중인 데이터)를 찾음
+            res = supabase.table("current_holdings").select("*").eq("ticker", ticker).is_("sell_date", "null").execute()
             
             if res.data:
                 holding = res.data[0]
+                row_id = holding.get('id') # 고유 키(id) 기반 업데이트를 위해 추출
                 
-                # NULL 및 결측치 방어 처리
                 raw_bp = holding.get('buy_price')
                 buy_price = float(raw_bp) if pd.notna(raw_bp) and raw_bp is not None else 0.0
-                
-                buy_date = holding.get('buy_date')
-                if not buy_date or pd.isna(buy_date) or str(buy_date).strip() in ["", "nan", "-"]:
-                    buy_date = trade_date_str
                 
                 raw_qty = holding.get('quantity')
                 db_quantity = int(raw_qty) if pd.notna(raw_qty) and raw_qty is not None else int(quantity)
                 
+                # 수익금 및 수익률 계산
+                profit_amount = 0.0
+                profit_rate = 0.0
                 if buy_price > 0:
                     profit_amount = (float(price) - buy_price) * db_quantity
                     profit_rate = ((float(price) / buy_price) - 1) * 100
-                    
-                    # 🛠️ 타깃 테이블을 current_holdings 바인딩하여 Postgrest APIError 원천 해결
-                    supabase.table("current_holdings").insert({
-                        "ticker": str(ticker).strip(),
-                        "buy_date": str(buy_date),
-                        "buy_price": float(buy_price),
-                        "sell_date": trade_date_str,
-                        "sell_price": float(price),
-                        "profit_amount": float(profit_amount),
-                        "profit_rate": round(float(profit_rate), 2)
-                    }).execute()
-            
-            # 이력 적재 성공 혹은 대조 데이터 부재 시 보유 종목에서 격리 삭제
-            supabase.table("current_holdings").delete().eq("ticker", ticker).execute()
-            st.error(f"🗑️ [{ticker}] 매도 처리 및 이력 적재 완료!")
+                
+                # 🛠️ [핵심 변경] 삭제 대신 current_holdings의 해당 행에 매도 정보 UPDATE
+                supabase.table("current_holdings").update({
+                    "sell_date": trade_date_str,
+                    "sell_price": float(price),
+                    "profit_amount": float(profit_amount),
+                    "profit_rate": round(float(profit_rate), 2)
+                }).eq("id", row_id).execute()
+                
+                st.error(f"🗑️ [{ticker}] 매도 처리 및 정보 업데이트 완료!")
+            else:
+                # 만약 기존 매수 데이터가 없는데 수동 매도하는 경우를 대비한 예외 처리 (신규 생성)
+                supabase.table("current_holdings").insert({
+                    "ticker": str(ticker).strip(),
+                    "sell_date": trade_date_str,
+                    "sell_price": float(price),
+                    "quantity": int(quantity)
+                }).execute()
+                st.error(f"🗑️ [{ticker}] 매수 정보 없이 매도 기록만 생성 완료!")
+                
         except Exception as e:
-            st.error(f"❌ 매도 트랜잭션 에러 처리부: {str(e)}")
+            st.error(f"❌ 매도 데이터 업데이트 에러: {str(e)}")
             return
         
     st.rerun()
@@ -144,7 +150,6 @@ def get_data(target_date, all_dates, market_type):
     
     return pd.merge(df_final, df_stocks, on="ticker", how="left").rename(columns={'name': '종목명'}).sort_values('순위')
 
-# 최상위 레이어로 격리된 UI 템플릿 컴포넌트 함수 (백지화 방지)
 def display_trade_list(data, title, button_label, key_prefix, target_date):
     with st.expander(f"🚨 {title} ({len(data)}개)", expanded=True):
         if data.empty:
@@ -174,7 +179,7 @@ def display_trade_list(data, title, button_label, key_prefix, target_date):
                         update_holdings(row['ticker'], action_type, input_price, target_date, input_qty)
 
 # --- 2. UI 메인 실행 파트 ---
-st.markdown("##### 📈 Momentum Dashboard v1.4.2")
+st.markdown("##### 📈 Momentum Dashboard v1.4.3")
 market_safe = get_market_regime()
 
 if not market_safe:
@@ -208,8 +213,8 @@ if df_display is not None:
     with tab4:
         st.markdown("##### 📋 오늘의 매매 지시서")
     
-        # 1. 보유 종목 리스트 출력 (인덱스 제거, 마크다운/HTML 깨짐 수정 완료)
-        holdings_res = supabase.table("current_holdings").select("*").execute()
+        # 1. 보유 종목 리스트 출력 (sell_date가 비어있는 행만 가져옴)
+        holdings_res = supabase.table("current_holdings").select("*").is_("sell_date", "null").execute()
         holdings_db = pd.DataFrame(holdings_res.data) if holdings_res.data else pd.DataFrame()
 
         with st.expander(f"💼 현재 보유 종목 ({len(holdings_db)}개)", expanded=True):
@@ -256,7 +261,6 @@ if df_display is not None:
                     </div>
                     """, unsafe_allow_html=True)
                     
-                    # 신호 여부와 무관하게 즉시 매도 가능한 수동 제어 팝오버
                     with c2.popover("개별 매도"):
                         st.write(f"**{name}** 수동 매도")
                         input_price = st.number_input("매도가", value=curr_price, key=f"p_force_{ticker}")
