@@ -20,7 +20,6 @@ def get_market_regime():
     res = supabase.table("daily_analysis").select("close_price").eq("ticker", "^GSPC").order("price_date", desc=True).limit(20).execute()
     df_idx = pd.DataFrame(res.data)
     if df_idx.empty: return True
-    
     ma20 = df_idx['close_price'].mean()
     current_price = df_idx.iloc[0]['close_price']
     return current_price >= ma20
@@ -34,7 +33,7 @@ def get_data(target_date, all_dates, market_type):
     target_date_str = target_date_ts.strftime('%Y-%m-%d')
     if target_date_str not in all_dates: return None
 
-    # [수정] DB에서 계산된 ma10, ma20을 직접 조회
+    # DB에서 MA10, MA20 직접 조회
     res_curr = supabase.table("daily_analysis") \
         .select("ticker, momentum_rank, weighted_momentum, rs_score, close_price, ma10, ma20") \
         .eq("price_date", target_date_str) \
@@ -44,13 +43,13 @@ def get_data(target_date, all_dates, market_type):
     df_final = pd.DataFrame(res_curr.data)
     if df_final.empty: return None
     
-    # 데이터 타입 변환
+    # 타입 변환
     df_final['close_price'] = pd.to_numeric(df_final['close_price'], errors='coerce').astype('float64')
     df_final['ma10'] = pd.to_numeric(df_final['ma10'], errors='coerce').astype('float64')
     df_final['ma20'] = pd.to_numeric(df_final['ma20'], errors='coerce').astype('float64')
     df_final['ticker'] = df_final['ticker'].astype(str).str.strip()
     
-    # 이전 날짜 데이터 병합 (순위 변동 계산용)
+    # 이전 날짜 데이터 병합
     target_idx = all_dates.index(target_date_str)
     prev_date = all_dates[min(target_idx + 1, len(all_dates)-1)]
     res_prev = supabase.table("daily_analysis").select("ticker, momentum_rank").eq("price_date", prev_date).execute()
@@ -62,7 +61,9 @@ def get_data(target_date, all_dates, market_type):
     # 지표 계산
     df_final['변동'] = df_final['순위_prev'].fillna(999) - df_final['순위']
     df_final['is_new_top30'] = (df_final['순위'] <= 30) & (df_final['순위_prev'] > 30)
-    df_final['is_no6_opt'] = (df_final['순위'] <= 30) & (df_final['RS'] > 0) & (df_final['종가'] > df_final['MA20'])
+    df_final['is_pullback'] = (df_final['순위'] <= 100) & (df_final['RS'] > 0) & (df_final['변동'] > 0)
+    df_final['MA20'] = df_final['MA20'].fillna(0)
+    df_final['is_no6_opt'] = (df_final['순위'] <= 30) & (df_final['RS'] > 0) & (df_final['종가'] > df_final['MA20']) & (df_final['MA20'] > 0)
     
     df_stocks = pd.DataFrame(supabase.table("stocks").select("ticker, name").execute().data)
     df_stocks['ticker'] = df_stocks['ticker'].astype(str).str.strip()
@@ -70,6 +71,7 @@ def get_data(target_date, all_dates, market_type):
 
 # --- 2. UI 로직 ---
 st.set_page_config(layout="wide")
+st.markdown("##### 📈 Momentum Dashboard v1.3.11")
 market_safe = get_market_regime()
 
 if not market_safe:
@@ -105,3 +107,5 @@ if df_display is not None:
         with c2:
             st.success(f"BUY (신규): {len(buy_df)}종목")
             if not buy_df.empty: st.dataframe(buy_df[['종목명', '순위', '종가']], use_container_width=True)
+else:
+    st.warning("데이터를 불러오는 중입니다.")
