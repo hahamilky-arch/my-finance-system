@@ -171,9 +171,14 @@ if df_display is not None:
                 for _, h_row in holdings_merged.iterrows():
                     ticker = h_row['ticker']
                     name = h_row.get('name', ticker)
-                    buy_date = h_row.get('buy_date', '-')
-                    buy_price = float(h_row.get('buy_price', 0))
-                    qty = int(h_row.get('quantity', 1))
+                    buy_date = h_row.get('buy_date')
+                    buy_date = buy_date if pd.notna(buy_date) and buy_date is not None else '-'
+
+                    raw_bp = h_row.get('buy_price')
+                    buy_price = float(raw_bp) if pd.notna(raw_bp) and raw_bp is not None else 0.0
+
+                    raw_qty = h_row.get('quantity')
+                    qty = int(raw_qty) if pd.notna(raw_qty) and raw_qty is not None else 1
                     
                     # 현재 가격 매핑
                     curr_row = df_display[df_display['ticker'] == ticker]
