@@ -91,12 +91,40 @@ if df_display is not None:
     col_order = ['순위', '변동', '종목명', 'MOT', 'RS', '종가', 'MA20']
     tab_dfs = [df_display.head(100), df_display[df_display['is_new_top30']], df_display[df_display['is_pullback']], df_display[df_display['is_no6_opt']]]
     
-    for i, tab in enumerate([tab1, tab2, tab3, tab4]):
+    for i, tab in enumerate([tab1, tab2, tab3]):
         with tab:
             st.dataframe(tab_dfs[i][col_order].style.apply(apply_styles, axis=None).format({
                     'MOT': '{:.2f}', 'RS': '{:.2f}', '종가': '{:,.0f}', 'MA20': '{:,.0f}', '변동': '{:+.0f}'
                 }), hide_index=True, use_container_width=True)
-    
+            
+    with tab4:
+        # 1. 데이터프레임 출력
+        st.dataframe(tab_dfs[3][col_order].style.apply(apply_styles, axis=None).format({
+                'MOT': '{:.2f}', 'RS': '{:.2f}', '종가': '{:,.0f}', 'MA20': '{:,.0f}', '변동': '{:+.0f}'
+            }), hide_index=True, use_container_width=True)
+        
+        # 2. 구분선 추가
+        st.divider()
+        
+        # 3. 전략 조건 설명 (표 바로 아래 배치)
+        st.markdown("#### 🔍 No.6 전략 필터링 조건")
+        st.caption("이 전략은 모멘텀이 강하고 추세가 확인된 최적의 종목을 선별합니다.")
+        
+        c1, c2 = st.columns(2)
+        with c1:
+            st.success("**[매수 조건]**")
+            st.markdown("""
+            * **모멘텀 순위:** 전체 30위 이내
+            * **상대 강도(RS):** 0 초과 (시장 대비 우위)
+            * **추세 확인:** 종가 > 20일 이동평균선(MA20)
+            """)
+        with c2:
+            st.error("**[매도(제외) 조건]**")
+            st.markdown("""
+            * **순위 이탈:** 30위권 밖으로 하락
+            * **추세 이탈:** 종가 < MA20 또는 시장 주의보 발령
+            """)
+
     with tab5:
         c1, c2 = st.columns(2)
         sell_df = df_display[(df_display['순위'] > 30) | (not market_safe)]
