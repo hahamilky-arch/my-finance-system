@@ -54,7 +54,7 @@ def update_holdings(ticker, action, price, trade_date, quantity):
                 profit_amount = (float(price) - buy_price) * db_quantity
                 profit_rate = ((float(price) / buy_price) - 1) * 100
                 
-                supabase.table("trade_history").insert({
+                supabase.table("current_holdings").insert({
                     "ticker": ticker,
                     "buy_date": buy_date,
                     "buy_price": buy_price,
