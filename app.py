@@ -23,31 +23,31 @@ def get_available_dates():
 
 def get_data(target_date, all_dates, market_type):
     target_date_str = str(target_date)
-    # 디버깅용 출력 (터미널이나 Streamlit 화면에 확인 가능)
-    st.write(f"선택한 날짜: {target_date_str}")
-    st.write(f"가용한 날짜 목록 일부: {all_dates[:5]}")
-    
     if target_date_str not in all_dates: return None
     
-    # 1. 메인 데이터 로드 (ma20 제거, 직접 계산)
+    # 1. 메인 데이터 로드
     res_curr = supabase.table("daily_analysis").select("ticker, momentum_rank, weighted_momentum, rs_score, close_price").eq("price_date", target_date_str).eq("market", market_type).execute()
     df_curr = pd.DataFrame(res_curr.data)
     
-    # 2. 이동평균 계산을 위한 과거 데이터 로드
-    res_hist = supabase.table("daily_analysis").select("ticker, price_date, close_price").eq("market", market_type).order("price_date", desc=True).limit(5000).execute()
+    # 2. 이동평균 계산을 위한 데이터 로드 및 병합 (강제 타입 변환)
+    res_hist = supabase.table("daily_analysis").select("ticker, price_date, close_price").eq("market", market_type).order("price_date", desc=True).limit(10000).execute()
     df_hist = pd.DataFrame(res_hist.data)
     df_hist['price_date'] = pd.to_datetime(df_hist['price_date'])
     df_hist = df_hist.sort_values(['ticker', 'price_date'])
     df_hist['MA20'] = df_hist.groupby('ticker')['close_price'].transform(lambda x: x.rolling(window=20).mean())
     
-    # 3. 데이터 병합
+    # 데이터 병합 전 타입 통일
+    df_curr['ticker'] = df_curr['ticker'].astype(str).str.strip()
+    df_hist['ticker'] = df_hist['ticker'].astype(str).str.strip()
+    
     ma20_today = df_hist[df_hist['price_date'] == pd.to_datetime(target_date_str)][['ticker', 'MA20']]
     df_curr = pd.merge(df_curr, ma20_today, on='ticker', how='left')
     
-    # 4. 이전 날짜 순위 데이터
+    # 3. 이전 날짜 순위 데이터
     target_idx = all_dates.index(target_date_str)
     prev_date = all_dates[min(target_idx + 1, len(all_dates)-1)]
     df_prev = pd.DataFrame(supabase.table("daily_analysis").select("ticker, momentum_rank").eq("price_date", prev_date).eq("market", market_type).execute().data)
+    df_prev['ticker'] = df_prev['ticker'].astype(str).str.strip()
     
     if df_curr.empty: return None
     df_curr = df_curr.rename(columns={'momentum_rank': '순위', 'weighted_momentum': 'MOT', 'rs_score': 'RS', 'close_price': '종가'})
@@ -57,38 +57,17 @@ def get_data(target_date, all_dates, market_type):
     df_final['변동'] = df_final['순위_prev'].fillna(999) - df_final['순위']
     df_final['is_new_top30'] = (df_final['순위'] <= 30) & (df_final['순위_prev'] > 30)
     df_final['is_pullback'] = (df_final['순위'] <= 100) & (df_final['RS'] > 0) & (df_final['변동'] > 0)
-
-    # 여기서 확인 로그 출력
-    st.write(f"병합 후 NaN 개수: {df_curr['MA20'].isna().sum()} / 전체 행: {len(df_curr)}")
-    # No.6 최적화 로직 (30위 이내 + RS 양수 + 순위 개선 + 주가 > MA20)
-    # df_final['is_no6_opt'] = (df_final['순위'] <= 30) & (df_final['RS'] > 0) & (df_final['변동'] > 0) & (df_final['종가'] > df_final['MA20'])
-    # 디버깅용: 조건을 하나씩 풀어보기
-    # 1. 일단 순위와 MA20 조건만으로 먼저 테스트
-    df_final['is_no6_opt'] = (df_final['순위'] <= 30) & (df_final['RS'] > 0) & (df_final['종가'] > df_final['MA20'])
-    # 데이터 확인용
-    st.write(f"전체 종목 수: {len(df_final)}")
-    st.write(f"No.6 조건 만족 종목 수: {df_final['is_no6_opt'].sum()}")
+    
+    # No.6 최적화 (MA20이 NaN인 경우 0으로 처리하여 에러 방지)
+    df_final['is_no6_opt'] = (df_final['순위'] <= 30) & (df_final['RS'] > 0) & (df_final['종가'] > df_final['MA20'].fillna(0))
     
     df_stocks = pd.DataFrame(supabase.table("stocks").select("ticker, name").execute().data)
+    df_stocks['ticker'] = df_stocks['ticker'].astype(str).str.strip()
     return pd.merge(df_final, df_stocks, on="ticker", how="left").rename(columns={'name': '종목명'}).sort_values('순위')
 
-# --- 2. 차트 팝업 ---
-@st.dialog("Chart Analysis", width="large")
-def show_chart(ticker, name, market_type):
-    history = pd.DataFrame(supabase.table("daily_analysis").select("price_date, momentum_rank, rs_score").eq("ticker", ticker).eq("market", market_type).order("price_date", desc=True).limit(20).execute().data).sort_values("price_date")
-    price = pd.DataFrame(supabase.table("stock_prices").select("price_date, close_price").eq("ticker", ticker).order("price_date", desc=True).limit(20).execute().data).sort_values("price_date")
-    
-    if not history.empty and not price.empty:
-        combined = pd.merge(history, price, on="price_date")
-        fig = make_subplots(rows=2, cols=1, shared_xaxes=True, subplot_titles=("Price", "Momentum Rank"), row_heights=[0.6, 0.4])
-        fig.add_trace(px.line(combined, x='price_date', y='close_price').data[0], row=1, col=1)
-        fig.add_trace(px.line(combined, x='price_date', y='momentum_rank').data[0], row=2, col=1)
-        fig.update_yaxes(autorange="reversed", row=2, col=1)
-        st.plotly_chart(fig, use_container_width=True)
-
-# --- 3. UI 및 메인 로직 ---
+# --- 2. UI 및 메인 로직 ---
 st.set_page_config(layout="wide")
-st.markdown("##### 📈 Momentum Dashboard v1.3.0") 
+st.markdown("##### 📈 Momentum Dashboard v1.3.1") 
 
 with st.sidebar:
     market_type = st.radio("Market", ["KR", "US"], horizontal=True)
