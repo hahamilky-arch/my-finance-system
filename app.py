@@ -136,7 +136,7 @@ if df_display is not None:
             if holdings.empty:
                 st.info("보유 종목 없음")
             else:
-                st.table(holdings[['종목명', '순위', '종가']])
+                st.table(holdings[['종목명', '순위', '종가']],hide_index=True)
 
         # 2. 매매 신호 (매수/매도 리스트)
         df_rebal = df_display[df_display['매매상태'].isin(['매도필요', '매수추천'])]
