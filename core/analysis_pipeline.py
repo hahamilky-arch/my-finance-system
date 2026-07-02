@@ -84,7 +84,11 @@ def run_analysis_pipeline(market='KR',target_date=None):
     rank_map = weighted_momentum_series.rank(ascending=False)
     
     # 6. 결과 DB 적재
-    today = datetime.now().strftime('%Y-%m-%d')
+    # today = datetime.now().strftime('%Y-%m-%d')
+    # 6. 결과 DB 적재 부분 수정
+    # [수정] target_date가 있으면 사용하고, 없으면 오늘 날짜 사용
+    save_date = target_date if target_date else datetime.now().strftime('%Y-%m-%d')
+    
     analysis_data = []
     
     for ticker in ticker_list:
@@ -99,7 +103,7 @@ def run_analysis_pipeline(market='KR',target_date=None):
             "momentum_rank": int(rank_map.get(ticker, 999)),
             "weighted_momentum": safe_float(weighted_momentum_series.get(ticker, 0.0)),
             "close_price": safe_float(current_close),
-            "price_date": today,
+            "price_date": save_date,
             "market": market
         })
     
