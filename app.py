@@ -126,14 +126,39 @@ if df_display is not None:
             """)
 
     with tab5:
+        
+        # 1. SELL 조건: 어제는 30위 이내였으나 오늘은 30위 밖인 종목 + 시장 위험시
+        # 시장이 위험(not market_safe)하면 전체 매도 신호를 띄우되, 
+        # 순위 이탈 종목을 상단에 우선 배치하는 구조
+        sell_df = df_display[
+            (df_display['순위'] > 30) & (df_display['순위_prev'] <= 30)
+        ]
+        
+        # 2. BUY 조건: 어제는 30위 밖이었으나 오늘은 30위 이내로 진입한 종목
+        buy_df = df_display[
+            (df_display['순위'] <= 30) & (df_display['순위_prev'] > 30)
+        ]
+
         c1, c2 = st.columns(2)
-        sell_df = df_display[(df_display['순위'] > 30) | (not market_safe)]
         with c1:
-            st.error(f"SELL (매도): {len(sell_df)}종목")
-            if not sell_df.empty: st.dataframe(sell_df[['종목명', '순위', '종가']],hide_index=True, use_container_width=True)
-        buy_df = df_display[df_display['is_no6_opt'] & market_safe]
+            st.error(f"SELL (30위권 이탈): {len(sell_df)}종목")
+            if not sell_df.empty: 
+                st.dataframe(sell_df[['종목명', '순위', '순위_prev']], hide_index=True, use_container_width=True)
+            if not market_safe:
+                st.warning("⚠️ 시장 전체 하락장: 보유 종목 전량 매도/현금화 권고")
+        
         with c2:
-            st.success(f"BUY (신규): {len(buy_df)}종목")
-            if not buy_df.empty: st.dataframe(buy_df[['종목명', '순위', '종가']],hide_index=True, use_container_width=True)
+            st.success(f"BUY (신규 진입): {len(buy_df)}종목")
+            if not buy_df.empty: 
+                st.dataframe(buy_df[['종목명', '순위', '순위_prev']], hide_index=True, use_container_width=True)
+
+        # 3. 전략 설명 추가
+        st.divider()
+        st.markdown("#### 🔄 리밸런싱 전략 가이드")
+        st.info("""
+        * **SELL (매도):** 어제까지 모멘텀 순위 30위 이내였으나, 오늘 30위 밖으로 밀려난 종목들입니다. **추세가 꺾인 종목을 즉시 교체하세요.**
+        * **BUY (매수):** 새롭게 모멘텀 상위 30위권 안으로 진입한 '떠오르는 강자'들입니다.
+        * **시장 위기 대응:** 벤치마크 지수가 MA20을 하회할 경우, 신규 매수를 중단하고 포트폴리오를 현금화하여 방어합니다.
+        """)
 else:
     st.warning("데이터를 불러오는 중입니다.")
