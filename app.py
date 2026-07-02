@@ -178,7 +178,7 @@ if df_display is not None:
             * **추세 이탈:** 종가 < MA20 또는 시장 주의보 발령
             """)
 
-        with tab5:
+    with tab5:
         st.markdown("### 📋 오늘의 매매 지시서 (No.6 전략 기준)")
         
         # 전략 기준 매매 대상만 필터링
