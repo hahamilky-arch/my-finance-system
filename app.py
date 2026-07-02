@@ -31,7 +31,9 @@ def get_data(target_date, all_dates, market_type):
     df_curr = pd.DataFrame(res_curr.data)
     
     # 2. 이동평균 계산 (날짜 형식 문자열로 통일하여 매칭)
-    res_hist = supabase.table("daily_analysis").select("ticker, price_date, close_price").eq("market", market_type).order("price_date", desc=True).limit(10000).execute()
+    #res_hist = supabase.table("daily_analysis").select("ticker, price_date, close_price").eq("market", market_type).order("price_date", desc=True).limit(10000).execute()
+    # 수정 코드 (limit 제거)
+    res_hist = supabase.table("daily_analysis").select("ticker, price_date, close_price").eq("market", market_type).execute()
     df_hist = pd.DataFrame(res_hist.data)
     # 날짜 컬럼을 YYYY-MM-DD 문자열로 강제 변환
     df_hist['price_date'] = pd.to_datetime(df_hist['price_date']).dt.strftime('%Y-%m-%d')
