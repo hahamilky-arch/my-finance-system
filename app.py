@@ -137,7 +137,7 @@ if df_display is not None:
                 st.info("보유 종목 없음")
             else:
                 # 데이터 복사 후 포맷팅
-                display_holdings = holdings[['종목명', '순위', '종가']].copy()
+                display_holdings = holdings[['순위', '종목명', '종가']].copy()
                 display_holdings['종가'] = display_holdings['종가'].apply(lambda x: f"{int(x):,}")
                 
                 st.table(display_holdings,hide_index=True)
