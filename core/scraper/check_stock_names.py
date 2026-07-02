@@ -15,10 +15,10 @@ def get_krx_name_dict():
         print(f"❌ KRX 종목 마스터 로드 실패: {e}")
         return {}
 
-def check_incorrect_kr_names():
+def update_incorrect_kr_names():
     """
     market이 KR인 종목만 대상으로 FinanceDataReader의 한글 이름과 
-    DB의 name 컬럼을 비교하여 불일치 건을 출력합니다.
+    DB의 name 컬럼을 비교하여, 다를 경우 올바른 이름으로 업데이트합니다.
     """
     try:
         # 1. KRX 한글 종목명 딕셔너리 확보
@@ -39,13 +39,13 @@ def check_incorrect_kr_names():
             print("조회된 한국 주식(KR) 데이터가 없습니다.")
             return
 
-        print(f"총 {len(db_stocks)}개의 한국 주식 종목 검증을 시작합니다.\n")
+        print(f"총 {len(db_stocks)}개의 한국 주식 종목 검증 및 업데이트를 시작합니다.\n")
 
-        mismatch_count = 0
-        match_count = 0
+        updated_count = 0
+        skip_count = 0
         not_found_count = 0
 
-        # 3. 각 종목별 데이터 비교
+        # 3. 각 종목별 데이터 비교 및 업데이트
         for stock in db_stocks:
             ticker = stock.get('ticker')
             market = stock.get('market')
@@ -58,29 +58,34 @@ def check_incorrect_kr_names():
             actual_name = krx_names.get(ticker)
             
             if not actual_name:
-                print(f"[알림] {ticker} ({market}): KRX 마스터 데이터에서 찾을 수 없습니다.")
+                print(f"[알림] {ticker} ({market}): KRX 마스터 데이터에 존재하지 않아 업데이트를 건너뜁니다.")
                 not_found_count += 1
                 continue
 
-            # 최종 공백 제거 후 비교 및 결과 출력
+            # 양끝 공백 제거
             actual_name = actual_name.strip()
             current_db_name = current_db_name.strip()
 
             if current_db_name == actual_name:
-                match_count += 1
+                skip_count += 1
             else:
-                print(f"⚠️ [불일치 발견] {ticker}")
-                print(f"   - DB 저장 이름: '{current_db_name}'")
-                print(f"   - 실제 이름(KRX): '{actual_name}'\n")
-                mismatch_count += 1
+                # 4. 데이터베이스 이름 수정 실행
+                supabase.table("stocks") \
+                    .update({"name": actual_name}) \
+                    .eq("ticker", ticker) \
+                    .eq("market", market) \
+                    .execute()
+                
+                print(f"🔧 [이름수정] {ticker}: '{current_db_name}' -> '{actual_name}'")
+                updated_count += 1
 
-        print("=== 검증 완료 ===")
-        print(f"일치: {match_count}건")
-        print(f"불일치: {mismatch_count}건")
-        print(f"조회 실패(KRX 미존재): {not_found_count}건")
+        print("\n=== 업데이트 완료 ===")
+        print(f"일치 (기존 유지): {skip_count}건")
+        print(f"수정 (DB 업데이트): {updated_count}건")
+        print(f"건너뜀 (KRX 미존재): {not_found_count}건")
 
     except Exception as e:
         print(f"데이터베이스 처리 중 오류가 발생했습니다: {e}")
 
 if __name__ == "__main__":
-    check_incorrect_kr_names()
+    update_incorrect_kr_names()
