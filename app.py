@@ -24,15 +24,29 @@ def get_available_dates():
 def get_data(target_date, all_dates, market_type):
     target_date_str = str(target_date)
     if target_date_str not in all_dates: return None
-    target_idx = all_dates.index(target_date_str)
     
-    # 데이터 로드
-    df_curr = pd.DataFrame(supabase.table("daily_analysis").select("ticker, momentum_rank, weighted_momentum, rs_score, close_price, ma20").eq("price_date", target_date_str).eq("market", market_type).execute().data)
+    # 1. 메인 데이터 로드 (ma20 제거, 직접 계산)
+    res_curr = supabase.table("daily_analysis").select("ticker, momentum_rank, weighted_momentum, rs_score, close_price").eq("price_date", target_date_str).eq("market", market_type).execute()
+    df_curr = pd.DataFrame(res_curr.data)
+    
+    # 2. 이동평균 계산을 위한 과거 데이터 로드
+    res_hist = supabase.table("daily_analysis").select("ticker, price_date, close_price").eq("market", market_type).order("price_date", desc=True).limit(5000).execute()
+    df_hist = pd.DataFrame(res_hist.data)
+    df_hist['price_date'] = pd.to_datetime(df_hist['price_date'])
+    df_hist = df_hist.sort_values(['ticker', 'price_date'])
+    df_hist['MA20'] = df_hist.groupby('ticker')['close_price'].transform(lambda x: x.rolling(window=20).mean())
+    
+    # 3. 데이터 병합
+    ma20_today = df_hist[df_hist['price_date'] == pd.to_datetime(target_date_str)][['ticker', 'MA20']]
+    df_curr = pd.merge(df_curr, ma20_today, on='ticker', how='left')
+    
+    # 4. 이전 날짜 순위 데이터
+    target_idx = all_dates.index(target_date_str)
     prev_date = all_dates[min(target_idx + 1, len(all_dates)-1)]
     df_prev = pd.DataFrame(supabase.table("daily_analysis").select("ticker, momentum_rank").eq("price_date", prev_date).eq("market", market_type).execute().data)
     
     if df_curr.empty: return None
-    df_curr = df_curr.rename(columns={'momentum_rank': '순위', 'weighted_momentum': 'MOT', 'rs_score': 'RS', 'close_price': '종가', 'ma20': 'MA20'})
+    df_curr = df_curr.rename(columns={'momentum_rank': '순위', 'weighted_momentum': 'MOT', 'rs_score': 'RS', 'close_price': '종가'})
     df_prev = df_prev.rename(columns={'momentum_rank': '순위_prev'})
     
     df_final = pd.merge(df_curr, df_prev, on="ticker", how="left")
@@ -40,7 +54,7 @@ def get_data(target_date, all_dates, market_type):
     df_final['is_new_top30'] = (df_final['순위'] <= 30) & (df_final['순위_prev'] > 30)
     df_final['is_pullback'] = (df_final['순위'] <= 100) & (df_final['RS'] > 0) & (df_final['변동'] > 0)
     
-    # No.6 최적화 로직 필터 추가
+    # No.6 최적화 로직 (30위 이내 + RS 양수 + 순위 개선 + 주가 > MA20)
     df_final['is_no6_opt'] = (df_final['순위'] <= 30) & (df_final['RS'] > 0) & (df_final['변동'] > 0) & (df_final['종가'] > df_final['MA20'])
     
     df_stocks = pd.DataFrame(supabase.table("stocks").select("ticker, name").execute().data)
