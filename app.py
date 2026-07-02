@@ -22,7 +22,6 @@ def get_available_dates():
     return [item['price_date'] for item in response.data] if response.data else []
 
 def get_data(target_date, all_dates, market_type):
-    # 날짜를 YYYY-MM-DD 문자열로 고정
     target_date_str = pd.to_datetime(target_date).strftime('%Y-%m-%d')
     if target_date_str not in all_dates: return None
     
@@ -30,31 +29,26 @@ def get_data(target_date, all_dates, market_type):
     res_curr = supabase.table("daily_analysis").select("ticker, momentum_rank, weighted_momentum, rs_score, close_price").eq("price_date", target_date_str).eq("market", market_type).execute()
     df_curr = pd.DataFrame(res_curr.data)
     
-    # 2. 이동평균 계산 (날짜 형식 문자열로 통일하여 매칭)
-    #res_hist = supabase.table("daily_analysis").select("ticker, price_date, close_price").eq("market", market_type).order("price_date", desc=True).limit(10000).execute()
-    # 수정 코드 (limit 제거)
+    # 2. 이동평균 계산 (전체 데이터 로드)
     res_hist = supabase.table("daily_analysis").select("ticker, price_date, close_price").eq("market", market_type).execute()
     df_hist = pd.DataFrame(res_hist.data)
-    # 날짜 컬럼을 YYYY-MM-DD 문자열로 강제 변환
     df_hist['price_date'] = pd.to_datetime(df_hist['price_date']).dt.strftime('%Y-%m-%d')
+    df_hist['ticker'] = df_hist['ticker'].astype(str).str.strip()
     df_hist = df_hist.sort_values(['ticker', 'price_date'])
     df_hist['MA20'] = df_hist.groupby('ticker')['close_price'].transform(lambda x: x.rolling(window=20).mean())
     
-    # 데이터 병합 전 타입 통일
+    # 3. 데이터 병합 (병합 전 타입 통일)
     df_curr['ticker'] = df_curr['ticker'].astype(str).str.strip()
-    df_hist['ticker'] = df_hist['ticker'].astype(str).str.strip()
-    
-    # 특정 날짜의 MA20 추출
     ma20_today = df_hist[df_hist['price_date'] == target_date_str][['ticker', 'MA20']]
     df_curr = pd.merge(df_curr, ma20_today, on='ticker', how='left')
     
-    # 3. 이전 날짜 순위 데이터 (문자열 매칭)
+    # 4. 이전 날짜 순위 데이터
     target_idx = all_dates.index(target_date_str)
     prev_date = all_dates[min(target_idx + 1, len(all_dates)-1)]
     df_prev = pd.DataFrame(supabase.table("daily_analysis").select("ticker, momentum_rank").eq("price_date", prev_date).eq("market", market_type).execute().data)
     df_prev['ticker'] = df_prev['ticker'].astype(str).str.strip()
     
-    if df_curr.empty: return None
+    # 데이터 정리
     df_curr = df_curr.rename(columns={'momentum_rank': '순위', 'weighted_momentum': 'MOT', 'rs_score': 'RS', 'close_price': '종가'})
     df_prev = df_prev.rename(columns={'momentum_rank': '순위_prev'})
     
@@ -63,16 +57,20 @@ def get_data(target_date, all_dates, market_type):
     df_final['is_new_top30'] = (df_final['순위'] <= 30) & (df_final['순위_prev'] > 30)
     df_final['is_pullback'] = (df_final['순위'] <= 100) & (df_final['RS'] > 0) & (df_final['변동'] > 0)
     
-    # No.6 최적화 (MA20 필터 적용)
-    df_final['is_no6_opt'] = (df_final['순위'] <= 30) & (df_final['RS'] > 0) & (df_final['종가'] > df_final['MA20'].fillna(0))
+    # 5. 최적화 필터: MA20이 없으면 0 처리
+    df_final['MA20'] = df_final['MA20'].fillna(0)
+    df_final['is_no6_opt'] = (df_final['순위'] <= 30) & (df_final['RS'] > 0) & (df_final['종가'] > df_final['MA20'])
     
+    # 6. 최종 병합
     df_stocks = pd.DataFrame(supabase.table("stocks").select("ticker, name").execute().data)
     df_stocks['ticker'] = df_stocks['ticker'].astype(str).str.strip()
-    return pd.merge(df_final, df_stocks, on="ticker", how="left").rename(columns={'name': '종목명'}).sort_values('순위')
+    final_df = pd.merge(df_final, df_stocks, on="ticker", how="left").rename(columns={'name': '종목명'})
+    
+    return final_df.sort_values('순위')
 
-# --- 2. UI 및 메인 로직 ---
+# --- 2. UI ---
 st.set_page_config(layout="wide")
-st.markdown("##### 📈 Momentum Dashboard v1.3.2") 
+st.markdown("##### 📈 Momentum Dashboard v1.3.3") 
 
 with st.sidebar:
     market_type = st.radio("Market", ["KR", "US"], horizontal=True)
@@ -88,11 +86,12 @@ if df_display is not None:
     col_order = ['순위', '변동', '종목명', 'MOT', 'RS', '종가', 'MA20']
     tab_dfs = [df_display.head(100), df_display[df_display['is_new_top30']], df_display[df_display['is_pullback']], df_display[df_display['is_no6_opt']]]
     
+    # 탭별 데이터 출력
     for i, tab in enumerate([tab1, tab2, tab3, tab4]):
         with tab:
             st.dataframe(tab_dfs[i][col_order].style.apply(apply_styles, axis=None).format({
-                    'MOT': '{:.2f}', 'RS': '{:.2f}', '종가': '{:,.0f}', 'MA20': '{:,.0f}', '변동': '{:+.0f}'
-                }), hide_index=True, use_container_width=True)
+                'MOT': '{:.2f}', 'RS': '{:.2f}', '종가': '{:,.0f}', 'MA20': '{:,.0f}', '변동': '{:+.0f}'
+            }), hide_index=True, use_container_width=True)
     
     with tab5:
         st.markdown("###### 📋 오늘의 리밸런싱 지시서")
@@ -106,4 +105,4 @@ if df_display is not None:
             st.success(f"BUY (신규 진입): {len(buy_df)}종목")
             if not buy_df.empty: st.dataframe(buy_df[['종목명', '순위']], use_container_width=True)
 else:
-    st.warning("No data found for selected date.")
+    st.warning("데이터를 불러오는 중입니다.")
