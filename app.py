@@ -178,40 +178,44 @@ if df_display is not None:
             * **추세 이탈:** 종가 < MA20 또는 시장 주의보 발령
             """)
 
-    with tab5:
+        with tab5:
+        st.markdown("### 📋 오늘의 매매 지시서 (No.6 전략 기준)")
         
-        # 1. SELL 조건: 어제는 30위 이내였으나 오늘은 30위 밖인 종목 + 시장 위험시
-        # 시장이 위험(not market_safe)하면 전체 매도 신호를 띄우되, 
-        # 순위 이탈 종목을 상단에 우선 배치하는 구조
-        sell_df = df_display[
-            (df_display['순위'] > 30) & (df_display['순위_prev'] <= 30)
-        ]
+        # 전략 기준 매매 대상만 필터링
+        df_rebal = df_display[df_display['매매상태'].isin(['매도필요', '매수추천'])].copy()
         
-        # 2. BUY 조건: 어제는 30위 밖이었으나 오늘은 30위 이내로 진입한 종목
-        buy_df = df_display[
-            (df_display['순위'] <= 30) & (df_display['순위_prev'] > 30)
-        ]
+        if df_rebal.empty:
+            st.success("✅ 모든 종목이 전략 상태와 일치합니다. 리밸런싱이 필요 없습니다.")
+        else:
+            c1, c2 = st.columns(2)
+            
+            # 좌측: 매도 (SELL)
+            with c1:
+                st.error("### 🚨 매도 (SELL)")
+                sell_list = df_rebal[df_rebal['매매상태'] == '매도필요']
+                if sell_list.empty:
+                    st.write("매도할 종목이 없습니다.")
+                else:
+                    for _, row in sell_list.iterrows():
+                        with st.container(border=True):
+                            cols = st.columns([2, 1])
+                            cols[0].write(f"**{row['종목명']}**\n{row['ticker']}")
+                            if cols[1].button("매도 완료", key=f"tab5_sell_{row['ticker']}"):
+                                update_holdings(row['ticker'], 'SELL')
+            
+            # 우측: 매수 (BUY)
+            with c2:
+                st.success("### ✅ 매수 (BUY)")
+                buy_list = df_rebal[df_rebal['매매상태'] == '매수추천']
+                if buy_list.empty:
+                    st.write("매수할 종목이 없습니다.")
+                else:
+                    for _, row in buy_list.iterrows():
+                        with st.container(border=True):
+                            cols = st.columns([2, 1])
+                            cols[0].write(f"**{row['종목명']}**\n{row['ticker']}")
+                            if cols[1].button("매수 완료", key=f"tab5_buy_{row['ticker']}"):
+                                update_holdings(row['ticker'], 'BUY')
 
-        c1, c2 = st.columns(2)
-        with c1:
-            st.error(f"SELL (30위권 이탈): {len(sell_df)}종목")
-            if not sell_df.empty: 
-                st.dataframe(sell_df[['종목명', '순위', '순위_prev']], hide_index=True, use_container_width=True)
-            if not market_safe:
-                st.warning("⚠️ 시장 전체 하락장: 보유 종목 전량 매도/현금화 권고")
-        
-        with c2:
-            st.success(f"BUY (신규 진입): {len(buy_df)}종목")
-            if not buy_df.empty: 
-                st.dataframe(buy_df[['종목명', '순위', '순위_prev']], hide_index=True, use_container_width=True)
-
-        # 3. 전략 설명 추가
-        st.divider()
-        # st.markdown("#### 🔄 리밸런싱 전략 가이드")
-        st.info("""
-        * **SELL (매도):** 어제까지 모멘텀 순위 30위 이내였으나, 오늘 30위 밖으로 밀려난 종목들입니다. **추세가 꺾인 종목을 즉시 교체하세요.**
-        * **BUY (매수):** 새롭게 모멘텀 상위 30위권 안으로 진입한 '떠오르는 강자'들입니다.
-        * **시장 위기 대응:** 벤치마크 지수가 MA20을 하회할 경우, 신규 매수를 중단하고 포트폴리오를 현금화하여 방어합니다.
-        """)
 else:
     st.warning("데이터를 불러오는 중입니다.")
