@@ -118,90 +118,63 @@ if df_display is not None:
     
     col_order = ['순위', '변동', '종목명', 'MOT', 'RS', '종가', 'MA20']
     tab_dfs = [df_display.head(100), df_display[df_display['is_new_top30']], df_display[df_display['is_pullback']], df_display[df_display['is_no6_opt']]]
-    
+
+    # --- Tab 1, 2, 3
     for i, tab in enumerate([tab1, tab2, tab3]):
         with tab:
             st.dataframe(tab_dfs[i][col_order].style.apply(apply_styles, axis=None).format({
                     'MOT': '{:.2f}', 'RS': '{:.2f}', '종가': '{:,.0f}', 'MA20': '{:,.0f}', '변동': '{:+.0f}'
                 }), hide_index=True, use_container_width=True)
-            
-    
 
+    # --- Tab 4(매매 지시서) 모바일 최적화 코드 ---
     with tab4:
-        st.markdown("### 📋 오늘의 매매 지시서 (No.6 전략 기준)")
-        # --- 추가: 보유 종목 현황 표 ---
-        st.markdown("### 💼 현재 보유 종목 현황")
-        holdings_df = df_display[df_display['매매상태'] == '보유중'].copy()
+        st.markdown("### 📋 오늘의 매매 지시서")
         
-        if holdings_df.empty:
-            st.info("현재 보유 중인 종목이 없습니다.")
-        else:
-            # 깔끔하게 필요한 정보만 추출
-            display_cols = ['종목명', '순위', '종가', 'RS']
-            st.dataframe(
-                holdings_df[display_cols].style.format({'종가': '{:,.0f}', 'RS': '{:.2f}'}),
-                hide_index=True, 
-                use_container_width=True
-            )
-        
-        st.divider() # 보유 표와 매매 지시서 구분
-        
-        # 전략 기준 매매 대상만 필터링
+        # 1. 보유 종목 현황
+        with st.expander("💼 현재 보유 종목 현황", expanded=True):
+            holdings_df = df_display[df_display['매매상태'] == '보유중'].copy()
+            if holdings_df.empty:
+                st.info("현재 보유 중인 종목이 없습니다.")
+            else:
+                st.dataframe(holdings_df[['종목명', '순위', '종가']].style.format({'종가': '{:,.0f}'}), 
+                             hide_index=True, use_container_width=True)
+
+        st.divider()
+
+        # 2. 매수/매도 지시서 (세로 배치)
         df_rebal = df_display[df_display['매매상태'].isin(['매도필요', '매수추천'])].copy()
         
         if df_rebal.empty:
-            st.success("✅ 모든 종목이 전략 상태와 일치합니다. 리밸런싱이 필요 없습니다.")
+            st.success("✅ 리밸런싱이 필요 없습니다.")
         else:
-            c1, c2 = st.columns(2)
-            
-            # 좌측: 매도 (SELL)
-            with c1:
+            # 매도 종목
+            sell_list = df_rebal[df_rebal['매매상태'] == '매도필요']
+            if not sell_list.empty:
                 st.error("### 🚨 매도 (SELL)")
-                sell_list = df_rebal[df_rebal['매매상태'] == '매도필요']
-                if sell_list.empty:
-                    st.write("매도할 종목이 없습니다.")
-                else:
-                    for _, row in sell_list.iterrows():
-                        with st.container(border=True):
-                            cols = st.columns([2, 1])
-                            cols[0].write(f"**{row['종목명']}**\n{row['ticker']}")
-                            if cols[1].button("매도 완료", key=f"tab5_sell_{row['ticker']}"):
-                                update_holdings(row['ticker'], 'SELL')
-            
-            # 우측: 매수 (BUY)
-            with c2:
-                st.success("### ✅ 매수 (BUY)")
-                buy_list = df_rebal[df_rebal['매매상태'] == '매수추천']
-                if buy_list.empty:
-                    st.write("매수할 종목이 없습니다.")
-                else:
-                    for _, row in buy_list.iterrows():
-                        with st.container(border=True):
-                            cols = st.columns([2, 1])
-                            cols[0].write(f"**{row['종목명']}**\n{row['ticker']}")
-                            if cols[1].button("매수 완료", key=f"tab5_buy_{row['ticker']}"):
-                                update_holdings(row['ticker'], 'BUY')
+                for _, row in sell_list.iterrows():
+                    with st.container(border=True):
+                        # 모바일에서는 1:1 비율보다 텍스트 위주로
+                        c1, c2 = st.columns([3, 1])
+                        c1.markdown(f"**{row['종목명']}**<br><small>{row['ticker']}</small>", unsafe_allow_html=True)
+                        if c2.button("매도", key=f"s_{row['ticker']}"): update_holdings(row['ticker'], 'SELL')
 
-        # 2. 구분선 추가
-        st.divider()
-        # 3. 전략 조건 설명 (표 바로 아래 배치)
-        # st.markdown("#### 🔍 No.6 전략 필터링 조건")
-        st.caption("이 전략은 모멘텀이 강하고 추세가 확인된 최적의 종목을 선별합니다.")
-        
-        c1, c2 = st.columns(2)
-        with c1:
-            st.success("**[매수 조건]**")
+            # 매수 종목
+            buy_list = df_rebal[df_rebal['매매상태'] == '매수추천']
+            if not buy_list.empty:
+                st.success("### ✅ 매수 (BUY)")
+                for _, row in buy_list.iterrows():
+                    with st.container(border=True):
+                        c1, c2 = st.columns([3, 1])
+                        c1.markdown(f"**{row['종목명']}**<br><small>{row['ticker']}</small>", unsafe_allow_html=True)
+                        if c2.button("매수", key=f"b_{row['ticker']}"): update_holdings(row['ticker'], 'BUY')
+
+        # 3. 전략 상세 (접기/펼치기)
+        with st.expander("🔍 No.6 전략 필터링 조건 확인"):
             st.markdown("""
-            * **모멘텀 순위:** 전체 30위 이내
-            * **상대 강도(RS):** 0 초과 (시장 대비 우위)
-            * **추세 확인:** 종가 > 20일 이동평균선(MA20)
+            **매수:** 순위 30위 이내 + RS > 0 + 종가 > MA20  
+            **매도:** 순위 30위 밖 이탈 또는 추세 이탈
             """)
-        with c2:
-            st.error("**[매도(제외) 조건]**")
-            st.markdown("""
-            * **순위 이탈:** 30위권 밖으로 하락
-            * **추세 이탈:** 종가 < MA20 또는 시장 주의보 발령
-            """)
+
 
 else:
     st.warning("데이터를 불러오는 중입니다.")
