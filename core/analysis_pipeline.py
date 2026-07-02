@@ -12,6 +12,9 @@ def safe_float(val):
     return val
 
 def run_analysis_pipeline(market='KR',target_date=None):
+    # 날짜 로그 출력 (가장 중요)
+    print(f"DEBUG: 파이프라인 대상 날짜 확인 -> {target_date}")
+    
     # 날짜가 지정되지 않으면 오늘 날짜 사용
     analysis_date = target_date if target_date else datetime.now().strftime('%Y-%m-%d')
     
