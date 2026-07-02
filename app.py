@@ -20,8 +20,12 @@ def get_available_dates():
     return [item['price_date'] for item in response.data] if response.data else []
 
 def get_data(target_date, all_dates, market_type):
+    # 날짜 필터링을 위한 문자열 (RPC 호출용)
     target_date_str = pd.to_datetime(target_date).strftime('%Y-%m-%d')
     if target_date_str not in all_dates: return None
+
+    # [수정 핵심 1] 타겟 날짜를 타임스탬프 객체로 변환 (시/분/초 제거)
+    target_date_ts = pd.Timestamp(target_date).normalize()
     
     # 1. 메인 데이터 로드
     res_curr = supabase.table("daily_analysis").select("ticker, momentum_rank, weighted_momentum, rs_score, close_price").eq("price_date", target_date_str).eq("market", market_type).execute()
@@ -35,38 +39,43 @@ def get_data(target_date, all_dates, market_type):
     res_hist = supabase.table("daily_analysis").select("ticker, price_date, close_price").eq("market", market_type).execute()
     df_hist = pd.DataFrame(res_hist.data)
     
-    df_hist['price_date'] = pd.to_datetime(df_hist['price_date']).dt.strftime('%Y-%m-%d')
+    # [수정 핵심 2] price_date를 임시 타임스탬프 객체로 변환 (ffill과 MA20 계산용)
+    df_hist['price_date_raw'] = pd.to_datetime(df_hist['price_date'], errors='coerce')
     df_hist['close_price'] = pd.to_numeric(df_hist['close_price'], errors='coerce').astype('float64')
     df_hist['ticker'] = df_hist['ticker'].astype(str).str.strip()
     
     # 결측치 보간
-    df_hist = df_hist.sort_values(['ticker', 'price_date'])
+    df_hist = df_hist.sort_values(['ticker', 'price_date_raw'])
     df_hist['close_price'] = df_hist.groupby('ticker')['close_price'].ffill()
     
     # MA20 계산 (lambda 내에서 타입 변환 제외하고 밖에서 안전하게 처리)
     df_hist['MA20'] = df_hist.groupby('ticker')['close_price'].transform(lambda x: x.rolling(window=20, min_periods=1).mean())
     df_hist['MA20'] = df_hist['MA20'].astype('float64')
+
+    # [수정 핵심 3] 데이터 병합 전, price_date를 표준 타임스탬프 객체로 변환 (시/분/초 제거)
+    df_hist['price_date_ts'] = df_hist['price_date_raw'].dt.normalize()
     
     # 3. 타겟 날짜 MA20 추출
-    ma20_today = df_hist[df_hist['price_date'] == target_date_str][['ticker', 'MA20']].copy()
+    # [수정 핵심 4] 문자열 비교 대신 타임스탬프 객체끼리 비교 (미세 시간차 무시)
+    ma20_today = df_hist[df_hist['price_date_ts'] == target_date_ts][['ticker', 'MA20']].copy()
     ma20_today['ticker'] = ma20_today['ticker'].astype(str).str.strip()
     
-    # --- 🚨 X-ray 진단 화면 출력 🚨 ---
+    # --- 🚨 X-ray 진단 화면 출력 (수정됨) 🚨 ---
     st.info(f"선택한 날짜: {target_date_str}")
-    st.info(f"전체 과거 데이터 수: {len(df_hist)}건 / 오늘 날짜({target_date_str})로 추출된 MA20 데이터: {len(ma20_today)}건")
+    st.info(f"전체 과거 데이터 수: {len(df_hist)}건 / 타임스탬프 매칭으로 추출된 MA20 데이터: {len(ma20_today)}건")
     if not ma20_today.empty:
-        st.success(f"정상 계산된 MA20 샘플값 (비어있지 않아야 함): {ma20_today['MA20'].dropna().iloc[0]:.2f}")
+        st.success(f"정상 계산된 MA20 샘플값: {ma20_today['MA20'].dropna().iloc[0]:.2f}")
     else:
-        st.error("🚨 추출된 MA20 데이터가 0건입니다! (해당 날짜에 일치하는 데이터가 DB에 없음)")
-    # ---------------------------------
+        st.error(f"🚨 추출된 MA20 데이터가 0건입니다! (Supabase 데이터의 날짜/시간 포맷 문제)")
+    # ----------------------------------------
     
     # 메인 데이터와 MA20 병합
     df_final = pd.merge(df_curr, ma20_today, on='ticker', how='left')
     
-    # --- 🚨 X-ray 병합 결과 진단 🚨 ---
+    # --- 🚨 X-ray 병합 결과 진단 (수정됨) 🚨 ---
     nan_count = df_final['MA20'].isna().sum()
     if nan_count > 0:
-        st.error(f"🚨 병합 직후 MA20 값이 누락된(NaN) 종목 수: {nan_count}건 (티커 매칭 실패)")
+        st.error(f"🚨 병합 직후 MA20 값이 누락된 종목 수: {nan_count}건 (Ticker 매칭 문제)")
     # ---------------------------------
     
     # 4. 이전 날짜 순위 데이터 병합
@@ -96,11 +105,12 @@ def get_data(target_date, all_dates, market_type):
 
 # --- 2. UI 및 메인 로직 ---
 st.set_page_config(layout="wide")
-st.markdown("##### 📈 Momentum Dashboard v1.3.8") 
+st.markdown("##### 📈 Momentum Dashboard v1.3.9") 
 
 with st.sidebar:
     market_type = st.radio("Market", ["KR", "US"], horizontal=True)
     all_dates = get_available_dates()
+    # 사이드바에도 타임스탬프 기반 날짜로 표시
     selected_date = st.date_input("Date", value=pd.to_datetime(all_dates[0]) if all_dates else None)
     if st.button("Refresh"): st.rerun()
 
