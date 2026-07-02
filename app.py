@@ -130,13 +130,18 @@ if df_display is not None:
     with tab4:
         st.markdown("##### 📋 오늘의 매매 지시서")
         
-        # 1. 보유 종목 현황 (접기/펼치기)
-        holdings = df_display[df_display['매매상태'] == '보유중']
+        # 1. 보유 종목 현황 (접기/펼치기) / 포맷팅 적용
+        holdings = df_display[df_display['매매상태'] == '보유중'].copy()
         with st.expander(f"💼 현재 보유 종목 ({len(holdings)}개)", expanded=False):
             if holdings.empty:
                 st.info("보유 종목 없음")
             else:
-                st.table(holdings[['순위', '종목명', '종가']],hide_index=True)
+                # 데이터 복사 후 포맷팅
+                display_holdings = holdings[['종목명', '순위', '종가']].copy()
+                display_holdings['종가'] = display_holdings['종가'].apply(lambda x: f"{int(x):,}")
+                
+                st.table(display_holdings)
+
 
         # 2. 매매 신호 (매수/매도 리스트)
         df_rebal = df_display[df_display['매매상태'].isin(['매도필요', '매수추천'])]
