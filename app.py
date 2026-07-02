@@ -41,6 +41,14 @@ def get_data(target_date, all_dates, market_type):
     
     # [핵심] min_periods=1을 사용하여 데이터가 20개 미만이어도 평균 계산
     df_hist['MA20'] = df_hist.groupby('ticker')['close_price'].transform(lambda x: x.rolling(window=20, min_periods=1).mean())
+    # --- [여기에 추가] ---
+    if df_hist['MA20'].sum() == 0:
+        st.warning("MA20 계산 결과가 전부 0입니다. 데이터의 close_price 값이 모두 0이거나 데이터 타입 문제입니다.")
+    else:
+        # 데이터가 있다면 마지막 값을 출력해봅니다
+        last_val = df_hist['MA20'].dropna().iloc[-1]
+        st.write(f"계산된 MA20 샘플값: {last_val}")
+    # -------------------
     
     # 3. 데이터 병합
     df_curr['ticker'] = df_curr['ticker'].astype(str).str.strip()
