@@ -27,19 +27,21 @@ def get_data(target_date, all_dates, market_type):
     target_idx = all_dates.index(target_date_str)
     
     # 데이터 로드
-    df_curr = pd.DataFrame(supabase.table("daily_analysis").select("ticker, momentum_rank, weighted_momentum, rs_score, close_price").eq("price_date", target_date_str).eq("market", market_type).execute().data)
+    df_curr = pd.DataFrame(supabase.table("daily_analysis").select("ticker, momentum_rank, weighted_momentum, rs_score, close_price, ma20").eq("price_date", target_date_str).eq("market", market_type).execute().data)
     prev_date = all_dates[min(target_idx + 1, len(all_dates)-1)]
     df_prev = pd.DataFrame(supabase.table("daily_analysis").select("ticker, momentum_rank").eq("price_date", prev_date).eq("market", market_type).execute().data)
     
     if df_curr.empty: return None
-    df_curr = df_curr.rename(columns={'momentum_rank': '순위', 'weighted_momentum': 'MOT', 'rs_score': 'RS', 'close_price': '종가'})
+    df_curr = df_curr.rename(columns={'momentum_rank': '순위', 'weighted_momentum': 'MOT', 'rs_score': 'RS', 'close_price': '종가', 'ma20': 'MA20'})
     df_prev = df_prev.rename(columns={'momentum_rank': '순위_prev'})
     
     df_final = pd.merge(df_curr, df_prev, on="ticker", how="left")
     df_final['변동'] = df_final['순위_prev'].fillna(999) - df_final['순위']
     df_final['is_new_top30'] = (df_final['순위'] <= 30) & (df_final['순위_prev'] > 30)
-    # 고도화 필터: 100위 이내 + RS 0 이상 + 모멘텀 개선
     df_final['is_pullback'] = (df_final['순위'] <= 100) & (df_final['RS'] > 0) & (df_final['변동'] > 0)
+    
+    # No.6 최적화 로직 필터 추가
+    df_final['is_no6_opt'] = (df_final['순위'] <= 30) & (df_final['RS'] > 0) & (df_final['변동'] > 0) & (df_final['종가'] > df_final['MA20'])
     
     df_stocks = pd.DataFrame(supabase.table("stocks").select("ticker, name").execute().data)
     return pd.merge(df_final, df_stocks, on="ticker", how="left").rename(columns={'name': '종목명'}).sort_values('순위')
@@ -58,10 +60,9 @@ def show_chart(ticker, name, market_type):
         fig.update_yaxes(autorange="reversed", row=2, col=1)
         st.plotly_chart(fig, use_container_width=True)
 
-# --- 3. UI 및 리밸런싱 시스템 ---
+# --- 3. UI 및 메인 로직 ---
 st.set_page_config(layout="wide")
-#st.title("📈 Momentum Dashboard v1.2.0")
-st.markdown("##### 📈 Momentum Dashboard v1.2.0") 
+st.markdown("##### 📈 Momentum Dashboard v1.3.0") 
 
 with st.sidebar:
     market_type = st.radio("Market", ["KR", "US"], horizontal=True)
@@ -72,31 +73,23 @@ with st.sidebar:
 df_display = get_data(selected_date, all_dates, market_type)
 
 if df_display is not None:
-    tab1, tab2, tab3, tab4 = st.tabs(["Overview", "New Entries", "🎯 Pullback", "🔄 Rebalancing"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["Overview", "New Entries", "🎯 Pullback", "🚀 No.6 최적화", "🔄 Rebalancing"])
     
-    # 탭별 데이터 구성
-    tab_dfs = [df_display.head(100), df_display[df_display['is_new_top30']], df_display[df_display['is_pullback']]]
     col_order = ['순위', '변동', '종목명', 'MOT', 'RS', '종가']
+    tab_dfs = [df_display.head(100), df_display[df_display['is_new_top30']], df_display[df_display['is_pullback']], df_display[df_display['is_no6_opt']]]
     
-    for i, tab in enumerate([tab1, tab2, tab3]):
+    for i, tab in enumerate([tab1, tab2, tab3, tab4]):
         with tab:
-            event = st.dataframe(tab_dfs[i][col_order].style.apply(apply_styles, axis=None).format({'MOT': '{:.2f}', 'RS': '{:.2f}', '종가': '{:,.0f}', '변동': '{:+.0f}'}), 
-                                hide_index=True, use_container_width=True, selection_mode="single-row", on_select="rerun")
-            if st.button(f"📊 View Analysis", key=f"btn_{i}"):
-                if event.selection and event.selection['rows']:
-                    row = tab_dfs[i].iloc[event.selection['rows'][0]]
-                    show_chart(row['ticker'], row['종목명'], market_type)
+            st.dataframe(tab_dfs[i][col_order].style.apply(apply_styles, axis=None).format({'MOT': '{:.2f}', 'RS': '{:.2f}', '종가': '{:,.0f}', '변동': '{:+.0f}'}), 
+                        hide_index=True, use_container_width=True)
     
-    with tab4:
-        #st.subheader("📋 오늘의 리밸런싱 지시서")
+    with tab5:
         st.markdown("###### 📋 오늘의 리밸런싱 지시서")
         c1, c2 = st.columns(2)
-        # SELL: 30위권 이탈
         sell_df = df_display[(df_display['순위'] > 30) & (df_display['순위_prev'] <= 30)]
         with c1:
             st.error(f"SELL (30위권 이탈): {len(sell_df)}종목")
             if not sell_df.empty: st.dataframe(sell_df[['종목명', '순위', '순위_prev']], use_container_width=True)
-        # BUY: 신규 진입
         buy_df = df_display[df_display['is_new_top30']]
         with c2:
             st.success(f"BUY (신규 진입): {len(buy_df)}종목")
