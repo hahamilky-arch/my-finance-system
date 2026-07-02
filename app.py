@@ -129,32 +129,34 @@ if df_display is not None:
         # st.markdown("### 🚀 No.6 전략 실전 매매 지시서")
         st.caption("전략 신호와 실제 보유 종목을 비교하여 즉각적인 리밸런싱을 수행하세요.")
         
-        # 매매상태가 '매도필요'이거나 '매수추천'인 종목을 우선 정렬
-        df_sorted = df_display.copy()
-        df_sorted['sort_key'] = df_sorted['매매상태'].map({'매도필요': 0, '매수추천': 1, '보유중': 2, '관망': 3})
-        df_sorted = df_sorted.sort_values('sort_key')
+        # 신호가 있는 종목만 필터링
+        df_actions = df_display[df_display['매매상태'] != '관망'].copy()
         
-        # 버튼 처리가 포함된 리스트 출력
-        for _, row in df_sorted.iterrows():
-            if row['매매상태'] == '관망': continue # 관망 종목은 리스트에서 제외 (깔끔하게)
-            
-            c1, c2, c3 = st.columns([3, 2, 2])
-            
-            # 상태에 따른 아이콘 표시
-            status_icon = "🚨" if row['매매상태'] == '매도필요' else ("✅" if row['매매상태'] == '매수추천' else "💼")
-            c1.write(f"{status_icon} **{row['매매상태']}** : {row['종목명']} ({row['ticker']})")
-            c2.write(f"순위: {row['순위']}위 / RS: {row['RS']:.2f}")
-            
-            # 버튼 동작
-            if row['매매상태'] == '매도필요':
-                if c3.button("매도 완료", key=f"tab4_sell_{row['ticker']}"):
-                    update_holdings(row['ticker'], 'SELL')
-            elif row['매매상태'] == '매수추천':
-                if c3.button("매수 완료", key=f"tab4_buy_{row['ticker']}"):
-                    update_holdings(row['ticker'], 'BUY')
-            elif row['매매상태'] == '보유중':
-                c3.write("보유중")
+        if df_actions.empty:
+            st.info("현재 No.6 전략상 매매할 종목이 없습니다. 시장을 관망하세요.")
+        else:
+            # 매매상태별로 섹션을 나누어 가독성 확보
+            for status in ['매도필요', '매수추천', '보유중']:
+                subset = df_actions[df_actions['매매상태'] == status]
+                if subset.empty: continue
                 
+                # 상태별 컬러 컨테이너
+                with st.container(border=True):
+                    st.subheader(f"{'🚨' if status == '매도필요' else '✅' if status == '매수추천' else '💼'} {status}")
+                    
+                    for _, row in subset.iterrows():
+                        cols = st.columns([2, 2, 2, 1])
+                        cols[0].write(f"**{row['종목명']}**")
+                        cols[1].caption(f"{row['ticker']}")
+                        cols[2].write(f"{row['순위']}위 / RS: {row['RS']:.2f}")
+                        
+                        # 버튼 영역
+                        if status == '매도필요':
+                            if cols[3].button("매도", key=f"s_{row['ticker']}"): update_holdings(row['ticker'], 'SELL')
+                        elif status == '매수추천':
+                            if cols[3].button("매수", key=f"b_{row['ticker']}"): update_holdings(row['ticker'], 'BUY')
+                        else:
+                            cols[3].write("유지")
         # 2. 구분선 추가
         st.divider()
         # 3. 전략 조건 설명 (표 바로 아래 배치)
