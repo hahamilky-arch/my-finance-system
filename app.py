@@ -102,10 +102,10 @@ if df_display is not None:
         sell_df = df_display[(df_display['순위'] > 30) | (not market_safe)]
         with c1:
             st.error(f"SELL (매도): {len(sell_df)}종목")
-            if not sell_df.empty: st.dataframe(sell_df[['종목명', '순위', '종가']], use_container_width=True)
+            if not sell_df.empty: st.dataframe(sell_df[['종목명', '순위', '종가']],hide_index=True, use_container_width=True)
         buy_df = df_display[df_display['is_no6_opt'] & market_safe]
         with c2:
             st.success(f"BUY (신규): {len(buy_df)}종목")
-            if not buy_df.empty: st.dataframe(buy_df[['종목명', '순위', '종가']], use_container_width=True)
+            if not buy_df.empty: st.dataframe(buy_df[['종목명', '순위', '종가']],hide_index=True, use_container_width=True)
 else:
     st.warning("데이터를 불러오는 중입니다.")
