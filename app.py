@@ -20,68 +20,80 @@ def get_available_dates():
     return [item['price_date'] for item in response.data] if response.data else []
 
 def get_data(target_date, all_dates, market_type):
-    # 날짜 필터링을 위한 문자열 (RPC 호출용)
-    target_date_str = pd.to_datetime(target_date).strftime('%Y-%m-%d')
+    # 날짜 필터링을 위한 타임스탬프 (Normalize하여 시/분/초 제거)
+    target_date_ts = pd.Timestamp(target_date).normalize()
+    target_date_str = target_date_ts.strftime('%Y-%m-%d')
     if target_date_str not in all_dates: return None
 
-    # [수정 핵심 1] 타겟 날짜를 타임스탬프 객체로 변환 (시/분/초 제거)
-    target_date_ts = pd.Timestamp(target_date).normalize()
-    
-    # 1. 메인 데이터 로드
+    # 1. 메인 데이터 로드 (타겟 날짜의 종가)
+    # Supabase 기본 1000건 제한을 피하기 위해, 타겟 날짜 데이터만 명확히 조회
+    # (종목 수가 1000개가 넘는 경우를 대비해, 날짜 필터링 강화)
     res_curr = supabase.table("daily_analysis").select("ticker, momentum_rank, weighted_momentum, rs_score, close_price").eq("price_date", target_date_str).eq("market", market_type).execute()
     df_curr = pd.DataFrame(res_curr.data)
     
-    # 타입 강제 변환 (에러 방지용 float64)
+    # 타입 강제 변환 ('float64' 문자열 사용)
     df_curr['close_price'] = pd.to_numeric(df_curr['close_price'], errors='coerce').astype('float64')
     df_curr['ticker'] = df_curr['ticker'].astype(str).str.strip()
     
-    # 2. 이동평균 계산을 위한 과거 데이터 로드
-    res_hist = supabase.table("daily_analysis").select("ticker, price_date, close_price").eq("market", market_type).execute()
-    df_hist = pd.DataFrame(res_hist.data)
+    # 분석 대상 티커 목록 추출
+    ticker_list = df_curr['ticker'].unique()
+    st.info(f"선택한 날짜: {target_date_str} ({market_type}) / 분석 대상 종목 수: {len(ticker_list)}개")
     
-    # [수정 핵심 2] price_date를 임시 타임스탬프 객체로 변환 (ffill과 MA20 계산용)
-    df_hist['price_date_raw'] = pd.to_datetime(df_hist['price_date'], errors='coerce')
+    # 2. 이동평균 계산 (개별 티커별 루프 조회 - 핵심 수정 구간)
+    prices_list = []
+    prices_found_count = 0
+    
+    # 데이터를 조회할 때, ffill이 필요한 경우를 대비해 타겟 날짜보다 여유 있게 가져옴
+    # MA20을 위해 20일치 + 혹시 모를 ffill용 1일치 추가 = 21일치
+    limit_per_ticker = 21 
+    
+    with st.spinner(f"총 {len(ticker_list)}개 종목의 {limit_per_ticker}일치 히스토리를 티커별로 조회 중..."):
+        for ticker in ticker_list:
+            res = supabase.table("daily_analysis") \
+                .select("ticker, price_date, close_price") \
+                .eq("ticker", ticker) \
+                .order("price_date", desc=True) \
+                .limit(limit_per_ticker) \
+                .execute()
+            
+            if res.data:
+                prices_list.extend(res.data)
+                prices_found_count += 1
+                
+    if not prices_list:
+        st.error("🚨 데이터베이스에서 과거 데이터를 루프 조회하는 데 실패했습니다.")
+        return None
+        
+    df_hist = pd.DataFrame(prices_list)
+    df_hist['price_date_ts'] = pd.to_datetime(df_hist['price_date']).dt.normalize()
     df_hist['close_price'] = pd.to_numeric(df_hist['close_price'], errors='coerce').astype('float64')
     df_hist['ticker'] = df_hist['ticker'].astype(str).str.strip()
     
-    # 결측치 보간
-    df_hist = df_hist.sort_values(['ticker', 'price_date_raw'])
+    # 결측치 보간 (ffill) 및 MA20 계산
+    df_hist = df_hist.sort_values(['ticker', 'price_date_ts'])
     df_hist['close_price'] = df_hist.groupby('ticker')['close_price'].ffill()
-    
-    # MA20 계산 (lambda 내에서 타입 변환 제외하고 밖에서 안전하게 처리)
     df_hist['MA20'] = df_hist.groupby('ticker')['close_price'].transform(lambda x: x.rolling(window=20, min_periods=1).mean())
     df_hist['MA20'] = df_hist['MA20'].astype('float64')
 
-    # [수정 핵심 3] 데이터 병합 전, price_date를 표준 타임스탬프 객체로 변환 (시/분/초 제거)
-    df_hist['price_date_ts'] = df_hist['price_date_raw'].dt.normalize()
-    
     # 3. 타겟 날짜 MA20 추출
-    # [수정 핵심 4] 문자열 비교 대신 타임스탬프 객체끼리 비교 (미세 시간차 무시)
+    # [수정 포인트] 타임스탬프 비교로 날짜 매칭 보장
     ma20_today = df_hist[df_hist['price_date_ts'] == target_date_ts][['ticker', 'MA20']].copy()
     ma20_today['ticker'] = ma20_today['ticker'].astype(str).str.strip()
     
-    # --- 🚨 X-ray 진단 화면 출력 (수정됨) 🚨 ---
-    st.info(f"선택한 날짜: {target_date_str}")
-    st.info(f"전체 과거 데이터 수: {len(df_hist)}건 / 타임스탬프 매칭으로 추출된 MA20 데이터: {len(ma20_today)}건")
-    if not ma20_today.empty:
-        st.success(f"정상 계산된 MA20 샘플값: {ma20_today['MA20'].dropna().iloc[0]:.2f}")
-    else:
-        st.error(f"🚨 추출된 MA20 데이터가 0건입니다! (Supabase 데이터의 날짜/시간 포맷 문제)")
+    # --- 🚨 X-ray 진단 화면 출력 (루프 방식) 🚨 ---
+    # st.write(f"과거 데이터 총 건수 (루프): {len(df_hist)}건 / 타겟 날짜 매칭 성공 건수: {len(ma20_today)}건")
+    if ma20_today.empty:
+        st.error(f"🚨 타겟 날짜({target_date_str})의 MA20 계산값을 히스토리에서 추출하지 못했습니다.")
     # ----------------------------------------
     
     # 메인 데이터와 MA20 병합
     df_final = pd.merge(df_curr, ma20_today, on='ticker', how='left')
     
-    # --- 🚨 X-ray 병합 결과 진단 (수정됨) 🚨 ---
-    nan_count = df_final['MA20'].isna().sum()
-    if nan_count > 0:
-        st.error(f"🚨 병합 직후 MA20 값이 누락된 종목 수: {nan_count}건 (Ticker 매칭 문제)")
-    # ---------------------------------
-    
     # 4. 이전 날짜 순위 데이터 병합
     target_idx = all_dates.index(target_date_str)
     prev_date = all_dates[min(target_idx + 1, len(all_dates)-1)]
-    df_prev = pd.DataFrame(supabase.table("daily_analysis").select("ticker, momentum_rank").eq("price_date", prev_date).eq("market", market_type).execute().data)
+    res_prev = supabase.table("daily_analysis").select("ticker, momentum_rank").eq("price_date", prev_date).eq("market", market_type).execute()
+    df_prev = pd.DataFrame(res_prev.data)
     
     df_prev['ticker'] = df_prev['ticker'].astype(str).str.strip()
     df_prev = df_prev.rename(columns={'momentum_rank': '순위_prev'})
@@ -94,23 +106,21 @@ def get_data(target_date, all_dates, market_type):
     df_final['is_new_top30'] = (df_final['순위'] <= 30) & (df_final['순위_prev'] > 30)
     df_final['is_pullback'] = (df_final['순위'] <= 100) & (df_final['RS'] > 0) & (df_final['변동'] > 0)
     
-    # MA20 결측치 처리 (병합 실패 등으로 비어있을 경우 0으로 처리)
+    # MA20 결측치 처리 및 최적화 조건 설정
     df_final['MA20'] = df_final['MA20'].fillna(0)
     df_final['is_no6_opt'] = (df_final['순위'] <= 30) & (df_final['RS'] > 0) & (df_final['종가'] > df_final['MA20']) & (df_final['MA20'] > 0)
     
-    # 종목명 병합
     df_stocks = pd.DataFrame(supabase.table("stocks").select("ticker, name").execute().data)
     df_stocks['ticker'] = df_stocks['ticker'].astype(str).str.strip()
     return pd.merge(df_final, df_stocks, on="ticker", how="left").rename(columns={'name': '종목명'}).sort_values('순위')
 
 # --- 2. UI 및 메인 로직 ---
 st.set_page_config(layout="wide")
-st.markdown("##### 📈 Momentum Dashboard v1.3.9") 
+st.markdown("##### 📈 Momentum Dashboard v1.3.10") 
 
 with st.sidebar:
     market_type = st.radio("Market", ["KR", "US"], horizontal=True)
     all_dates = get_available_dates()
-    # 사이드바에도 타임스탬프 기반 날짜로 표시
     selected_date = st.date_input("Date", value=pd.to_datetime(all_dates[0]) if all_dates else None)
     if st.button("Refresh"): st.rerun()
 
