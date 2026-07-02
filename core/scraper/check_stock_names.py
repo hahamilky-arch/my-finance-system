@@ -1,6 +1,6 @@
 import time
 import yfinance as yf
-from client import supabase
+from database.client import supabase
 
 def check_incorrect_names():
     """
