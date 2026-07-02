@@ -136,7 +136,7 @@ if df_display is not None:
             if holdings.empty:
                 st.info("보유 종목 없음")
             else:
-                st.table(holdings[['종목명', '순위', '종가']],hide_index=True)
+                st.table(holdings[['순위', '종목명', '종가']],hide_index=True)
 
         # 2. 매매 신호 (매수/매도 리스트)
         df_rebal = df_display[df_display['매매상태'].isin(['매도필요', '매수추천'])]
@@ -149,7 +149,7 @@ if df_display is not None:
             else:
                 for _, row in sell_list.iterrows():
                     c1, c2 = st.columns([4, 1])
-                    c1.write(f"**{row['종목명']}** ({row['ticker']})")
+                    c1.write(f"[{row['ticker']}] {row['종목명']} ")
                     with c2.popover("매도"):
                         st.write(f"**{row['종목명']}** 매도하시겠습니까?")
                         if st.button("확인", key=f"conf_s_{row['ticker']}"):
