@@ -125,58 +125,7 @@ if df_display is not None:
                     'MOT': '{:.2f}', 'RS': '{:.2f}', '종가': '{:,.0f}', 'MA20': '{:,.0f}', '변동': '{:+.0f}'
                 }), hide_index=True, use_container_width=True)
             
-    with tab4:
-        # st.markdown("### 🚀 No.6 전략 실전 매매 지시서")
-        st.caption("전략 신호와 실제 보유 종목을 비교하여 즉각적인 리밸런싱을 수행하세요.")
-        
-        # 신호가 있는 종목만 필터링
-        df_actions = df_display[df_display['매매상태'] != '관망'].copy()
-        
-        if df_actions.empty:
-            st.info("현재 No.6 전략상 매매할 종목이 없습니다. 시장을 관망하세요.")
-        else:
-            # 매매상태별로 섹션을 나누어 가독성 확보
-            for status in ['매도필요', '매수추천', '보유중']:
-                subset = df_actions[df_actions['매매상태'] == status]
-                if subset.empty: continue
-                
-                # 상태별 컬러 컨테이너
-                with st.container(border=True):
-                    st.subheader(f"{'🚨' if status == '매도필요' else '✅' if status == '매수추천' else '💼'} {status}")
-                    
-                    for _, row in subset.iterrows():
-                        cols = st.columns([2, 2, 2, 1])
-                        cols[0].write(f"**{row['종목명']}**")
-                        cols[1].caption(f"{row['ticker']}")
-                        cols[2].write(f"{row['순위']}위 / RS: {row['RS']:.2f}")
-                        
-                        # 버튼 영역
-                        if status == '매도필요':
-                            if cols[3].button("매도", key=f"s_{row['ticker']}"): update_holdings(row['ticker'], 'SELL')
-                        elif status == '매수추천':
-                            if cols[3].button("매수", key=f"b_{row['ticker']}"): update_holdings(row['ticker'], 'BUY')
-                        else:
-                            cols[3].write("유지")
-        # 2. 구분선 추가
-        st.divider()
-        # 3. 전략 조건 설명 (표 바로 아래 배치)
-        # st.markdown("#### 🔍 No.6 전략 필터링 조건")
-        st.caption("이 전략은 모멘텀이 강하고 추세가 확인된 최적의 종목을 선별합니다.")
-        
-        c1, c2 = st.columns(2)
-        with c1:
-            st.success("**[매수 조건]**")
-            st.markdown("""
-            * **모멘텀 순위:** 전체 30위 이내
-            * **상대 강도(RS):** 0 초과 (시장 대비 우위)
-            * **추세 확인:** 종가 > 20일 이동평균선(MA20)
-            """)
-        with c2:
-            st.error("**[매도(제외) 조건]**")
-            st.markdown("""
-            * **순위 이탈:** 30위권 밖으로 하락
-            * **추세 이탈:** 종가 < MA20 또는 시장 주의보 발령
-            """)
+    
 
     with tab5:
         st.markdown("### 📋 오늘의 매매 지시서 (No.6 전략 기준)")
@@ -232,6 +181,27 @@ if df_display is not None:
                             cols[0].write(f"**{row['종목명']}**\n{row['ticker']}")
                             if cols[1].button("매수 완료", key=f"tab5_buy_{row['ticker']}"):
                                 update_holdings(row['ticker'], 'BUY')
+
+        # 2. 구분선 추가
+        st.divider()
+        # 3. 전략 조건 설명 (표 바로 아래 배치)
+        # st.markdown("#### 🔍 No.6 전략 필터링 조건")
+        st.caption("이 전략은 모멘텀이 강하고 추세가 확인된 최적의 종목을 선별합니다.")
+        
+        c1, c2 = st.columns(2)
+        with c1:
+            st.success("**[매수 조건]**")
+            st.markdown("""
+            * **모멘텀 순위:** 전체 30위 이내
+            * **상대 강도(RS):** 0 초과 (시장 대비 우위)
+            * **추세 확인:** 종가 > 20일 이동평균선(MA20)
+            """)
+        with c2:
+            st.error("**[매도(제외) 조건]**")
+            st.markdown("""
+            * **순위 이탈:** 30위권 밖으로 하락
+            * **추세 이탈:** 종가 < MA20 또는 시장 주의보 발령
+            """)
 
 else:
     st.warning("데이터를 불러오는 중입니다.")
