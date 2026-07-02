@@ -62,8 +62,7 @@ def get_data(target_date, all_dates, market_type):
     # df_final['is_no6_opt'] = (df_final['순위'] <= 30) & (df_final['RS'] > 0) & (df_final['변동'] > 0) & (df_final['종가'] > df_final['MA20'])
     # 디버깅용: 조건을 하나씩 풀어보기
     # 1. 일단 순위와 MA20 조건만으로 먼저 테스트
-    df_final['is_no6_opt'] = (df_final['순위'] <= 30) & (df_final['RS'] > 0) 
-    # & (df_final['종가'] > df_final['MA20'])
+    df_final['is_no6_opt'] = (df_final['순위'] <= 30) & (df_final['RS'] > 0) & (df_final['종가'] > df_final['MA20'])
     # 데이터 확인용
     st.write(f"전체 종목 수: {len(df_final)}")
     st.write(f"No.6 조건 만족 종목 수: {df_final['is_no6_opt'].sum()}")
