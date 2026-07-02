@@ -127,7 +127,7 @@ if df_display is not None:
                 }), hide_index=True, use_container_width=True)
 
     # --- Tab 4(매매 지시서) 모바일 최적화 코드 ---
-        with tab4:
+    with tab4:
         st.markdown("##### 📋 오늘의 매매 지시서")
         
         # 1. 보유 종목 현황 (접기/펼치기)
