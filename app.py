@@ -129,7 +129,7 @@ if df_display is not None:
     # --- Tab 4(매매 지시서) 모바일 최적화 코드 ---
     with tab4:
         # 1. 폰트 크기를 줄인 제목
-        st.markdown("<h4 style='margin-bottom: 10px;'>📋 오늘의 매매 지시서</h4>", unsafe_allow_html=True)
+        # st.markdown("<h4 style='margin-bottom: 10px;'>📋 오늘의 매매 지시서</h4>", unsafe_allow_html=True)
         
         # 2. 보유 종목 현황 (접기/펼치기)
         with st.expander("💼 현재 보유 종목", expanded=False):
