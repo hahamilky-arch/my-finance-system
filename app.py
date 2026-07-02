@@ -29,27 +29,32 @@ def get_data(target_date, all_dates, market_type):
     res_curr = supabase.table("daily_analysis").select("ticker, momentum_rank, weighted_momentum, rs_score, close_price").eq("price_date", target_date_str).eq("market", market_type).execute()
     df_curr = pd.DataFrame(res_curr.data)
     
-    # 2. 이동평균 계산을 위한 데이터 로드 및 병합 (강제 타입 변환)
+    # 2. 이동평균 계산 (최근 10000개 데이터로 그룹별 MA20 계산)
     res_hist = supabase.table("daily_analysis").select("ticker, price_date, close_price").eq("market", market_type).order("price_date", desc=True).limit(10000).execute()
     df_hist = pd.DataFrame(res_hist.data)
     df_hist['price_date'] = pd.to_datetime(df_hist['price_date'])
     df_hist = df_hist.sort_values(['ticker', 'price_date'])
     df_hist['MA20'] = df_hist.groupby('ticker')['close_price'].transform(lambda x: x.rolling(window=20).mean())
     
-    # 데이터 병합 전 타입 통일
+    # 3. 병합 데이터 준비 (타입 통일)
     df_curr['ticker'] = df_curr['ticker'].astype(str).str.strip()
     df_hist['ticker'] = df_hist['ticker'].astype(str).str.strip()
     
-    ma20_today = df_hist[df_hist['price_date'] == pd.to_datetime(target_date_str)][['ticker', 'MA20']]
+    # [진단 포인트] 특정 날짜의 MA20 추출
+    target_dt = pd.to_datetime(target_date_str)
+    ma20_today = df_hist[df_hist['price_date'] == target_dt][['ticker', 'MA20']]
+    
+    # 병합
     df_curr = pd.merge(df_curr, ma20_today, on='ticker', how='left')
     
-    # 3. 이전 날짜 순위 데이터
+    # 4. 이전 날짜 순위 데이터
     target_idx = all_dates.index(target_date_str)
     prev_date = all_dates[min(target_idx + 1, len(all_dates)-1)]
     df_prev = pd.DataFrame(supabase.table("daily_analysis").select("ticker, momentum_rank").eq("price_date", prev_date).eq("market", market_type).execute().data)
     df_prev['ticker'] = df_prev['ticker'].astype(str).str.strip()
     
     if df_curr.empty: return None
+    
     df_curr = df_curr.rename(columns={'momentum_rank': '순위', 'weighted_momentum': 'MOT', 'rs_score': 'RS', 'close_price': '종가'})
     df_prev = df_prev.rename(columns={'momentum_rank': '순위_prev'})
     
@@ -58,7 +63,7 @@ def get_data(target_date, all_dates, market_type):
     df_final['is_new_top30'] = (df_final['순위'] <= 30) & (df_final['순위_prev'] > 30)
     df_final['is_pullback'] = (df_final['순위'] <= 100) & (df_final['RS'] > 0) & (df_final['변동'] > 0)
     
-    # No.6 최적화 (MA20이 NaN인 경우 0으로 처리하여 에러 방지)
+    # [필터링 진단] MA20이 NaN이면 0으로 처리, 비교 연산 수행
     df_final['is_no6_opt'] = (df_final['순위'] <= 30) & (df_final['RS'] > 0) & (df_final['종가'] > df_final['MA20'].fillna(0))
     
     df_stocks = pd.DataFrame(supabase.table("stocks").select("ticker, name").execute().data)
@@ -86,11 +91,7 @@ if df_display is not None:
     for i, tab in enumerate([tab1, tab2, tab3, tab4]):
         with tab:
             st.dataframe(tab_dfs[i][col_order].style.apply(apply_styles, axis=None).format({
-                    'MOT': '{:.2f}', 
-                    'RS': '{:.2f}', 
-                    '종가': '{:,.0f}', 
-                    'MA20': '{:,.0f}', 
-                    '변동': '{:+.0f}'
+                    'MOT': '{:.2f}', 'RS': '{:.2f}', '종가': '{:,.0f}', 'MA20': '{:,.0f}', '변동': '{:+.0f}'
                 }), hide_index=True, use_container_width=True)
     
     with tab5:
