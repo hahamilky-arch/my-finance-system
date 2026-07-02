@@ -14,6 +14,20 @@ def apply_styles(df):
         df_styles.loc[df['변동'] > 0, '변동'] = 'color: red'
         df_styles.loc[df['변동'] < 0, '변동'] = 'color: blue'
     return df_styles
+# 보유 종목 리스트 가져오기
+def get_current_holdings():
+    res = supabase.table("current_holdings").select("ticker").execute()
+    return [item['ticker'] for item in res.data]
+
+# 보유 종목 갱신 (버튼 클릭 시 작동)
+def update_holdings(ticker, action):
+    if action == 'BUY':
+        supabase.table("current_holdings").insert({"ticker": ticker}).execute()
+        st.success(f"✅ {ticker} 보유 종목 추가 완료!")
+    elif action == 'SELL':
+        supabase.table("current_holdings").delete().eq("ticker", ticker).execute()
+        st.error(f"🗑️ {ticker} 보유 종목에서 제외 완료!")
+    st.rerun()
 
 def get_market_regime():
     """시장이 안전한지 판단 (지수 > MA20)"""
