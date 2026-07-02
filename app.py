@@ -114,7 +114,7 @@ with st.sidebar:
 df_display = get_data(selected_date, all_dates, market_type)
 
 if df_display is not None:
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["Overview", "New Entries", "🎯 Pullback", "🚀 No.6 최적화", "🔄 Rebalancing"])
+    tab1, tab2, tab3, tab4 = st.tabs(["Overview", "New Entries", "🎯 Pullback", "🚀 No.6 최적화"])
     
     col_order = ['순위', '변동', '종목명', 'MOT', 'RS', '종가', 'MA20']
     tab_dfs = [df_display.head(100), df_display[df_display['is_new_top30']], df_display[df_display['is_pullback']], df_display[df_display['is_no6_opt']]]
@@ -127,7 +127,7 @@ if df_display is not None:
             
     
 
-    with tab5:
+    with tab4:
         st.markdown("### 📋 오늘의 매매 지시서 (No.6 전략 기준)")
         # --- 추가: 보유 종목 현황 표 ---
         st.markdown("### 💼 현재 보유 종목 현황")
