@@ -140,7 +140,7 @@ if df_display is not None:
                 display_holdings = holdings[['종목명', '순위', '종가']].copy()
                 display_holdings['종가'] = display_holdings['종가'].apply(lambda x: f"{int(x):,}")
                 
-                st.table(display_holdings)
+                st.table(display_holdings,hide_index=True)
 
 
         # 2. 매매 신호 (매수/매도 리스트)
