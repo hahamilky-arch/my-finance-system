@@ -23,6 +23,10 @@ def get_available_dates():
 
 def get_data(target_date, all_dates, market_type):
     target_date_str = str(target_date)
+    # 디버깅용 출력 (터미널이나 Streamlit 화면에 확인 가능)
+    st.write(f"선택한 날짜: {target_date_str}")
+    st.write(f"가용한 날짜 목록 일부: {all_dates[:5]}")
+    
     if target_date_str not in all_dates: return None
     
     # 1. 메인 데이터 로드 (ma20 제거, 직접 계산)
