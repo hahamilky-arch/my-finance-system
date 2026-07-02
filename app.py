@@ -85,8 +85,13 @@ if df_display is not None:
     
     for i, tab in enumerate([tab1, tab2, tab3, tab4]):
         with tab:
-            st.dataframe(tab_dfs[i][col_order].style.apply(apply_styles, axis=None).format({'MOT': '{:.2f}', 'RS': '{:.2f}', '종가': '{:,.0f}', '변동': '{:+.0f}'}, 'MA20': '{:+.0f}'}), 
-                        hide_index=True, use_container_width=True)
+            st.dataframe(tab_dfs[i][col_order].style.apply(apply_styles, axis=None).format({
+                    'MOT': '{:.2f}', 
+                    'RS': '{:.2f}', 
+                    '종가': '{:,.0f}', 
+                    'MA20': '{:,.0f}', 
+                    '변동': '{:+.0f}'
+                }), hide_index=True, use_container_width=True)
     
     with tab5:
         st.markdown("###### 📋 오늘의 리밸런싱 지시서")
