@@ -26,39 +26,41 @@ def get_data(target_date, all_dates, market_type):
     # 1. 메인 데이터 로드
     res_curr = supabase.table("daily_analysis").select("ticker, momentum_rank, weighted_momentum, rs_score, close_price").eq("price_date", target_date_str).eq("market", market_type).execute()
     df_curr = pd.DataFrame(res_curr.data)
-    df_curr['close_price'] = pd.to_numeric(df_curr['close_price'], errors='coerce')
+    
+    # [수정 포인트] 에러 안 나게 'float64'로 강제 지정
+    df_curr['close_price'] = pd.to_numeric(df_curr['close_price'], errors='coerce').astype('float64')
     df_curr['ticker'] = df_curr['ticker'].astype(str).str.strip()
     
-    # 2. 이동평균 계산
+    # 2. 이동평균 계산 데이터 로드
     res_hist = supabase.table("daily_analysis").select("ticker, price_date, close_price").eq("market", market_type).execute()
     df_hist = pd.DataFrame(res_hist.data)
+    
     df_hist['price_date'] = pd.to_datetime(df_hist['price_date']).dt.strftime('%Y-%m-%d')
-    df_hist['close_price'] = pd.to_numeric(df_hist['close_price'], errors='coerce')
+    df_hist['close_price'] = pd.to_numeric(df_hist['close_price'], errors='coerce').astype('float64')
     df_hist['ticker'] = df_hist['ticker'].astype(str).str.strip()
     
+    # 결측치 보간
     df_hist = df_hist.sort_values(['ticker', 'price_date'])
     df_hist['close_price'] = df_hist.groupby('ticker')['close_price'].ffill()
-    df_hist['MA20'] = df_hist.groupby('ticker')['close_price'].transform(lambda x: x.rolling(window=20, min_periods=1).mean())
     
-    # [핵심] 타겟 날짜의 MA20만 추출
+    # [수정 포인트] lambda 안에서 타입 변환 빼고, 계산 후 바깥에서 안전하게 타입 변환
+    df_hist['MA20'] = df_hist.groupby('ticker')['close_price'].transform(lambda x: x.rolling(window=20, min_periods=1).mean())
+    df_hist['MA20'] = df_hist['MA20'].astype('float64')
+    
+    # 3. 타겟 날짜 MA20 추출 및 병합
     ma20_today = df_hist[df_hist['price_date'] == target_date_str][['ticker', 'MA20']].copy()
     ma20_today['ticker'] = ma20_today['ticker'].astype(str).str.strip()
     
-    # 3. 병합 (검증 로직 추가)
     df_final = pd.merge(df_curr, ma20_today, on='ticker', how='left')
     
-    # [진단] 병합 후 데이터 유실 확인
-    if df_final['MA20'].isna().all():
-        st.error("데이터 병합 실패! ticker 형식이 맞지 않습니다.")
-    
-    # 4. 이전 날짜 순위 데이터
+    # 4. 이전 날짜 순위 데이터 병합
     target_idx = all_dates.index(target_date_str)
     prev_date = all_dates[min(target_idx + 1, len(all_dates)-1)]
     df_prev = pd.DataFrame(supabase.table("daily_analysis").select("ticker, momentum_rank").eq("price_date", prev_date).eq("market", market_type).execute().data)
+    
     df_prev['ticker'] = df_prev['ticker'].astype(str).str.strip()
     df_prev = df_prev.rename(columns={'momentum_rank': '순위_prev'})
     
-    # 병합
     df_final = pd.merge(df_final, df_prev, on="ticker", how='left')
     df_final = df_final.rename(columns={'momentum_rank': '순위', 'weighted_momentum': 'MOT', 'rs_score': 'RS', 'close_price': '종가'})
     
@@ -67,16 +69,18 @@ def get_data(target_date, all_dates, market_type):
     df_final['is_new_top30'] = (df_final['순위'] <= 30) & (df_final['순위_prev'] > 30)
     df_final['is_pullback'] = (df_final['순위'] <= 100) & (df_final['RS'] > 0) & (df_final['변동'] > 0)
     
+    # [수정 포인트] MA20 결측치 처리 및 최적화 조건 설정 (MA20이 0 초과일 때만 필터링)
     df_final['MA20'] = df_final['MA20'].fillna(0)
-    df_final['is_no6_opt'] = (df_final['순위'] <= 30) & (df_final['RS'] > 0) & (df_final['종가'] > df_final['MA20'])
+    df_final['is_no6_opt'] = (df_final['순위'] <= 30) & (df_final['RS'] > 0) & (df_final['종가'] > df_final['MA20']) & (df_final['MA20'] > 0)
     
+    # 종목명 병합
     df_stocks = pd.DataFrame(supabase.table("stocks").select("ticker, name").execute().data)
     df_stocks['ticker'] = df_stocks['ticker'].astype(str).str.strip()
     return pd.merge(df_final, df_stocks, on="ticker", how="left").rename(columns={'name': '종목명'}).sort_values('순위')
 
 # --- 2. UI 및 메인 로직 ---
 st.set_page_config(layout="wide")
-st.markdown("##### 📈 Momentum Dashboard v1.3.6") 
+st.markdown("##### 📈 Momentum Dashboard v1.3.7") 
 
 with st.sidebar:
     market_type = st.radio("Market", ["KR", "US"], horizontal=True)
