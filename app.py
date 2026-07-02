@@ -163,7 +163,8 @@ if df_display is not None:
             else:
                 for _, row in buy_list.iterrows():
                     c1, c2 = st.columns([4, 1])
-                    c1.write(f"**{row['종목명']}** ({row['ticker']})")
+                    #c1.write(f"**{row['종목명']}** ({row['ticker']})")
+                    c1.write(f"[{row['ticker']}] {row['종목명']} ")
                     with c2.popover("매수"):
                         st.write(f"**{row['종목명']}** 매수하시겠습니까?")
                         if st.button("확인", key=f"conf_b_{row['ticker']}"):
