@@ -57,7 +57,9 @@ def get_data(target_date, all_dates, market_type):
     df_final['변동'] = df_final['순위_prev'].fillna(999) - df_final['순위']
     df_final['is_new_top30'] = (df_final['순위'] <= 30) & (df_final['순위_prev'] > 30)
     df_final['is_pullback'] = (df_final['순위'] <= 100) & (df_final['RS'] > 0) & (df_final['변동'] > 0)
-    
+
+    # 여기서 확인 로그 출력
+    st.write(f"병합 후 NaN 개수: {df_curr['MA20'].isna().sum()} / 전체 행: {len(df_curr)}")
     # No.6 최적화 로직 (30위 이내 + RS 양수 + 순위 개선 + 주가 > MA20)
     # df_final['is_no6_opt'] = (df_final['순위'] <= 30) & (df_final['RS'] > 0) & (df_final['변동'] > 0) & (df_final['종가'] > df_final['MA20'])
     # 디버깅용: 조건을 하나씩 풀어보기
