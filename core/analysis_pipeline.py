@@ -104,6 +104,7 @@ def run_analysis_pipeline(market='KR',target_date=None):
         })
     
     if analysis_data:
+        print(f"[{ticker} {today}] 등록")
         supabase.table("daily_analysis").upsert(analysis_data, on_conflict="ticker,price_date").execute()
         print(f"[{market}] 가중 모멘텀 분석 완료 및 {len(analysis_data)}건 DB 적재 완료.")
     else:
