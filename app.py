@@ -107,7 +107,7 @@ if df_display is not None:
         st.divider()
         
         # 3. 전략 조건 설명 (표 바로 아래 배치)
-        st.markdown("#### 🔍 No.6 전략 필터링 조건")
+        # st.markdown("#### 🔍 No.6 전략 필터링 조건")
         st.caption("이 전략은 모멘텀이 강하고 추세가 확인된 최적의 종목을 선별합니다.")
         
         c1, c2 = st.columns(2)
