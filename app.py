@@ -60,8 +60,8 @@ def update_holdings(ticker, action, price, trade_date, quantity):
                     profit_amount = (float(price) - buy_price) * db_quantity
                     profit_rate = ((float(price) / buy_price) - 1) * 100
                     
-                    # 🛠️ 타깃 테이블을 trade_history로 바인딩하여 Postgrest APIError 원천 해결
-                    supabase.table("trade_history").insert({
+                    # 🛠️ 타깃 테이블을 current_holdings 바인딩하여 Postgrest APIError 원천 해결
+                    supabase.table("current_holdings").insert({
                         "ticker": str(ticker).strip(),
                         "buy_date": str(buy_date),
                         "buy_price": float(buy_price),
