@@ -80,12 +80,12 @@ df_display = get_data(selected_date, all_dates, market_type)
 if df_display is not None:
     tab1, tab2, tab3, tab4, tab5 = st.tabs(["Overview", "New Entries", "🎯 Pullback", "🚀 No.6 최적화", "🔄 Rebalancing"])
     
-    col_order = ['순위', '변동', '종목명', 'MOT', 'RS', '종가']
+    col_order = ['순위', '변동', '종목명', 'MOT', 'RS', '종가', 'MA20']
     tab_dfs = [df_display.head(100), df_display[df_display['is_new_top30']], df_display[df_display['is_pullback']], df_display[df_display['is_no6_opt']]]
     
     for i, tab in enumerate([tab1, tab2, tab3, tab4]):
         with tab:
-            st.dataframe(tab_dfs[i][col_order].style.apply(apply_styles, axis=None).format({'MOT': '{:.2f}', 'RS': '{:.2f}', '종가': '{:,.0f}', '변동': '{:+.0f}'}), 
+            st.dataframe(tab_dfs[i][col_order].style.apply(apply_styles, axis=None).format({'MOT': '{:.2f}', 'RS': '{:.2f}', '종가': '{:,.0f}', '변동': '{:+.0f}'}, 'MA20': '{:+.0f}'}), 
                         hide_index=True, use_container_width=True)
     
     with tab5:
