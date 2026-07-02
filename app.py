@@ -180,6 +180,22 @@ if df_display is not None:
 
     with tab5:
         st.markdown("### 📋 오늘의 매매 지시서 (No.6 전략 기준)")
+        # --- 추가: 보유 종목 현황 표 ---
+        st.markdown("### 💼 현재 보유 종목 현황")
+        holdings_df = df_display[df_display['매매상태'] == '보유중'].copy()
+        
+        if holdings_df.empty:
+            st.info("현재 보유 중인 종목이 없습니다.")
+        else:
+            # 깔끔하게 필요한 정보만 추출
+            display_cols = ['종목명', '순위', '종가', 'RS']
+            st.dataframe(
+                holdings_df[display_cols].style.format({'종가': '{:,.0f}', 'RS': '{:.2f}'}),
+                hide_index=True, 
+                use_container_width=True
+            )
+        
+        st.divider() # 보유 표와 매매 지시서 구분
         
         # 전략 기준 매매 대상만 필터링
         df_rebal = df_display[df_display['매매상태'].isin(['매도필요', '매수추천'])].copy()
