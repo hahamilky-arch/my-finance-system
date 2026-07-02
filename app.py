@@ -129,51 +129,38 @@ if df_display is not None:
     # --- Tab 4(매매 지시서) 모바일 최적화 코드 ---
     with tab4:
         st.markdown("##### 📋 오늘의 매매 지시서")
-        
-        # 1. 보유 종목 현황 (접기/펼치기) / 포맷팅 적용
+    
+        # 1. 보유 종목 (데이터프레임으로 깔끔하게 표현)
         holdings = df_display[df_display['매매상태'] == '보유중'].copy()
         with st.expander(f"💼 현재 보유 종목 ({len(holdings)}개)", expanded=False):
             if holdings.empty:
                 st.info("보유 종목 없음")
             else:
-                # 데이터 복사 후 포맷팅
+                # 가독성을 위한 포맷팅 적용
                 display_holdings = holdings[['순위', '종목명', '종가']].copy()
-                display_holdings['종가'] = display_holdings['종가'].apply(lambda x: f"{int(x):,}")
-                
-                st.table(display_holdings,hide_index=True)
+                display_holdings['종가'] = display_holdings['종가'].map('{:,.0f}'.format)
+                st.table(display_holdings)
 
-
-        # 2. 매매 신호 (매수/매도 리스트)
+        # 2. 매매 신호 (색상 강조 및 가독성 개선)
         df_rebal = df_display[df_display['매매상태'].isin(['매도필요', '매수추천'])]
-        
-        # 매도 리스트
-        sell_list = df_rebal[df_rebal['매매상태'] == '매도필요']
-        with st.expander(f"🚨 매도 필요 ({len(sell_list)}개)", expanded=True):
-            if sell_list.empty:
-                st.write("매도할 종목이 없습니다.")
-            else:
-                for _, row in sell_list.iterrows():
+    
+        # 공통 함수: 매매 리스트 출력
+        def display_trade_list(data, title, button_label, key_prefix):
+            with st.expander(f"🚨 {title} ({len(data)}개)", expanded=True):
+                for _, row in data.iterrows():
                     c1, c2 = st.columns([4, 1])
-                    c1.write(f"[{row['ticker']}] {row['종목명']}  MOT:{row['MOT']:.2f}  RS:{row['RS']:.2f}")
-                    with c2.popover("매도"):
-                        st.write(f"**{row['종목명']}** 매도하시겠습니까?")
-                        if st.button("확인", key=f"conf_s_{row['ticker']}"):
-                            update_holdings(row['ticker'], 'SELL')
+                    # 가독성 높은 마크다운 적용
+                    c1.markdown(f"**{row['종목명']}** <small>({row['ticker']})</small> | MOT: `{row['MOT']:.2f}` | RS: :color[green](**{row['RS']:.2f}**)")
+                
+                    with c2.popover(button_label):
+                        st.write(f"**{row['종목명']}** {button_label}하시겠습니까?")
+                        if st.button("확인", key=f"conf_{key_prefix}_{row['ticker']}"):
+                            update_holdings(row['ticker'], 'SELL' if '매도' in title else 'BUY')
 
-        # 매수 리스트
-        buy_list = df_rebal[df_rebal['매매상태'] == '매수추천']
-        with st.expander(f"✅ 매수 추천 ({len(buy_list)}개)", expanded=True):
-            if buy_list.empty:
-                st.write("매수할 종목이 없습니다.")
-            else:
-                for _, row in buy_list.iterrows():
-                    c1, c2 = st.columns([4, 1])
-                    #c1.write(f"**{row['종목명']}** ({row['ticker']})")
-                    c1.write(f"[{row['ticker']}] {row['종목명']}  MOT:{row['MOT']:.2f}  RS:{row['RS']:.2f}")
-                    with c2.popover("매수"):
-                        st.write(f"**{row['종목명']}** 매수하시겠습니까?")
-                        if st.button("확인", key=f"conf_b_{row['ticker']}"):
-                            update_holdings(row['ticker'], 'BUY')
+        # 매도/매수 리스트 호출
+        display_trade_list(df_rebal[df_rebal['매매상태'] == '매도필요'], "매도 필요", "매도", "s")
+        display_trade_list(df_rebal[df_rebal['매매상태'] == '매수추천'], "매수 추천", "매수", "b")
+    
 
         # 3. 전략 상세 설명
         st.divider()
