@@ -5,7 +5,7 @@ on:
     # 한국 시간 기준 17:00 (UTC 08:00) -> KR 시장 분석
     - cron: '0 8 * * *'
     # 한국 시간 기준 08:00 (UTC 23:00) -> US 시장 분석
-    - cron: '0 23 * * *'
+    # - cron: '0 23 * * *'
   workflow_dispatch:
     inputs:
       market:
@@ -52,7 +52,7 @@ jobs:
           elif [ "${{ github.event.schedule }}" == "0 8 * * *" ]; then
             MARKET="KR"
           else
-            MARKET="US"
+            MARKET="US_"
           fi
           CMD="$CMD --market $MARKET"
           
