@@ -174,7 +174,7 @@ def display_trade_list(data, title, button_label, key_prefix, target_date):
                         update_holdings(row['ticker'], action_type, input_price, target_date, input_qty)
 
 # --- 2. UI 메인 실행 파트 ---
-st.markdown("##### 📈 Momentum Dashboard v1.4.4")
+st.markdown("##### 📈 Momentum Dashboard v1.4.5")
 market_safe = get_market_regime()
 
 if not market_safe:
@@ -191,207 +191,29 @@ df_display = get_data(selected_date, all_dates, market_type)
 if df_display is not None:
     tab1, tab2, tab3, tab4, tab5 = st.tabs(["Overview", "New Entries", "🎯 Pullback", "🚀 No.6 최적화", "📊 성과 분석"])
     
-    col_order = ['순위', '변동', '종목명', 'MOT', 'RS', '종가', 'MA20', 'ticker'] # 내부 연동을 위해 임시로 ticker 포함
+    col_order = ['순위', '변동', '종목명', 'MOT', 'RS', '종가', 'MA20', 'ticker'] 
     tab_dfs = [df_display.head(100), df_display[df_display['is_new_top30']], df_display[df_display['is_pullback']], df_display[df_display['is_no6_opt']]]
 
-    # 🛠️ [핵심 변경 1] 탭 1, 2, 3 표에 선택(Selection) 기능 활성화 및 세션 상태 저장
     clicked_ticker = None
     
     for i, tab in enumerate([tab1, tab2, tab3]):
         with tab:
-            # 표 렌더링 최적화 및 선택 활성화
             df_target = tab_dfs[i][col_order].copy()
+            # 🛠️ [에러 수정 포인트] selection_mode="single-row" (하이픈 사용)
             event = st.dataframe(
                 df_target.style.apply(apply_styles, axis=None).format({
                     'MOT': '{:.2f}', 'RS': '{:.2f}', '종가': '{:,.0f}', 'MA20': '{:,.0f}', '변동': '{:+.0f}'
                 }, na_rep='-'), 
                 hide_index=True, 
                 use_container_width=True,
-                on_select="rerun",  # 행 선택 시 실시간으로 앱 재실행하여 이벤트 감지
-                selection_mode="single_row",
+                on_select="rerun",  
+                selection_mode="single-row",
                 key=f"df_tab_{i}"
             )
             
-            # 특정 행이 클릭되었는지 검증 및 티커 추출
             if event and "rows" in event.get("selection", {}) and event["selection"]["rows"]:
                 selected_row_idx = event["selection"]["rows"][0]
                 clicked_ticker = df_target.iloc[selected_row_idx]['ticker']
 
-    # 세션 상태(Session State)를 이용해 어떤 탭에서든 클릭된 티커 정보를 중앙 관리형 전역 상태로 전이
     if clicked_ticker:
-        st.session_state['selected_ticker_from_table'] = clicked_ticker
-
-    # --- Tab 4(매매 지시서 구역) ---
-    with tab4:
-        st.markdown("##### 📋 오늘의 매매 지시서")
-        holdings_res = supabase.table("current_holdings").select("*").is_("sell_date", "null").execute()
-        holdings_db = pd.DataFrame(holdings_res.data) if holdings_res.data else pd.DataFrame()
-
-        with st.expander(f"💼 현재 보유 종목 ({len(holdings_db)}개)", expanded=True):
-            if holdings_db.empty:
-                st.info("보유 종목이 없습니다.")
-            else:
-                df_stocks = pd.DataFrame(supabase.table("stocks").select("ticker, name").execute().data)
-                if not df_stocks.empty:
-                    df_stocks['ticker'] = df_stocks['ticker'].astype(str).str.strip()
-                    holdings_merged = pd.merge(holdings_db, df_stocks, on="ticker", how="left")
-                else:
-                    holdings_merged = holdings_db
-                    holdings_merged['name'] = holdings_merged['ticker']
-                
-                for _, h_row in holdings_merged.iterrows():
-                    ticker = h_row['ticker']
-                    name = h_row.get('name', ticker)
-                    if pd.isna(name): name = ticker
-                    
-                    buy_date = h_row.get('buy_date')
-                    buy_date = buy_date if pd.notna(buy_date) and buy_date is not None else '-'
-                    
-                    raw_bp = h_row.get('buy_price')
-                    buy_price = float(raw_bp) if pd.notna(raw_bp) and raw_bp is not None else 0.0
-                    
-                    raw_qty = h_row.get('quantity')
-                    qty = int(raw_qty) if pd.notna(raw_qty) and raw_qty is not None else 1
-                    
-                    curr_row = df_display[df_display['ticker'] == ticker]
-                    curr_price = float(curr_row['종가'].values[0]) if not curr_row.empty else buy_price
-                    
-                    c1, c2 = st.columns([4, 1])
-                    c1.markdown(f"""
-                    <div style="line-height: 1.6;">
-                        <strong style="font-size: 1.1em; color: #111111;">{name}</strong> 
-                        <span style="font-size: 0.8em; color: #888888; margin-left: 4px;">({ticker})</span>
-                        <br>
-                        <span style="color: #555555; font-size: 0.85em;">
-                            매수일: <span style="background-color: #f1f3f6; padding: 2px 6px; border-radius: 4px; font-family: monospace;">{buy_date}</span> | 
-                            매수가: <span style="background-color: #f1f3f6; padding: 2px 6px; border-radius: 4px; font-family: monospace;">{buy_price:,.0f}원</span> | 
-                            수량: <span style="background-color: #f1f3f6; padding: 2px 6px; border-radius: 4px; font-family: monospace;">{qty}주</span>
-                        </span>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    
-                    with c2.popover("개별 매도"):
-                        st.write(f"**{name}** 수동 매도")
-                        input_price = st.number_input("매도가", value=curr_price, key=f"p_force_{ticker}")
-                        input_qty = st.number_input("수량", value=qty, min_value=1, step=1, key=f"q_force_{ticker}")
-                        if st.button("매도 확정", key=f"btn_force_{ticker}"):
-                            update_holdings(ticker, 'SELL', input_price, selected_date, input_qty)
-        
-        st.write("") 
-        df_rebal = df_display[df_display['매매상태'].isin(['매도필요', '매수추천'])]
-        display_trade_list(df_rebal[df_rebal['매매상태'] == '매도필요'], "시스템 매도 필요", "매도", "sys_s", selected_date)
-        display_trade_list(df_rebal[df_rebal['매매상태'] == '매수추천'], "시스템 매수 추천", "매수", "sys_b", selected_date)
-    
-        st.divider()
-        with st.expander("🔍 No.6 전략 필터링 조건 보기"):
-            c1, c2 = st.columns(2)
-            with c1: st.markdown("**[매수 조건]**\n- 순위: 30위 이내\n- RS: 0 초과\n- 추세: 종가 > MA20")
-            with c2: st.markdown("**[매도 조건]**\n- 순위: 30위 밖\n- 추세: 종가 < MA20")
-
-    # --- Tab 5(성과 분석 구역) ---
-    with tab5:
-        st.markdown("##### 📊 단일 테이블 기반 매매 성과 분석")
-        history_res = supabase.table("current_holdings").select("*").not_.is_("sell_date", "null").execute()
-        
-        if not history_res.data:
-            st.info("청산된 매매 이력이 존재하지 않습니다.")
-        else:
-            df_hist = pd.DataFrame(history_res.data)
-            df_stocks_info = pd.DataFrame(supabase.table("stocks").select("ticker, name").execute().data)
-            if not df_stocks_info.empty:
-                df_stocks_info['ticker'] = df_stocks_info['ticker'].astype(str).str.strip()
-                df_hist = pd.merge(df_hist, df_stocks_info, on="ticker", how="left")
-                df_hist['종목명'] = df_hist['name'].fillna(df_hist['ticker'])
-            else:
-                df_hist['종목명'] = df_hist['ticker']
-
-            df_hist['profit_amount'] = pd.to_numeric(df_hist['profit_amount'], errors='coerce').fillna(0.0)
-            df_hist['profit_rate'] = pd.to_numeric(df_hist['profit_rate'], errors='coerce').fillna(0.0)
-            
-            total_profit = df_hist['profit_amount'].sum()
-            total_trades = len(df_hist)
-            win_trades = len(df_hist[df_hist['profit_amount'] > 0])
-            win_rate = (win_trades / total_trades * 100) if total_trades > 0 else 0.0
-            avg_return = df_hist['profit_rate'].mean()
-            
-            m1, m2, m3, m4 = st.columns(4)
-            m1.metric("총 실현 손익", f"{total_profit:,.0f} 원")
-            m2.metric("총 매매 회수", f"{total_trades} 건")
-            m3.metric("승률", f"{win_rate:.1f} %")
-            m4.metric("평균 수익률", f"{avg_return:+.2f} %")
-            
-            st.write("")
-            st.markdown("###### 📅 월별 성과 종합")
-            df_hist['sell_month'] = pd.to_datetime(df_hist['sell_date']).dt.strftime('%Y-%m')
-            df_monthly = df_hist.groupby('sell_month').agg(
-                월간손익=('profit_amount', 'sum'),
-                매매건수=('id', 'count'),
-                평균수익률=('profit_rate', 'mean')
-            ).reset_index().sort_values('sell_month', ascending=False)
-            
-            st.dataframe(
-                df_monthly.style.format({'월간손익': '{:,.0f}', '평균수익률': '{:+.2f}%'}),
-                hide_index=True, use_container_width=True
-            )
-            
-            st.write("")
-            st.markdown("###### 📜 상세 매매 완료 내역")
-            display_hist_cols = ['sell_date', 'ticker', '종목명', 'buy_date', 'buy_price', 'sell_price', 'quantity', 'profit_amount', 'profit_rate']
-            df_hist_sorted = df_hist.sort_values('sell_date', ascending=False)
-            
-            st.dataframe(
-                df_hist_sorted[display_hist_cols].style.format({
-                    'buy_price': '{:,.0f}', 'sell_price': '{:,.0f}', 'quantity': '{:,.0f}',
-                    'profit_amount': '{:,.0f}', 'profit_rate': '{:+.2f}%'
-                }),
-                hide_index=True, use_container_width=True
-            )
-
-    # --- 📉 하단 주가 및 모멘텀 순위 시계열 차트 구역 (양방향 연동 기능 강화) ---
-    st.divider()
-    st.markdown("##### 📉 종목별 최근 주가 및 모멘텀 순위 변동 추이")
-    
-    distinct_tickers = sorted(df_display['ticker'].unique())
-    ticker_name_map = dict(zip(df_display['ticker'], df_display['종목명']))
-    
-    # 🛠️ [핵심 변경 2] 표 선택 데이터가 세션 상태에 저장되어 있다면 셀렉트박스의 기본 인덱스 타깃을 자동 추종하도록 변경
-    default_index = 0
-    if 'selected_ticker_from_table' in st.session_state:
-        target_ticker = st.session_state['selected_ticker_from_table']
-        if target_ticker in distinct_tickers:
-            default_index = distinct_tickers.index(target_ticker)
-            
-    selected_chart_ticker = st.selectbox(
-        "분석할 종목을 선택하세요 (위 표에서 종목 행을 직접 클릭해도 자동으로 변경됩니다)", 
-        options=distinct_tickers, 
-        index=default_index,
-        format_func=lambda x: f"{ticker_name_map.get(x, x)} ({x})"
-    )
-    
-    if selected_chart_ticker:
-        chart_res = supabase.table("daily_analysis") \
-            .select("price_date, close_price, momentum_rank") \
-            .eq("ticker", selected_chart_ticker) \
-            .order("price_date", desc=False) \
-            .limit(60).execute()
-            
-        if not chart_res.data:
-            st.info("해당 종목의 시계열 차트 데이터가 존재하지 않습니다.")
-        else:
-            df_chart = pd.DataFrame(chart_res.data)
-            df_chart['price_date'] = pd.to_datetime(df_chart['price_date']).dt.strftime('%m-%d')
-            df_chart = df_chart.set_index('price_date')
-            
-            c_left, c_right = st.columns(2)
-            
-            with c_left:
-                st.markdown(f"<p style='text-align:center; font-weight:bold;'>📈 최근 주가 추이 ({ticker_name_map.get(selected_chart_ticker, selected_chart_ticker)})</p>", unsafe_allow_html=True)
-                st.line_chart(df_chart['close_price'], use_container_width=True)
-                
-            with c_right:
-                st.markdown("<p style='text-align:center; font-weight:bold;'>🏅 모멘텀 순위 변동 (상단이 고순위)</p>", unsafe_allow_html=True)
-                # 순위 가독성(1위가 맨 위로)을 확보하기 위해 음수 처리 적용
-                df_chart['inverted_rank'] = -df_chart['momentum_rank']
-                st.line_chart(df_chart['inverted_rank'], use_container_width=True)
-else:
-    st.warning("데이터를 불러오는 중입니다.")
+        st.
