@@ -340,4 +340,56 @@ if df_display is not None:
                     'buy_price': '{:,.0f}', 'sell_price': '{:,.0f}', 'quantity': '{:,.0f}',
                     'profit_amount': '{:,.0f}', 'profit_rate': '{:+.2f}%'
                 }),
-                hide_index=True,
+                hide_index=True, use_container_width=True
+            )
+
+    # --- 📉 하단 주가 및 모멘텀 순위 시계열 차트 구역 ---
+    st.divider()
+    st.markdown("##### 📉 종목별 최근 주가 및 모멘텀 순위 변동 추이")
+    
+    distinct_tickers = sorted(df_display['ticker'].unique())
+    ticker_name_map = dict(zip(df_display['ticker'], df_display['종목명']))
+    
+    default_index = 0
+    if 'selected_ticker_from_table' in st.session_state:
+        target_ticker = st.session_state['selected_ticker_from_table']
+        if target_ticker in distinct_tickers:
+            default_index = distinct_tickers.index(target_ticker)
+            
+    selected_chart_ticker = st.selectbox(
+        "분석할 종목을 선택하세요 (위 표에서 종목 행을 직접 클릭해도 자동으로 변경됩니다)", 
+        options=distinct_tickers, 
+        index=default_index,
+        format_func=lambda x: f"{ticker_name_map.get(x, x)} ({x})"
+    )
+    
+    if selected_chart_ticker:
+        # 💡 [변경 1] 최근 20영업일(약 1달)의 데이터만 추출하기 위해 desc=True로 20개를 가져옴
+        chart_res = supabase.table("daily_analysis") \
+            .select("price_date, close_price, momentum_rank") \
+            .eq("ticker", selected_chart_ticker) \
+            .order("price_date", desc=True) \
+            .limit(20).execute()
+            
+        if not chart_res.data:
+            st.info("해당 종목의 시계열 차트 데이터가 존재하지 않습니다.")
+        else:
+            # 💡 [변경 2] 차트에 그리기 위해 다시 시간순(오래된 날짜 -> 최신 날짜)으로 정렬
+            df_chart = pd.DataFrame(chart_res.data)
+            df_chart['price_date'] = pd.to_datetime(df_chart['price_date'])
+            df_chart = df_chart.sort_values('price_date', ascending=True)
+            df_chart['price_date'] = df_chart['price_date'].dt.strftime('%m-%d')
+            df_chart = df_chart.set_index('price_date')
+            
+            c_left, c_right = st.columns(2)
+            
+            with c_left:
+                st.markdown(f"<p style='text-align:center; font-weight:bold;'>📈 최근 주가 추이 ({ticker_name_map.get(selected_chart_ticker, selected_chart_ticker)})</p>", unsafe_allow_html=True)
+                st.line_chart(df_chart['close_price'], use_container_width=True)
+                
+            with c_right:
+                st.markdown("<p style='text-align:center; font-weight:bold;'>🏅 모멘텀 순위 변동 (숫자가 작을수록 고순위)</p>", unsafe_allow_html=True)
+                # 💡 [변경 3] 음수 변환 제거. 원래 양수 그대로 표출
+                st.line_chart(df_chart['momentum_rank'], use_container_width=True)
+else:
+    st.warning("데이터를 불러오는 중입니다.")
