@@ -27,7 +27,6 @@ def update_holdings(ticker, action, price, trade_date, quantity):
     
     if action == 'BUY':
         try:
-            # 매수: 새로운 행 추가
             supabase.table("current_holdings").insert({
                 "ticker": str(ticker).strip(),
                 "buy_date": trade_date_str,
@@ -41,12 +40,11 @@ def update_holdings(ticker, action, price, trade_date, quantity):
         
     elif action == 'SELL':
         try:
-            # 매도: 아직 sell_date가 없는 데이터(현재 보유 중인 데이터)를 찾음
             res = supabase.table("current_holdings").select("*").eq("ticker", ticker).is_("sell_date", "null").execute()
             
             if res.data:
                 holding = res.data[0]
-                row_id = holding.get('id') # 고유 키(id) 기반 업데이트를 위해 추출
+                row_id = holding.get('id')
                 
                 raw_bp = holding.get('buy_price')
                 buy_price = float(raw_bp) if pd.notna(raw_bp) and raw_bp is not None else 0.0
@@ -54,14 +52,12 @@ def update_holdings(ticker, action, price, trade_date, quantity):
                 raw_qty = holding.get('quantity')
                 db_quantity = int(raw_qty) if pd.notna(raw_qty) and raw_qty is not None else int(quantity)
                 
-                # 수익금 및 수익률 계산
                 profit_amount = 0.0
                 profit_rate = 0.0
                 if buy_price > 0:
                     profit_amount = (float(price) - buy_price) * db_quantity
                     profit_rate = ((float(price) / buy_price) - 1) * 100
                 
-                # 🛠️ [핵심 변경] 삭제 대신 current_holdings의 해당 행에 매도 정보 UPDATE
                 supabase.table("current_holdings").update({
                     "sell_date": trade_date_str,
                     "sell_price": float(price),
@@ -71,7 +67,6 @@ def update_holdings(ticker, action, price, trade_date, quantity):
                 
                 st.error(f"🗑️ [{ticker}] 매도 처리 및 정보 업데이트 완료!")
             else:
-                # 만약 기존 매수 데이터가 없는데 수동 매도하는 경우를 대비한 예외 처리 (신규 생성)
                 supabase.table("current_holdings").insert({
                     "ticker": str(ticker).strip(),
                     "sell_date": trade_date_str,
@@ -194,7 +189,8 @@ with st.sidebar:
 df_display = get_data(selected_date, all_dates, market_type)
 
 if df_display is not None:
-    tab1, tab2, tab3, tab4 = st.tabs(["Overview", "New Entries", "🎯 Pullback", "🚀 No.6 최적화"])
+    # 🛠️ 성과 분석을 포함한 5대 탭 구성으로 확장
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["Overview", "New Entries", "🎯 Pullback", "🚀 No.6 최적화", "📊 성과 분석"])
     
     col_order = ['순위', '변동', '종목명', 'MOT', 'RS', '종가', 'MA20']
     tab_dfs = [df_display.head(100), df_display[df_display['is_new_top30']], df_display[df_display['is_pullback']], df_display[df_display['is_no6_opt']]]
@@ -213,7 +209,7 @@ if df_display is not None:
     with tab4:
         st.markdown("##### 📋 오늘의 매매 지시서")
     
-        # 1. 보유 종목 리스트 출력 (sell_date가 비어있는 행만 가져옴)
+        # 1. 보유 종목 리스트 출력
         holdings_res = supabase.table("current_holdings").select("*").is_("sell_date", "null").execute()
         holdings_db = pd.DataFrame(holdings_res.data) if holdings_res.data else pd.DataFrame()
 
@@ -284,5 +280,115 @@ if df_display is not None:
                 st.markdown("**[매수 조건]**\n- 순위: 30위 이내\n- RS: 0 초과\n- 추세: 종가 > MA20")
             with c2:
                 st.markdown("**[매도 조건]**\n- 순위: 30위 밖\n- 추세: 종가 < MA20")
-else:
-    st.warning("데이터를 불러오는 중입니다.")
+
+    # --- 📊 [신설] Tab 5(성과 분석 구역) ---
+    with tab5:
+        st.markdown("##### 📊 단일 테이블 기반 매매 성과 분석")
+        
+        # sell_date가 기입 완료된 데이터(확정 이력) 로드
+        history_res = supabase.table("current_holdings").select("*").not_.is_("sell_date", "null").execute()
+        
+        if not history_res.data:
+            st.info("청산된 매매 이력이 존재하지 않습니다.")
+        else:
+            df_hist = pd.DataFrame(history_res.data)
+            
+            # 주식 마스터 결합하여 종목명 확보
+            df_stocks_info = pd.DataFrame(supabase.table("stocks").select("ticker, name").execute().data)
+            if not df_stocks_info.empty:
+                df_stocks_info['ticker'] = df_stocks_info['ticker'].astype(str).str.strip()
+                df_hist = pd.merge(df_hist, df_stocks_info, on="ticker", how="left")
+                df_hist['종목명'] = df_hist['name'].fillna(df_hist['ticker'])
+            else:
+                df_hist['종목명'] = df_hist['ticker']
+
+            # 수치 타입 정제
+            df_hist['profit_amount'] = pd.to_numeric(df_hist['profit_amount'], errors='coerce').fillna(0.0)
+            df_hist['profit_rate'] = pd.to_numeric(df_hist['profit_rate'], errors='coerce').fillna(0.0)
+            
+            # 1. 총 결과 요약 (메트릭 지표)
+            total_profit = df_hist['profit_amount'].sum()
+            total_trades = len(df_hist)
+            win_trades = len(df_hist[df_hist['profit_amount'] > 0])
+            win_rate = (win_trades / total_trades * 100) if total_trades > 0 else 0.0
+            avg_return = df_hist['profit_rate'].mean()
+            
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("총 실현 손익", f"{total_profit:,.0f} 원")
+            m2.metric("총 매매 회수", f"{total_trades} 건")
+            m3.metric("승률", f"{win_rate:.1f} %")
+            m4.metric("평균 수익률", f"{avg_return:+.2f} %")
+            
+            st.write("")
+            
+            # 2. 월별 성과 요약 집계
+            st.markdown("###### 📅 월별 성과 종합")
+            df_hist['sell_month'] = pd.to_datetime(df_hist['sell_date']).dt.strftime('%Y-%m')
+            df_monthly = df_hist.groupby('sell_month').agg(
+                월간손익=('profit_amount', 'sum'),
+                매매건수=('id', 'count'),
+                평균수익률=('profit_rate', 'mean')
+            ).reset_index().sort_values('sell_month', ascending=False)
+            
+            st.dataframe(
+                df_monthly.style.format({'월간손익': '{:,.0f}', '평균수익률': '{:+.2f}%'}),
+                hide_index=True, use_container_width=True
+            )
+            
+            st.write("")
+            
+            # 3. 전체 매매 이력 세부 표 (최신 청산순 정렬, 인덱스 마스킹)
+            st.markdown("###### 📜 상세 매매 완료 내역")
+            display_hist_cols = ['sell_date', 'ticker', '종목명', 'buy_date', 'buy_price', 'sell_price', 'quantity', 'profit_amount', 'profit_rate']
+            df_hist_sorted = df_hist.sort_values('sell_date', ascending=False)
+            
+            st.dataframe(
+                df_hist_sorted[display_hist_cols].style.format({
+                    'buy_price': '{:,.0f}', 'sell_price': '{:,.0f}', 'quantity': '{:,.0f}',
+                    'profit_amount': '{:,.0f}', 'profit_rate': '{:+.2f}%'
+                }),
+                hide_index=True, use_container_width=True
+            )
+
+    # --- 📉 [복구] 하단 주가 및 모멘텀 순위 시계열 차트 구역 ---
+    st.divider()
+    st.markdown("##### 📉 종목별 최근 주가 및 모멘텀 순위 변동 추이")
+    
+    # 데이터셋에 존재하는 고유 티커 목록 확보
+    distinct_tickers = sorted(df_display['ticker'].unique())
+    
+    # 가독성을 높이기 위해 종목명 매핑 딕셔너리 생성
+    ticker_name_map = dict(zip(df_display['ticker'], df_display['종목명']))
+    
+    selected_chart_ticker = st.selectbox(
+        "분석할 종목을 선택하세요", 
+        options=distinct_tickers, 
+        format_func=lambda x: f"{ticker_name_map.get(x, x)} ({x})"
+    )
+    
+    if selected_chart_ticker:
+        # DB에서 해당 종목의 최근 60영업일 시계열 데이터 추출
+        chart_res = supabase.table("daily_analysis") \
+            .select("price_date, close_price, momentum_rank") \
+            .eq("ticker", selected_chart_ticker) \
+            .order("price_date", desc=False) \
+            .limit(60).execute()
+            
+        if not chart_res.data:
+            st.info("해당 종목의 시계열 차트 데이터가 존재하지 않습니다.")
+        else:
+            df_chart = pd.DataFrame(chart_res.data)
+            df_chart['price_date'] = pd.to_datetime(df_chart['price_date']).dt.strftime('%m-%d')
+            df_chart = df_chart.set_index('price_date')
+            
+            c_left, c_right = st.columns(2)
+            
+            with c_left:
+                st.markdown("<p style='text-align:center; font-weight:bold;'>📈 최근 주가 추이 (종가)</p>", unsafe_allow_html=True)
+                st.line_chart(df_chart['close_price'], use_container_width=True)
+                
+            with c_right:
+                st.markdown("<p style='text-align:center; font-weight:bold;'>🏅 모멘텀 순위 변동 (상단이 고순위)</p>", unsafe_allow_html=True)
+                # 순위는 1위가 가장 높으므로 보기 편하게 차트 데이터를 음수로 바꾸어 상단 배치 구조 유도
+                df_chart['inverted_rank'] = -df_chart['momentum_rank']
+                st.line_chart(df_chart['inverted_rank'], use_container_width=True)
