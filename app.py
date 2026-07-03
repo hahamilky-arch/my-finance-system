@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 from supabase import create_client
+import altair as alt  # 💡 Y축 반전 차트를 그리기 위해 추가
 
 # 백지화 방지를 위해 최상단 배치
 st.set_page_config(layout="wide")
@@ -174,7 +175,7 @@ def display_trade_list(data, title, button_label, key_prefix, target_date):
                         update_holdings(row['ticker'], action_type, input_price, target_date, input_qty)
 
 # --- 2. UI 메인 실행 파트 ---
-st.markdown("##### 📈 Momentum Dashboard v1.4.6")
+st.markdown("##### 📈 Momentum Dashboard v1.4.7")
 market_safe = get_market_regime()
 
 if not market_safe:
@@ -364,7 +365,7 @@ if df_display is not None:
     )
     
     if selected_chart_ticker:
-        # 💡 [변경 1] 최근 20영업일(약 1달)의 데이터만 추출하기 위해 desc=True로 20개를 가져옴
+        # 최근 20일(약 1달) 데이터 추출
         chart_res = supabase.table("daily_analysis") \
             .select("price_date, close_price, momentum_rank") \
             .eq("ticker", selected_chart_ticker) \
@@ -374,22 +375,29 @@ if df_display is not None:
         if not chart_res.data:
             st.info("해당 종목의 시계열 차트 데이터가 존재하지 않습니다.")
         else:
-            # 💡 [변경 2] 차트에 그리기 위해 다시 시간순(오래된 날짜 -> 최신 날짜)으로 정렬
             df_chart = pd.DataFrame(chart_res.data)
             df_chart['price_date'] = pd.to_datetime(df_chart['price_date'])
             df_chart = df_chart.sort_values('price_date', ascending=True)
             df_chart['price_date'] = df_chart['price_date'].dt.strftime('%m-%d')
-            df_chart = df_chart.set_index('price_date')
             
             c_left, c_right = st.columns(2)
             
+            # 왼쪽: 주가 차트 (인덱스를 price_date로 설정하여 기본 st.line_chart 사용)
             with c_left:
                 st.markdown(f"<p style='text-align:center; font-weight:bold;'>📈 최근 주가 추이 ({ticker_name_map.get(selected_chart_ticker, selected_chart_ticker)})</p>", unsafe_allow_html=True)
-                st.line_chart(df_chart['close_price'], use_container_width=True)
+                df_price_chart = df_chart.set_index('price_date')
+                st.line_chart(df_price_chart['close_price'], use_container_width=True)
                 
+            # 오른쪽: 모멘텀 순위 차트 (Altair를 이용해 100->0 스케일 고정 및 양수 표기)
             with c_right:
-                st.markdown("<p style='text-align:center; font-weight:bold;'>🏅 모멘텀 순위 변동 (숫자가 작을수록 고순위)</p>", unsafe_allow_html=True)
-                # 💡 [변경 3] 음수 변환 제거. 원래 양수 그대로 표출
-                st.line_chart(df_chart['momentum_rank'], use_container_width=True)
+                st.markdown("<p style='text-align:center; font-weight:bold;'>🏅 모멘텀 순위 (상단일수록 고순위)</p>", unsafe_allow_html=True)
+                
+                momentum_chart = alt.Chart(df_chart).mark_line(color='#ff7f0e', point=True).encode(
+                    x=alt.X('price_date:N', title=None, axis=alt.Axis(labelAngle=-45)),
+                    # 💡 핵심: scale=alt.Scale(domain=[100, 0]) 설정을 통해 Y축 범위를 강제로 뒤집음
+                    y=alt.Y('momentum_rank:Q', title='순위 (1~100)', scale=alt.Scale(domain=[100, 0])),
+                    tooltip=['price_date', 'momentum_rank']
+                )
+                st.altair_chart(momentum_chart, use_container_width=True)
 else:
     st.warning("데이터를 불러오는 중입니다.")
