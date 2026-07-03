@@ -174,7 +174,7 @@ def display_trade_list(data, title, button_label, key_prefix, target_date):
                         update_holdings(row['ticker'], action_type, input_price, target_date, input_qty)
 
 # --- 2. UI 메인 실행 파트 ---
-st.markdown("##### 📈 Momentum Dashboard v1.4.5")
+st.markdown("##### 📈 Momentum Dashboard v1.4.6")
 market_safe = get_market_regime()
 
 if not market_safe:
@@ -199,7 +199,6 @@ if df_display is not None:
     for i, tab in enumerate([tab1, tab2, tab3]):
         with tab:
             df_target = tab_dfs[i][col_order].copy()
-            # 🛠️ [에러 수정 포인트] selection_mode="single-row" (하이픈 사용)
             event = st.dataframe(
                 df_target.style.apply(apply_styles, axis=None).format({
                     'MOT': '{:.2f}', 'RS': '{:.2f}', '종가': '{:,.0f}', 'MA20': '{:,.0f}', '변동': '{:+.0f}'
@@ -341,52 +340,4 @@ if df_display is not None:
                     'buy_price': '{:,.0f}', 'sell_price': '{:,.0f}', 'quantity': '{:,.0f}',
                     'profit_amount': '{:,.0f}', 'profit_rate': '{:+.2f}%'
                 }),
-                hide_index=True, use_container_width=True
-            )
-
-    # --- 📉 하단 주가 및 모멘텀 순위 시계열 차트 구역 ---
-    st.divider()
-    st.markdown("##### 📉 종목별 최근 주가 및 모멘텀 순위 변동 추이")
-    
-    distinct_tickers = sorted(df_display['ticker'].unique())
-    ticker_name_map = dict(zip(df_display['ticker'], df_display['종목명']))
-    
-    default_index = 0
-    if 'selected_ticker_from_table' in st.session_state:
-        target_ticker = st.session_state['selected_ticker_from_table']
-        if target_ticker in distinct_tickers:
-            default_index = distinct_tickers.index(target_ticker)
-            
-    selected_chart_ticker = st.selectbox(
-        "분석할 종목을 선택하세요 (위 표에서 종목 행을 직접 클릭해도 자동으로 변경됩니다)", 
-        options=distinct_tickers, 
-        index=default_index,
-        format_func=lambda x: f"{ticker_name_map.get(x, x)} ({x})"
-    )
-    
-    if selected_chart_ticker:
-        chart_res = supabase.table("daily_analysis") \
-            .select("price_date, close_price, momentum_rank") \
-            .eq("ticker", selected_chart_ticker) \
-            .order("price_date", desc=False) \
-            .limit(60).execute()
-            
-        if not chart_res.data:
-            st.info("해당 종목의 시계열 차트 데이터가 존재하지 않습니다.")
-        else:
-            df_chart = pd.DataFrame(chart_res.data)
-            df_chart['price_date'] = pd.to_datetime(df_chart['price_date']).dt.strftime('%m-%d')
-            df_chart = df_chart.set_index('price_date')
-            
-            c_left, c_right = st.columns(2)
-            
-            with c_left:
-                st.markdown(f"<p style='text-align:center; font-weight:bold;'>📈 최근 주가 추이 ({ticker_name_map.get(selected_chart_ticker, selected_chart_ticker)})</p>", unsafe_allow_html=True)
-                st.line_chart(df_chart['close_price'], use_container_width=True)
-                
-            with c_right:
-                st.markdown("<p style='text-align:center; font-weight:bold;'>🏅 모멘텀 순위 변동 (상단이 고순위)</p>", unsafe_allow_html=True)
-                df_chart['inverted_rank'] = -df_chart['momentum_rank']
-                st.line_chart(df_chart['inverted_rank'], use_container_width=True)
-else:
-    st.warning("데이터를 불러오는 중입니다.")
+                hide_index=True,
