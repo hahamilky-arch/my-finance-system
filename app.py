@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 from supabase import create_client
-import altair as alt  # 💡 Y축 반전 차트를 그리기 위해 추가
+import altair as alt  
 
 # 백지화 방지를 위해 최상단 배치
 st.set_page_config(layout="wide")
@@ -175,7 +175,7 @@ def display_trade_list(data, title, button_label, key_prefix, target_date):
                         update_holdings(row['ticker'], action_type, input_price, target_date, input_qty)
 
 # --- 2. UI 메인 실행 파트 ---
-st.markdown("##### 📈 Momentum Dashboard v1.4.7")
+st.markdown("##### 📈 Momentum Dashboard v1.4.8")
 market_safe = get_market_regime()
 
 if not market_safe:
@@ -365,9 +365,9 @@ if df_display is not None:
     )
     
     if selected_chart_ticker:
-        # 최근 20일(약 1달) 데이터 추출
+        # 최근 20일(약 1달) 데이터 추출 (ma20 추가)
         chart_res = supabase.table("daily_analysis") \
-            .select("price_date, close_price, momentum_rank") \
+            .select("price_date, close_price, momentum_rank, ma20") \
             .eq("ticker", selected_chart_ticker) \
             .order("price_date", desc=True) \
             .limit(20).execute()
@@ -380,21 +380,29 @@ if df_display is not None:
             df_chart = df_chart.sort_values('price_date', ascending=True)
             df_chart['price_date'] = df_chart['price_date'].dt.strftime('%m-%d')
             
+            # 숫자 데이터 안전 변환
+            df_chart['close_price'] = pd.to_numeric(df_chart['close_price'], errors='coerce')
+            df_chart['ma20'] = pd.to_numeric(df_chart['ma20'], errors='coerce')
+            
             c_left, c_right = st.columns(2)
             
-            # 왼쪽: 주가 차트 (인덱스를 price_date로 설정하여 기본 st.line_chart 사용)
+            # 왼쪽: 주가 및 MA20 복합 차트
             with c_left:
-                st.markdown(f"<p style='text-align:center; font-weight:bold;'>📈 최근 주가 추이 ({ticker_name_map.get(selected_chart_ticker, selected_chart_ticker)})</p>", unsafe_allow_html=True)
-                df_price_chart = df_chart.set_index('price_date')
-                st.line_chart(df_price_chart['close_price'], use_container_width=True)
+                st.markdown(f"<p style='text-align:center; font-weight:bold;'>📈 최근 주가 & MA20 ({ticker_name_map.get(selected_chart_ticker, selected_chart_ticker)})</p>", unsafe_allow_html=True)
                 
-            # 오른쪽: 모멘텀 순위 차트 (Altair를 이용해 100->0 스케일 고정 및 양수 표기)
+                # 인덱스를 날짜로 설정하고, 종가와 MA20 컬럼만 선택하여 시각화 데이터프레임 구성
+                df_price_chart = df_chart[['price_date', 'close_price', 'ma20']].set_index('price_date')
+                df_price_chart.columns = ['종가 (Close)', '20일선 (MA20)']
+                
+                # 색상 분리 (종가: 파란색, MA20: 빨간색)
+                st.line_chart(df_price_chart, color=["#1f77b4", "#ff4b4b"], use_container_width=True)
+                
+            # 오른쪽: 모멘텀 순위 차트
             with c_right:
                 st.markdown("<p style='text-align:center; font-weight:bold;'>🏅 모멘텀 순위 (상단일수록 고순위)</p>", unsafe_allow_html=True)
                 
                 momentum_chart = alt.Chart(df_chart).mark_line(color='#ff7f0e', point=True).encode(
                     x=alt.X('price_date:N', title=None, axis=alt.Axis(labelAngle=-45)),
-                    # 💡 핵심: scale=alt.Scale(domain=[100, 0]) 설정을 통해 Y축 범위를 강제로 뒤집음
                     y=alt.Y('momentum_rank:Q', title='순위 (1~100)', scale=alt.Scale(domain=[100, 0])),
                     tooltip=['price_date', 'momentum_rank']
                 )
