@@ -15,6 +15,10 @@ def apply_styles(df):
     if '변동' in df.columns:
         df_styles.loc[df['변동'] > 0, '변동'] = 'color: red;'
         df_styles.loc[df['변동'] < 0, '변동'] = 'color: blue;'
+    # 💡 상승금액 컬럼에도 색상 적용
+    if '상승금액' in df.columns:
+        df_styles.loc[df['상승금액'] > 0, '상승금액'] = 'color: red;'
+        df_styles.loc[df['상승금액'] < 0, '상승금액'] = 'color: blue;'
     return df_styles
 
 # 보유 종목 리스트 (매도일이 없는 '진짜 보유 중'인 종목의 티커만) 가져오기
@@ -115,11 +119,17 @@ def get_data(target_date, all_dates, market_type):
     
     target_idx = all_dates.index(target_date_str)
     prev_date = all_dates[min(target_idx + 1, len(all_dates)-1)]
-    res_prev = supabase.table("daily_analysis").select("ticker, momentum_rank").eq("price_date", prev_date).execute()
-    df_prev = pd.DataFrame(res_prev.data).rename(columns={'momentum_rank': '순위_prev'})
+    
+    # 💡 [핵심 변경] 전일자 데이터를 가져올 때 close_price를 추가로 불러와 상승금액 계산
+    res_prev = supabase.table("daily_analysis").select("ticker, momentum_rank, close_price").eq("price_date", prev_date).execute()
+    df_prev = pd.DataFrame(res_prev.data).rename(columns={'momentum_rank': '순위_prev', 'close_price': '종가_prev'})
     
     df_final = pd.merge(df_final, df_prev, on="ticker", how='left')
     df_final = df_final.rename(columns={'momentum_rank': '순위', 'weighted_momentum': 'MOT', 'rs_score': 'RS', 'close_price': '종가', 'ma10': 'MA10', 'ma20': 'MA20'})
+    
+    # 상승금액 산출 로직
+    df_final['종가_prev'] = pd.to_numeric(df_final['종가_prev'], errors='coerce')
+    df_final['상승금액'] = df_final['종가'] - df_final['종가_prev']
     
     df_final['변동'] = df_final['순위_prev'].fillna(999) - df_final['순위']
     df_final['is_new_top30'] = (df_final['순위'] <= 30) & (df_final['순위_prev'] > 30)
@@ -175,7 +185,7 @@ def display_trade_list(data, title, button_label, key_prefix, target_date):
                         update_holdings(row['ticker'], action_type, input_price, target_date, input_qty)
 
 # --- 2. UI 메인 실행 파트 ---
-st.markdown("##### 📈 Momentum Dashboard v1.4.8")
+st.markdown("##### 📈 Momentum Dashboard v1.4.9")
 market_safe = get_market_regime()
 
 if not market_safe:
@@ -192,7 +202,8 @@ df_display = get_data(selected_date, all_dates, market_type)
 if df_display is not None:
     tab1, tab2, tab3, tab4, tab5 = st.tabs(["Overview", "New Entries", "🎯 Pullback", "🚀 No.6 최적화", "📊 성과 분석"])
     
-    col_order = ['순위', '변동', '종목명', 'MOT', 'RS', '종가', 'MA20', 'ticker'] 
+    # 💡 [핵심 변경] 표의 컬럼 순서에 '상승금액' 추가
+    col_order = ['순위', '변동', '종목명', 'MOT', 'RS', '종가', '상승금액', 'MA20', 'ticker'] 
     tab_dfs = [df_display.head(100), df_display[df_display['is_new_top30']], df_display[df_display['is_pullback']], df_display[df_display['is_no6_opt']]]
 
     clicked_ticker = None
@@ -201,8 +212,9 @@ if df_display is not None:
         with tab:
             df_target = tab_dfs[i][col_order].copy()
             event = st.dataframe(
+                # 💡 [핵심 변경] format 사전값에 '상승금액'을 +1,000 형태로 포맷팅 추가
                 df_target.style.apply(apply_styles, axis=None).format({
-                    'MOT': '{:.2f}', 'RS': '{:.2f}', '종가': '{:,.0f}', 'MA20': '{:,.0f}', '변동': '{:+.0f}'
+                    'MOT': '{:.2f}', 'RS': '{:.2f}', '종가': '{:,.0f}', '상승금액': '{:+,.0f}', 'MA20': '{:,.0f}', '변동': '{:+.0f}'
                 }, na_rep='-'), 
                 hide_index=True, 
                 use_container_width=True,
