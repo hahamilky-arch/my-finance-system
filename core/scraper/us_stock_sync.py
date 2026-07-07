@@ -3,8 +3,11 @@ from datetime import datetime, timedelta
 from database.client import supabase
 
 def sync_us_stocks(start_date=None, end_date=None):
-    # 1. 대상 종목 조회 (market='US')
-    stocks = supabase.table("stocks").select("ticker").eq("market", "US").execute().data
+    # 1. 대상 종목 조회 (💡 일반 US 종목 + 미국 시장 벤치마크 지수 ^GSPC 포함)
+    stocks = supabase.table("stocks") \
+        .select("ticker") \
+        .or_("market.eq.US,ticker.eq.^GSPC") \
+        .execute().data
     
     for stock in stocks:
         ticker = stock["ticker"]
@@ -50,6 +53,7 @@ def sync_us_stocks(start_date=None, end_date=None):
             
             if records:
                 supabase.table("stock_prices").upsert(records, on_conflict="ticker,price_date").execute()
+                print(f"[{ticker}] 데이터 적재 완료")  # 💡 진행 상황 로깅
                 
         except Exception as e:
             print(f"Error syncing US stock [{ticker}]: {e}")
