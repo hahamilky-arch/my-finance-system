@@ -17,16 +17,19 @@ def run_analysis_pipeline(market='KR', target_date=None):
     
     benchmark_ticker = "^KS11" if market == "KR" else "^GSPC"
     
-    # 1. 대상 티커 가져오기
+    # 1. 대상 티커와 market 정보 함께 가져오기 (수정)
     target_tickers = supabase.table("stocks") \
-        .select("ticker") \
+        .select("ticker, market") \
         .or_(f"market.eq.{market},market.eq.INDEX") \
         .execute().data
     
     if not target_tickers:
         print("대상 티커 목록이 없습니다.")
         return
-    ticker_list = [t["ticker"] for t in target_tickers]
+        
+    # 💡 티커별 원래 소속 market을 매핑해두는 딕셔너리 생성
+    ticker_market_map = {t["ticker"]: t["market"] for t in target_tickers}
+    ticker_list = list(ticker_market_map.keys())
     
     # 2. 데이터 가져오기
     prices = []
@@ -56,7 +59,6 @@ def run_analysis_pipeline(market='KR', target_date=None):
                  .ffill()
 
     # [핵심] analysis_date 시점까지만 데이터 필터링
-    # 파이프라인 실행일 이후의 데이터는 분석에서 제외하여 데이터 복제 방지
     if analysis_date in pivot_df.index:
         pivot_df = pivot_df.loc[:analysis_date]
     else:
@@ -87,8 +89,8 @@ def run_analysis_pipeline(market='KR', target_date=None):
     # 5. 결과 DB 적재
     analysis_data = []
     for ticker in ticker_list:
-        if ticker == benchmark_ticker:
-            continue
+        # 💡 [핵심] 기존의 `if ticker == benchmark_ticker: continue` 삭제
+        # 벤치마크(INDEX)도 MA20 데이터를 남겨야 app.py의 시장 주의보 기능이 작동합니다.
             
         current_close = pivot_df.loc[pivot_df.index[-1], ticker] if ticker in pivot_df.columns else 0.0
         
@@ -99,7 +101,7 @@ def run_analysis_pipeline(market='KR', target_date=None):
             "weighted_momentum": safe_float(weighted_momentum_series.get(ticker, 0.0)),
             "close_price": safe_float(current_close),
             "price_date": analysis_date,
-            "market": market,
+            "market": ticker_market_map.get(ticker, market),  # 💡 딕셔너리에서 가져와 INDEX 종목은 'INDEX'로 적재
             "ma10": safe_float(ma10_series.get(ticker, 0.0)),
             "ma20": safe_float(ma20_series.get(ticker, 0.0))
         })
