@@ -7,23 +7,19 @@ def sync_kr_stocks(start_date=None, end_date=None):
     stocks = supabase.table("stocks").select("ticker").eq("market", "KR").execute().data
     
     for stock in stocks:
-        ticker = stock["ticker"]
-        yf_ticker = f"{str(ticker).zfill(6)}.KS"
-
-        # DB 적재용 티커(원본)
-        db_ticker = str(ticker).zfill(6) 
-
+        raw_ticker = stock["ticker"]
+        # DB 적재 및 조회용 원본 티커 (예: '005930')
+        db_ticker = str(raw_ticker).zfill(6) 
         
-        # 2. 날짜 결정 로직 (인자 우선 적용)
+        # 2. 날짜 결정 로직
         if start_date:
             start_dt = datetime.strptime(start_date, '%Y-%m-%d')
-            # end_date가 없으면 오늘까지로 설정
             end_dt = datetime.strptime(end_date, '%Y-%m-%d') if end_date else datetime.now()
         else:
-            # 기존 로직: DB의 마지막 데이터 기준
+            # 💡 [버그 수정] DB 조회 시 yf_ticker가 아닌 db_ticker로 검색해야 함
             last_data = supabase.table("stock_prices") \
                 .select("price_date") \
-                .eq("ticker", yf_ticker) \
+                .eq("ticker", db_ticker) \
                 .order("price_date", desc=True) \
                 .limit(1) \
                 .execute().data
@@ -37,11 +33,20 @@ def sync_kr_stocks(start_date=None, end_date=None):
         
         # 3. 데이터 수집
         try:
-            # yfinance는 end를 포함하지 않으므로 end_dt에 하루를 더함
             fetch_end = end_dt + timedelta(days=1)
-            df = yf.Ticker(yf_ticker).history(start=start_dt.strftime('%Y-%m-%d'), end=fetch_end.strftime('%Y-%m-%d'))
+            start_str = start_dt.strftime('%Y-%m-%d')
+            end_str = fetch_end.strftime('%Y-%m-%d')
+            
+            # 💡 [핵심 수정] 코스피(.KS)로 먼저 시도 후, 데이터가 없으면 코스닥(.KQ)으로 폴백(Fallback) 시도
+            yf_ticker_ks = f"{db_ticker}.KS"
+            df = yf.Ticker(yf_ticker_ks).history(start=start_str, end=end_str)
             
             if df.empty:
+                yf_ticker_kq = f"{db_ticker}.KQ"
+                df = yf.Ticker(yf_ticker_kq).history(start=start_str, end=end_str)
+            
+            if df.empty:
+                # 주말, 공휴일이거나 완전히 유효하지 않은 티커인 경우 건너뜀
                 continue
                 
             # 4. DB 적재
@@ -56,10 +61,10 @@ def sync_kr_stocks(start_date=None, end_date=None):
             
             if records:
                 supabase.table("stock_prices").upsert(records, on_conflict="ticker,price_date").execute()
+                print(f"[{db_ticker}] 데이터 적재 완료")
                 
         except Exception as e:
-            print(f"Error syncing {yf_ticker}: {e}")
+            print(f"Error syncing {db_ticker}: {e}")
             continue
             
     print("KR 주식 데이터 동기화 완료.")
-    
