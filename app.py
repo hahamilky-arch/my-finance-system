@@ -182,7 +182,7 @@ def display_trade_list(data, title, button_label, key_prefix, target_date):
                         update_holdings(row['ticker'], action_type, input_price, target_date, input_qty)
 
 # --- 2. UI 메인 실행 파트 ---
-st.markdown("##### 📈 Momentum Dashboard v1.5.0")
+st.markdown("##### 📈 Momentum Dashboard v1.5.1")
 market_safe = get_market_regime()
 
 if not market_safe:
@@ -195,6 +195,10 @@ with st.sidebar:
     if st.button("Refresh"): st.rerun()
 
 df_display = get_data(selected_date, all_dates, market_type)
+
+# 인증 상태 초기화
+if 'trade_authenticated' not in st.session_state:
+    st.session_state['trade_authenticated'] = False
 
 if df_display is not None:
     tab1, tab2, tab3, tab4, tab5 = st.tabs(["Overview", "New Entries", "🎯 Pullback", "🚀 No.6 최적화", "📊 성과 분석"])
@@ -225,33 +229,28 @@ if df_display is not None:
     if clicked_ticker:
         st.session_state['selected_ticker_from_table'] = clicked_ticker
 
-    # --- Tab 4(매매 지시서 구역) ---
+    # --- Tab 4 (매매 지시서 구역) ---
     with tab4:
         st.markdown("##### 📋 오늘의 매매 지시서")
         
-        # 💡 [보안] 세션 상태를 활용한 매매 탭 진입 잠금 로직
-        if 'trade_authenticated' not in st.session_state:
-            st.session_state['trade_authenticated'] = False
-            
         if not st.session_state['trade_authenticated']:
             st.info("🔒 실제 매매 및 보유 종목 확인을 위해 비밀번호를 입력해 주십시오.")
             col_pwd1, col_pwd2 = st.columns([3, 1])
             with col_pwd1:
-                input_pwd = st.text_input("매매 비밀번호", type="password", label_visibility="collapsed")
+                # Tab4 전용 고유 키워드 부여
+                input_pwd_4 = st.text_input("매매 비밀번호", type="password", key="pwd_tab4", label_visibility="collapsed")
             with col_pwd2:
-                if st.button("잠금 해제", use_container_width=True):
-                    # Secrets에 TRADE_PASSWORD가 없다면 기본값 "1234" 사용
+                if st.button("잠금 해제", key="btn_unlock_tab4", use_container_width=True):
                     valid_pwd = st.secrets.get("TRADE_PASSWORD", "1234")
-                    if input_pwd == valid_pwd:
+                    if input_pwd_4 == valid_pwd:
                         st.session_state['trade_authenticated'] = True
                         st.rerun()
                     else:
                         st.error("비밀번호가 일치하지 않습니다.")
         else:
-            # 인증 성공 시 매매 내용 출력 및 다시 잠금 버튼 제공
             col_header1, col_header2 = st.columns([5, 1])
             with col_header2:
-                if st.button("🔒 다시 잠금", use_container_width=True):
+                if st.button("🔒 다시 잠금", key="btn_lock_tab4", use_container_width=True):
                     st.session_state['trade_authenticated'] = False
                     st.rerun()
 
@@ -319,64 +318,86 @@ if df_display is not None:
                 with c1: st.markdown("**[매수 조건]**\n- 순위: 30위 이내\n- RS: 0 초과\n- 추세: 종가 > MA20")
                 with c2: st.markdown("**[매도 조건]**\n- 순위: 30위 밖\n- 추세: 종가 < MA20")
 
-    # --- Tab 5(성과 분석 구역) ---
+    # --- Tab 5 (성과 분석 구역) ---
     with tab5:
         st.markdown("##### 📊 단일 테이블 기반 매매 성과 분석")
-        history_res = supabase.table("current_holdings").select("*").not_.is_("sell_date", "null").execute()
         
-        if not history_res.data:
-            st.info("청산된 매매 이력이 존재하지 않습니다.")
+        if not st.session_state['trade_authenticated']:
+            st.info("🔒 상세 성과 내역 확인을 위해 비밀번호를 입력해 주십시오.")
+            col_pwd1, col_pwd2 = st.columns([3, 1])
+            with col_pwd1:
+                # Tab5 전용 고유 키워드 부여
+                input_pwd_5 = st.text_input("매매 비밀번호", type="password", key="pwd_tab5", label_visibility="collapsed")
+            with col_pwd2:
+                if st.button("잠금 해제", key="btn_unlock_tab5", use_container_width=True):
+                    valid_pwd = st.secrets.get("TRADE_PASSWORD", "1234")
+                    if input_pwd_5 == valid_pwd:
+                        st.session_state['trade_authenticated'] = True
+                        st.rerun()
+                    else:
+                        st.error("비밀번호가 일치하지 않습니다.")
         else:
-            df_hist = pd.DataFrame(history_res.data)
-            df_stocks_info = pd.DataFrame(supabase.table("stocks").select("ticker, name").execute().data)
-            if not df_stocks_info.empty:
-                df_stocks_info['ticker'] = df_stocks_info['ticker'].astype(str).str.strip()
-                df_hist = pd.merge(df_hist, df_stocks_info, on="ticker", how="left")
-                df_hist['종목명'] = df_hist['name'].fillna(df_hist['ticker'])
-            else:
-                df_hist['종목명'] = df_hist['ticker']
+            col_header1, col_header2 = st.columns([5, 1])
+            with col_header2:
+                if st.button("🔒 다시 잠금", key="btn_lock_tab5", use_container_width=True):
+                    st.session_state['trade_authenticated'] = False
+                    st.rerun()
 
-            df_hist['profit_amount'] = pd.to_numeric(df_hist['profit_amount'], errors='coerce').fillna(0.0)
-            df_hist['profit_rate'] = pd.to_numeric(df_hist['profit_rate'], errors='coerce').fillna(0.0)
+            history_res = supabase.table("current_holdings").select("*").not_.is_("sell_date", "null").execute()
             
-            total_profit = df_hist['profit_amount'].sum()
-            total_trades = len(df_hist)
-            win_trades = len(df_hist[df_hist['profit_amount'] > 0])
-            win_rate = (win_trades / total_trades * 100) if total_trades > 0 else 0.0
-            avg_return = df_hist['profit_rate'].mean()
-            
-            m1, m2, m3, m4 = st.columns(4)
-            m1.metric("총 실현 손익", f"{total_profit:,.0f} 원")
-            m2.metric("총 매매 회수", f"{total_trades} 건")
-            m3.metric("승률", f"{win_rate:.1f} %")
-            m4.metric("평균 수익률", f"{avg_return:+.2f} %")
-            
-            st.write("")
-            st.markdown("###### 📅 월별 성과 종합")
-            df_hist['sell_month'] = pd.to_datetime(df_hist['sell_date']).dt.strftime('%Y-%m')
-            df_monthly = df_hist.groupby('sell_month').agg(
-                월간손익=('profit_amount', 'sum'),
-                매매건수=('id', 'count'),
-                평균수익률=('profit_rate', 'mean')
-            ).reset_index().sort_values('sell_month', ascending=False)
-            
-            st.dataframe(
-                df_monthly.style.format({'월간손익': '{:,.0f}', '평균수익률': '{:+.2f}%'}),
-                hide_index=True, use_container_width=True
-            )
-            
-            st.write("")
-            st.markdown("###### 📜 상세 매매 완료 내역")
-            display_hist_cols = ['sell_date', 'ticker', '종목명', 'buy_date', 'buy_price', 'sell_price', 'quantity', 'profit_amount', 'profit_rate']
-            df_hist_sorted = df_hist.sort_values('sell_date', ascending=False)
-            
-            st.dataframe(
-                df_hist_sorted[display_hist_cols].style.format({
-                    'buy_price': '{:,.0f}', 'sell_price': '{:,.0f}', 'quantity': '{:,.0f}',
-                    'profit_amount': '{:,.0f}', 'profit_rate': '{:+.2f}%'
-                }),
-                hide_index=True, use_container_width=True
-            )
+            if not history_res.data:
+                st.info("청산된 매매 이력이 존재하지 않습니다.")
+            else:
+                df_hist = pd.DataFrame(history_res.data)
+                df_stocks_info = pd.DataFrame(supabase.table("stocks").select("ticker, name").execute().data)
+                if not df_stocks_info.empty:
+                    df_stocks_info['ticker'] = df_stocks_info['ticker'].astype(str).str.strip()
+                    df_hist = pd.merge(df_hist, df_stocks_info, on="ticker", how="left")
+                    df_hist['종목명'] = df_hist['name'].fillna(df_hist['ticker'])
+                else:
+                    df_hist['종목명'] = df_hist['ticker']
+
+                df_hist['profit_amount'] = pd.to_numeric(df_hist['profit_amount'], errors='coerce').fillna(0.0)
+                df_hist['profit_rate'] = pd.to_numeric(df_hist['profit_rate'], errors='coerce').fillna(0.0)
+                
+                total_profit = df_hist['profit_amount'].sum()
+                total_trades = len(df_hist)
+                win_trades = len(df_hist[df_hist['profit_amount'] > 0])
+                win_rate = (win_trades / total_trades * 100) if total_trades > 0 else 0.0
+                avg_return = df_hist['profit_rate'].mean()
+                
+                m1, m2, m3, m4 = st.columns(4)
+                m1.metric("총 실현 손익", f"{total_profit:,.0f} 원")
+                m2.metric("총 매매 회수", f"{total_trades} 건")
+                m3.metric("승률", f"{win_rate:.1f} %")
+                m4.metric("평균 수익률", f"{avg_return:+.2f} %")
+                
+                st.write("")
+                st.markdown("###### 📅 월별 성과 종합")
+                df_hist['sell_month'] = pd.to_datetime(df_hist['sell_date']).dt.strftime('%Y-%m')
+                df_monthly = df_hist.groupby('sell_month').agg(
+                    월간손익=('profit_amount', 'sum'),
+                    매매건수=('id', 'count'),
+                    평균수익률=('profit_rate', 'mean')
+                ).reset_index().sort_values('sell_month', ascending=False)
+                
+                st.dataframe(
+                    df_monthly.style.format({'월간손익': '{:,.0f}', '평균수익률': '{:+.2f}%'}),
+                    hide_index=True, use_container_width=True
+                )
+                
+                st.write("")
+                st.markdown("###### 📜 상세 매매 완료 내역")
+                display_hist_cols = ['sell_date', 'ticker', '종목명', 'buy_date', 'buy_price', 'sell_price', 'quantity', 'profit_amount', 'profit_rate']
+                df_hist_sorted = df_hist.sort_values('sell_date', ascending=False)
+                
+                st.dataframe(
+                    df_hist_sorted[display_hist_cols].style.format({
+                        'buy_price': '{:,.0f}', 'sell_price': '{:,.0f}', 'quantity': '{:,.0f}',
+                        'profit_amount': '{:,.0f}', 'profit_rate': '{:+.2f}%'
+                    }),
+                    hide_index=True, use_container_width=True
+                )
 
     # --- 📉 하단 주가 및 모멘텀 순위 시계열 차트 구역 ---
     st.divider()
@@ -422,4 +443,18 @@ if df_display is not None:
                 st.markdown(f"<p style='text-align:center; font-weight:bold;'>📈 최근 주가 & MA20 ({ticker_name_map.get(selected_chart_ticker, selected_chart_ticker)})</p>", unsafe_allow_html=True)
                 
                 df_price_chart = df_chart[['price_date', 'close_price', 'ma20']].set_index('price_date')
-                df_price_chart.columns
+                df_price_chart.columns = ['종가 (Close)', '20일선 (MA20)']
+                
+                st.line_chart(df_price_chart, color=["#1f77b4", "#ff4b4b"], use_container_width=True)
+                
+            with c_right:
+                st.markdown("<p style='text-align:center; font-weight:bold;'>🏅 모멘텀 순위 (상단일수록 고순위)</p>", unsafe_allow_html=True)
+                
+                momentum_chart = alt.Chart(df_chart).mark_line(color='#ff7f0e', point=True).encode(
+                    x=alt.X('price_date:N', title=None, axis=alt.Axis(labelAngle=-45)),
+                    y=alt.Y('momentum_rank:Q', title='순위 (1~100)', scale=alt.Scale(domain=[100, 0])),
+                    tooltip=['price_date', 'momentum_rank']
+                )
+                st.altair_chart(momentum_chart, use_container_width=True)
+else:
+    st.warning("데이터를 불러오는 중입니다.")
