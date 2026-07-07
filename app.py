@@ -182,7 +182,7 @@ def display_trade_list(data, title, button_label, key_prefix, target_date):
                         update_holdings(row['ticker'], action_type, input_price, target_date, input_qty)
 
 # --- 2. UI 메인 실행 파트 ---
-st.markdown("##### 📈 Momentum Dashboard v1.5.1")
+st.markdown("##### 📈 Momentum Dashboard v1.5.2")
 market_safe = get_market_regime()
 
 if not market_safe:
@@ -196,7 +196,6 @@ with st.sidebar:
 
 df_display = get_data(selected_date, all_dates, market_type)
 
-# 인증 상태 초기화
 if 'trade_authenticated' not in st.session_state:
     st.session_state['trade_authenticated'] = False
 
@@ -206,10 +205,21 @@ if df_display is not None:
     col_order = ['순위', '변동', '종목명', 'MOT', 'RS', '종가', '상승금액', 'MA20', 'ticker'] 
     tab_dfs = [df_display.head(100), df_display[df_display['is_new_top30']], df_display[df_display['is_pullback']], df_display[df_display['is_no6_opt']]]
 
+    # 💡 탭 1, 2, 3 상단 안내 문구 정의
+    tab_descriptions = [
+        "📌 **조회 기준**: 선택한 시장의 전체 종목 중 모멘텀 순위 **상위 100개 종목** (1위~100위 오름차순 정렬)",
+        "📌 **조회 기준**: 직전 거래일 30위 밖에서 당일 **상위 30위(Top 30) 이내로 새롭게 진입**한 종목",
+        "📌 **조회 기준**: 모멘텀 순위 100위 이내, RS 0 초과 조건에서 직전 대비 **순위가 상승 중(숫자 감소)인 눌림목 종목**"
+    ]
+
     clicked_ticker = None
     
     for i, tab in enumerate([tab1, tab2, tab3]):
         with tab:
+            # 💡 안내 문구 출력
+            st.markdown(f"<span style='color: #555555; font-size: 0.9em;'>{tab_descriptions[i]}</span>", unsafe_allow_html=True)
+            st.write("")
+            
             df_target = tab_dfs[i][col_order].copy()
             event = st.dataframe(
                 df_target.style.apply(apply_styles, axis=None).format({
@@ -237,7 +247,6 @@ if df_display is not None:
             st.info("🔒 실제 매매 및 보유 종목 확인을 위해 비밀번호를 입력해 주십시오.")
             col_pwd1, col_pwd2 = st.columns([3, 1])
             with col_pwd1:
-                # Tab4 전용 고유 키워드 부여
                 input_pwd_4 = st.text_input("매매 비밀번호", type="password", key="pwd_tab4", label_visibility="collapsed")
             with col_pwd2:
                 if st.button("잠금 해제", key="btn_unlock_tab4", use_container_width=True):
@@ -326,7 +335,6 @@ if df_display is not None:
             st.info("🔒 상세 성과 내역 확인을 위해 비밀번호를 입력해 주십시오.")
             col_pwd1, col_pwd2 = st.columns([3, 1])
             with col_pwd1:
-                # Tab5 전용 고유 키워드 부여
                 input_pwd_5 = st.text_input("매매 비밀번호", type="password", key="pwd_tab5", label_visibility="collapsed")
             with col_pwd2:
                 if st.button("잠금 해제", key="btn_unlock_tab5", use_container_width=True):
