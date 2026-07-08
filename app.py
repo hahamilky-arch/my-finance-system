@@ -102,8 +102,9 @@ def get_data(target_date, all_dates, market_type):
     target_date_str = target_date_ts.strftime('%Y-%m-%d')
     if target_date_str not in all_dates: return None
 
+    # 💡 데이터베이스 쿼리에 rs_score_10 필드 추가
     res_curr = supabase.table("daily_analysis") \
-        .select("ticker, momentum_rank, weighted_momentum, rs_score, close_price, ma10, ma20") \
+        .select("ticker, momentum_rank, weighted_momentum, rs_score, rs_score_10, close_price, ma10, ma20") \
         .eq("price_date", target_date_str) \
         .eq("market", market_type) \
         .execute()
@@ -123,16 +124,24 @@ def get_data(target_date, all_dates, market_type):
     df_prev = pd.DataFrame(res_prev.data).rename(columns={'momentum_rank': '순위_prev', 'close_price': '종가_prev'})
     
     df_final = pd.merge(df_final, df_prev, on="ticker", how='left')
-    df_final = df_final.rename(columns={'momentum_rank': '순위', 'weighted_momentum': 'MOT', 'rs_score': 'RS', 'close_price': '종가', 'ma10': 'MA10', 'ma20': 'MA20'})
+    df_final = df_final.rename(columns={
+        'momentum_rank': '순위', 
+        'weighted_momentum': 'MOT', 
+        'rs_score': 'RS(90)', 
+        'rs_score_10': 'RS(10)', 
+        'close_price': '종가', 
+        'ma10': 'MA10', 
+        'ma20': 'MA20'
+    })
     
     df_final['종가_prev'] = pd.to_numeric(df_final['종가_prev'], errors='coerce')
     df_final['상승금액'] = df_final['종가'] - df_final['종가_prev']
     
     df_final['변동'] = df_final['순위_prev'].fillna(999) - df_final['순위']
     df_final['is_new_top30'] = (df_final['순위'] <= 30) & (df_final['순위_prev'] > 30)
-    df_final['is_pullback'] = (df_final['순위'] <= 100) & (df_final['RS'] > 0) & (df_final['변동'] > 0)
+    df_final['is_pullback'] = (df_final['순위'] <= 100) & (df_final['RS(90)'] > 0) & (df_final['변동'] > 0)
     df_final['MA20'] = df_final['MA20'].fillna(0)
-    df_final['is_no6_opt'] = (df_final['순위'] <= 30) & (df_final['RS'] > 0) & (df_final['종가'] > df_final['MA20']) & (df_final['MA20'] > 0)
+    df_final['is_no6_opt'] = (df_final['순위'] <= 30) & (df_final['RS(90)'] > 0) & (df_final['종가'] > df_final['MA20']) & (df_final['MA20'] > 0)
     
     df_stocks = pd.DataFrame(supabase.table("stocks").select("ticker, name").execute().data)
     if not df_stocks.empty:
@@ -153,7 +162,6 @@ def get_data(target_date, all_dates, market_type):
     
     return pd.merge(df_final, df_stocks, on="ticker", how="left").rename(columns={'name': '종목명'}).sort_values('순위')
 
-# 💡 최근 영업일 여부(is_latest_date) 파라미터 추가
 def display_trade_list(data, title, button_label, key_prefix, target_date, is_latest_date):
     with st.expander(f"🚨 {title} ({len(data)}개)", expanded=True):
         if data.empty:
@@ -168,12 +176,12 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                     <span style="font-size: 0.8em; color: #888888; margin-left: 4px;">({row['ticker']})</span>
                     <span style="font-size: 0.9em; margin-left: 12px; color: #444444;">
                         | MOT: <span style="font-family: monospace; background-color: #f1f3f6; padding: 2px 5px; border-radius: 4px;">{row['MOT']:.2f}</span> 
-                        | RS: <span style="color: #137333; font-weight: bold; font-family: monospace; background-color: #e6f4ea; padding: 2px 5px; border-radius: 4px;">{row['RS']:.2f}</span>
+                        | RS(90): <span style="color: #137333; font-weight: bold; font-family: monospace; background-color: #e6f4ea; padding: 2px 5px; border-radius: 4px;">{row['RS(90)']:.2f}</span>
+                        | RS(10): <span style="color: #b06000; font-weight: bold; font-family: monospace; background-color: #fdf2e9; padding: 2px 5px; border-radius: 4px;">{row['RS(10)']:.2f}</span>
                     </span>
                 </div>
                 """, unsafe_allow_html=True)
             
-                # 💡 최근 영업일일 때만 팝오버 및 매매 버튼 표시
                 if is_latest_date:
                     with c2.popover(button_label):
                         st.write(f"**{row['종목명']}**")
@@ -187,7 +195,7 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                     c2.markdown("<div style='color:#999999; font-size:0.85em; margin-top:8px; text-align:right;'>과거일 매매불가</div>", unsafe_allow_html=True)
 
 # --- 2. UI 메인 실행 파트 ---
-st.markdown("##### 📈 Momentum Dashboard v1.5.5")
+st.markdown("##### 📈 Momentum Dashboard v1.6.0")
 market_safe = get_market_regime()
 
 if not market_safe:
@@ -199,7 +207,6 @@ with st.sidebar:
     selected_date = st.date_input("Date", value=pd.to_datetime(all_dates[0]) if all_dates else None)
     if st.button("Refresh"): st.rerun()
 
-# 💡 현재 선택된 날짜가 가장 최신 날짜인지 판별하는 로직
 is_latest_date = False
 if all_dates and selected_date:
     latest_date_str = max(all_dates)
@@ -215,13 +222,14 @@ if 'trade_authenticated' not in st.session_state:
 if df_display is not None:
     tab1, tab2, tab3, tab4, tab5 = st.tabs(["Overview", "New Entries", "🎯 Pullback", "🚀 No.6 최적화", "📊 성과 분석"])
     
-    col_order = ['순위', '변동', '종목명', 'MOT', 'RS', '종가', '상승금액', 'MA20', 'ticker'] 
+    # 💡 순서 배열에 'RS(10)' 추가
+    col_order = ['순위', '변동', '종목명', 'MOT', 'RS(90)', 'RS(10)', '종가', '상승금액', 'MA20', 'ticker'] 
     tab_dfs = [df_display.head(100), df_display[df_display['is_new_top30']], df_display[df_display['is_pullback']], df_display[df_display['is_no6_opt']]]
 
     tab_descriptions = [
         "📌 **조회 기준**: 선택한 시장의 전체 종목 중 모멘텀 순위 **상위 100개 종목** (1위~100위 오름차순 정렬)",
         "📌 **조회 기준**: 직전 거래일 30위 밖에서 당일 **상위 30위(Top 30) 이내로 새롭게 진입**한 종목",
-        "📌 **조회 기준**: 모멘텀 순위 100위 이내, RS 0 초과 조건에서 직전 대비 **순위가 상승 중(숫자 감소)인 눌림목 종목**"
+        "📌 **조회 기준**: 모멘텀 순위 100위 이내, RS(90) 0 초과 조건에서 직전 대비 **순위가 상승 중(숫자 감소)인 눌림목 종목**"
     ]
 
     clicked_ticker = None
@@ -234,7 +242,7 @@ if df_display is not None:
             df_target = tab_dfs[i][col_order].copy()
             event = st.dataframe(
                 df_target.style.apply(apply_styles, axis=None).format({
-                    'MOT': '{:.2f}', 'RS': '{:.2f}', '종가': '{:,.0f}', '상승금액': '{:+,.0f}', 'MA20': '{:,.0f}', '변동': '{:+.0f}'
+                    'MOT': '{:.2f}', 'RS(90)': '{:.2f}', 'RS(10)': '{:.2f}', '종가': '{:,.0f}', '상승금액': '{:+,.0f}', 'MA20': '{:,.0f}', '변동': '{:+.0f}'
                 }, na_rep='-'), 
                 hide_index=True, 
                 use_container_width=True,
@@ -245,9 +253,13 @@ if df_display is not None:
                         "MOT",
                         help="가중 모멘텀(Weighted Momentum): 1, 2, 4, 6, 12개월 수익률에 각각 12, 6, 4, 2, 1의 가중치를 곱해 합산한 수치입니다."
                     ),
-                    "RS": st.column_config.NumberColumn(
-                        "RS",
-                        help="상대강도(Relative Strength): 벤치마크(지수) 대비 종목의 최근 90일 수익률 강도를 나타냅니다. 0보다 크면 시장 수익률을 상회함을 의미합니다."
+                    "RS(90)": st.column_config.NumberColumn(
+                        "RS(90)",
+                        help="중장기 상대강도(Relative Strength 90D): 벤치마크 지수 대비 최근 90일간의 강도를 의미하며 주도주 판별에 쓰입니다."
+                    ),
+                    "RS(10)": st.column_config.NumberColumn(
+                        "RS(10)",
+                        help="단기 상대강도(Relative Strength 10D): 벤치마크 지수 대비 최근 10일간의 강도를 의미하며, 눌림목 후 단기 수급 유입 전환을 포착하기에 좋습니다."
                     )
                 },
                 key=f"df_tab_{i}"
@@ -264,7 +276,6 @@ if df_display is not None:
     with tab4:
         st.markdown("##### 📋 오늘의 매매 지시서")
         
-        # 💡 과거 일자 조회 시 상단 경고 표시
         if not is_latest_date:
             st.warning("⚠️ 과거 영업일의 데이터를 조회 중입니다. 시스템 및 개별 매매는 가장 최근 영업일에만 활성화됩니다.")
         
@@ -349,7 +360,6 @@ if df_display is not None:
                         </div>
                         """, unsafe_allow_html=True)
                         
-                        # 💡 개별 매도 버튼 또한 최신 영업일에만 활성화
                         if is_latest_date:
                             with c2.popover("개별 매도"):
                                 st.write(f"**{name}** 수동 매도")
@@ -362,7 +372,6 @@ if df_display is not None:
             
             st.write("") 
             df_rebal = df_display[df_display['매매상태'].isin(['매도필요', '매수추천'])]
-            # 💡 is_latest_date를 매개변수로 전달
             display_trade_list(df_rebal[df_rebal['매매상태'] == '매도필요'], "시스템 매도 필요", "매도", "sys_s", selected_date, is_latest_date)
             display_trade_list(df_rebal[df_rebal['매매상태'] == '매수추천'], "시스템 매수 추천", "매수", "sys_b", selected_date, is_latest_date)
         
