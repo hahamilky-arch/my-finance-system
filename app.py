@@ -153,7 +153,8 @@ def get_data(target_date, all_dates, market_type):
     
     return pd.merge(df_final, df_stocks, on="ticker", how="left").rename(columns={'name': '종목명'}).sort_values('순위')
 
-def display_trade_list(data, title, button_label, key_prefix, target_date):
+# 💡 최근 영업일 여부(is_latest_date) 파라미터 추가
+def display_trade_list(data, title, button_label, key_prefix, target_date, is_latest_date):
     with st.expander(f"🚨 {title} ({len(data)}개)", expanded=True):
         if data.empty:
             st.write(f"해당되는 {button_label} 종목이 없습니다.")
@@ -172,17 +173,21 @@ def display_trade_list(data, title, button_label, key_prefix, target_date):
                 </div>
                 """, unsafe_allow_html=True)
             
-                with c2.popover(button_label):
-                    st.write(f"**{row['종목명']}**")
-                    input_price = st.number_input(f"{button_label}가", value=float(row['종가']), key=f"p_{key_prefix}_{row['ticker']}")
-                    input_qty = st.number_input("수량", value=1, min_value=1, step=1, key=f"q_{key_prefix}_{row['ticker']}")
-                    
-                    if st.button("확인", key=f"btn_{key_prefix}_{row['ticker']}"):
-                        action_type = 'SELL' if '매도' in title else 'BUY'
-                        update_holdings(row['ticker'], action_type, input_price, target_date, input_qty)
+                # 💡 최근 영업일일 때만 팝오버 및 매매 버튼 표시
+                if is_latest_date:
+                    with c2.popover(button_label):
+                        st.write(f"**{row['종목명']}**")
+                        input_price = st.number_input(f"{button_label}가", value=float(row['종가']), key=f"p_{key_prefix}_{row['ticker']}")
+                        input_qty = st.number_input("수량", value=1, min_value=1, step=1, key=f"q_{key_prefix}_{row['ticker']}")
+                        
+                        if st.button("확인", key=f"btn_{key_prefix}_{row['ticker']}"):
+                            action_type = 'SELL' if '매도' in title else 'BUY'
+                            update_holdings(row['ticker'], action_type, input_price, target_date, input_qty)
+                else:
+                    c2.markdown("<div style='color:#999999; font-size:0.85em; margin-top:8px; text-align:right;'>과거일 매매불가</div>", unsafe_allow_html=True)
 
 # --- 2. UI 메인 실행 파트 ---
-st.markdown("##### 📈 Momentum Dashboard v1.5.4")
+st.markdown("##### 📈 Momentum Dashboard v1.5.5")
 market_safe = get_market_regime()
 
 if not market_safe:
@@ -193,6 +198,14 @@ with st.sidebar:
     all_dates = get_available_dates()
     selected_date = st.date_input("Date", value=pd.to_datetime(all_dates[0]) if all_dates else None)
     if st.button("Refresh"): st.rerun()
+
+# 💡 현재 선택된 날짜가 가장 최신 날짜인지 판별하는 로직
+is_latest_date = False
+if all_dates and selected_date:
+    latest_date_str = max(all_dates)
+    selected_date_str = selected_date.strftime('%Y-%m-%d')
+    if selected_date_str == latest_date_str:
+        is_latest_date = True
 
 df_display = get_data(selected_date, all_dates, market_type)
 
@@ -251,6 +264,10 @@ if df_display is not None:
     with tab4:
         st.markdown("##### 📋 오늘의 매매 지시서")
         
+        # 💡 과거 일자 조회 시 상단 경고 표시
+        if not is_latest_date:
+            st.warning("⚠️ 과거 영업일의 데이터를 조회 중입니다. 시스템 및 개별 매매는 가장 최근 영업일에만 활성화됩니다.")
+        
         if not st.session_state['trade_authenticated']:
             st.info("🔒 실제 매매 및 보유 종목 확인을 위해 비밀번호를 입력해 주십시오.")
             col_pwd1, col_pwd2 = st.columns([3, 1])
@@ -303,21 +320,18 @@ if df_display is not None:
                         curr_row = df_display[df_display['ticker'] == ticker]
                         curr_price = float(curr_row['종가'].values[0]) if not curr_row.empty else buy_price
                         
-                        # 💡 [핵심 추가] 현재가 기반 수익률 및 수익금 계산
                         profit_amount = (curr_price - buy_price) * qty if buy_price > 0 else 0.0
                         profit_rate = ((curr_price / buy_price) - 1) * 100 if buy_price > 0 else 0.0
                         
-                        # 수익에 따른 색상 결정
                         if profit_rate > 0:
-                            p_color = "#d62728"  # 빨강
+                            p_color = "#d62728"
                         elif profit_rate < 0:
-                            p_color = "#1f77b4"  # 파랑
+                            p_color = "#1f77b4"
                         else:
-                            p_color = "#555555"  # 보합(회색)
+                            p_color = "#555555"
                         
                         c1, c2 = st.columns([4, 1])
                         
-                        # 💡 UI 렌더링에 수익률 추가 적용
                         c1.markdown(f"""
                         <div style="line-height: 1.6;">
                             <strong style="font-size: 1.1em; color: #111111;">{name}</strong> 
@@ -335,17 +349,22 @@ if df_display is not None:
                         </div>
                         """, unsafe_allow_html=True)
                         
-                        with c2.popover("개별 매도"):
-                            st.write(f"**{name}** 수동 매도")
-                            input_price = st.number_input("매도가", value=curr_price, key=f"p_force_{ticker}")
-                            input_qty = st.number_input("수량", value=qty, min_value=1, step=1, key=f"q_force_{ticker}")
-                            if st.button("매도 확정", key=f"btn_force_{ticker}"):
-                                update_holdings(ticker, 'SELL', input_price, selected_date, input_qty)
+                        # 💡 개별 매도 버튼 또한 최신 영업일에만 활성화
+                        if is_latest_date:
+                            with c2.popover("개별 매도"):
+                                st.write(f"**{name}** 수동 매도")
+                                input_price = st.number_input("매도가", value=curr_price, key=f"p_force_{ticker}")
+                                input_qty = st.number_input("수량", value=qty, min_value=1, step=1, key=f"q_force_{ticker}")
+                                if st.button("매도 확정", key=f"btn_force_{ticker}"):
+                                    update_holdings(ticker, 'SELL', input_price, selected_date, input_qty)
+                        else:
+                            c2.markdown("<div style='color:#999999; font-size:0.85em; margin-top:8px; text-align:right;'>과거일 매매불가</div>", unsafe_allow_html=True)
             
             st.write("") 
             df_rebal = df_display[df_display['매매상태'].isin(['매도필요', '매수추천'])]
-            display_trade_list(df_rebal[df_rebal['매매상태'] == '매도필요'], "시스템 매도 필요", "매도", "sys_s", selected_date)
-            display_trade_list(df_rebal[df_rebal['매매상태'] == '매수추천'], "시스템 매수 추천", "매수", "sys_b", selected_date)
+            # 💡 is_latest_date를 매개변수로 전달
+            display_trade_list(df_rebal[df_rebal['매매상태'] == '매도필요'], "시스템 매도 필요", "매도", "sys_s", selected_date, is_latest_date)
+            display_trade_list(df_rebal[df_rebal['매매상태'] == '매수추천'], "시스템 매수 추천", "매수", "sys_b", selected_date, is_latest_date)
         
             st.divider()
             with st.expander("🔍 No.6 전략 필터링 조건 보기"):
