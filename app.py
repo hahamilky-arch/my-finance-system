@@ -182,7 +182,7 @@ def display_trade_list(data, title, button_label, key_prefix, target_date):
                         update_holdings(row['ticker'], action_type, input_price, target_date, input_qty)
 
 # --- 2. UI 메인 실행 파트 ---
-st.markdown("##### 📈 Momentum Dashboard v1.5.2")
+st.markdown("##### 📈 Momentum Dashboard v1.5.4")
 market_safe = get_market_regime()
 
 if not market_safe:
@@ -205,7 +205,6 @@ if df_display is not None:
     col_order = ['순위', '변동', '종목명', 'MOT', 'RS', '종가', '상승금액', 'MA20', 'ticker'] 
     tab_dfs = [df_display.head(100), df_display[df_display['is_new_top30']], df_display[df_display['is_pullback']], df_display[df_display['is_no6_opt']]]
 
-    # 💡 탭 1, 2, 3 상단 안내 문구 정의
     tab_descriptions = [
         "📌 **조회 기준**: 선택한 시장의 전체 종목 중 모멘텀 순위 **상위 100개 종목** (1위~100위 오름차순 정렬)",
         "📌 **조회 기준**: 직전 거래일 30위 밖에서 당일 **상위 30위(Top 30) 이내로 새롭게 진입**한 종목",
@@ -216,7 +215,6 @@ if df_display is not None:
     
     for i, tab in enumerate([tab1, tab2, tab3]):
         with tab:
-            # 💡 안내 문구 출력
             st.markdown(f"<span style='color: #555555; font-size: 0.9em;'>{tab_descriptions[i]}</span>", unsafe_allow_html=True)
             st.write("")
             
@@ -229,6 +227,16 @@ if df_display is not None:
                 use_container_width=True,
                 on_select="rerun",  
                 selection_mode="single-row",
+                column_config={
+                    "MOT": st.column_config.NumberColumn(
+                        "MOT",
+                        help="가중 모멘텀(Weighted Momentum): 1, 2, 4, 6, 12개월 수익률에 각각 12, 6, 4, 2, 1의 가중치를 곱해 합산한 수치입니다."
+                    ),
+                    "RS": st.column_config.NumberColumn(
+                        "RS",
+                        help="상대강도(Relative Strength): 벤치마크(지수) 대비 종목의 최근 90일 수익률 강도를 나타냅니다. 0보다 크면 시장 수익률을 상회함을 의미합니다."
+                    )
+                },
                 key=f"df_tab_{i}"
             )
             
@@ -295,15 +303,33 @@ if df_display is not None:
                         curr_row = df_display[df_display['ticker'] == ticker]
                         curr_price = float(curr_row['종가'].values[0]) if not curr_row.empty else buy_price
                         
+                        # 💡 [핵심 추가] 현재가 기반 수익률 및 수익금 계산
+                        profit_amount = (curr_price - buy_price) * qty if buy_price > 0 else 0.0
+                        profit_rate = ((curr_price / buy_price) - 1) * 100 if buy_price > 0 else 0.0
+                        
+                        # 수익에 따른 색상 결정
+                        if profit_rate > 0:
+                            p_color = "#d62728"  # 빨강
+                        elif profit_rate < 0:
+                            p_color = "#1f77b4"  # 파랑
+                        else:
+                            p_color = "#555555"  # 보합(회색)
+                        
                         c1, c2 = st.columns([4, 1])
+                        
+                        # 💡 UI 렌더링에 수익률 추가 적용
                         c1.markdown(f"""
                         <div style="line-height: 1.6;">
                             <strong style="font-size: 1.1em; color: #111111;">{name}</strong> 
                             <span style="font-size: 0.8em; color: #888888; margin-left: 4px;">({ticker})</span>
+                            <span style="font-size: 0.95em; font-weight: bold; color: {p_color}; margin-left: 12px;">
+                                {profit_rate:+.2f}% ({profit_amount:+,.0f}원)
+                            </span>
                             <br>
                             <span style="color: #555555; font-size: 0.85em;">
                                 매수일: <span style="background-color: #f1f3f6; padding: 2px 6px; border-radius: 4px; font-family: monospace;">{buy_date}</span> | 
                                 매수가: <span style="background-color: #f1f3f6; padding: 2px 6px; border-radius: 4px; font-family: monospace;">{buy_price:,.0f}원</span> | 
+                                현재가: <span style="background-color: #f1f3f6; padding: 2px 6px; border-radius: 4px; font-family: monospace;">{curr_price:,.0f}원</span> | 
                                 수량: <span style="background-color: #f1f3f6; padding: 2px 6px; border-radius: 4px; font-family: monospace;">{qty}주</span>
                             </span>
                         </div>
