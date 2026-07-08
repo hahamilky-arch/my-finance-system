@@ -1,3 +1,4 @@
+import pandas as pd # pd.notna() 사용을 위해 추가
 import yfinance as yf
 from datetime import datetime, timedelta
 from database.client import supabase
@@ -43,7 +44,8 @@ def sync_index(market, start_date=None, end_date=None):
             "ticker": ticker,
             "price_date": date.strftime('%Y-%m-%d'),
             "close_price": float(row['Close']),
-            "volume": int(row['Volume'])
+            # 💡 [안전장치] Volume이 결측치(NaN)일 경우 0으로 처리하여 int 변환 에러 방지
+            "volume": int(row['Volume']) if pd.notna(row['Volume']) else 0
         })
     
     if records:
