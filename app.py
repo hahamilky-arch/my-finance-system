@@ -194,7 +194,7 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                     c2.markdown("<div style='color:#999999; font-size:0.85em; margin-top:8px; text-align:right;'>과거일 매매불가</div>", unsafe_allow_html=True)
 
 # --- 2. UI 메인 실행 파트 ---
-st.markdown("##### 📈 Momentum Dashboard v1.6.3")
+st.markdown("##### 📈 Momentum Dashboard v1.6.4")
 market_safe = get_market_regime()
 
 if not market_safe:
@@ -461,7 +461,7 @@ if df_display is not None:
 
     # --- 📉 하단 주가 및 모멘텀 순위 시계열 차트 구역 ---
     st.divider()
-    st.markdown("##### 📉 종목별 최근 주가, 모멘텀 순위 및 지수 통합 추이")
+    st.markdown("##### 📉 종목별 최근 주가 및 시장 흐름 통합 추이")
     
     distinct_tickers = sorted(df_display['ticker'].unique())
     ticker_name_map = dict(zip(df_display['ticker'], df_display['종목명']))
@@ -511,8 +511,6 @@ if df_display is not None:
                 df_idx_chart = pd.DataFrame(index_res.data).rename(columns={'close_price': 'index_price'})
                 df_idx_chart['price_date'] = pd.to_datetime(df_idx_chart['price_date'])
                 df_idx_chart['index_price'] = pd.to_numeric(df_idx_chart['index_price'], errors='coerce')
-                
-                # 날짜 기준 데이터 결합
                 df_merged = pd.merge(df_chart, df_idx_chart, on='price_date', how='left')
             else:
                 df_merged = df_chart
@@ -521,51 +519,50 @@ if df_display is not None:
             idx_name = "KOSPI" if market_type == "KR" else "S&P 500"
             stock_name = ticker_name_map.get(selected_chart_ticker, selected_chart_ticker)
 
-            # 베이스 차트
             base = alt.Chart(df_merged).encode(
                 x=alt.X('price_date_str:N', title=None, axis=alt.Axis(labelAngle=-45))
             )
 
-            # 1. 왼쪽 Y축 지표들
+            # [상단 차트] 개별 종목 주가 + MA20 + 모멘텀 순위
             line_stock = base.mark_line(color='#1f77b4', strokeWidth=2.5).encode(
-                y=alt.Y('close_price:Q', title=f'주가 & {idx_name} 지수 스케일'),
-                tooltip=[alt.Tooltip('price_date_str:N', title='날짜'), alt.Tooltip('close_price:Q', title=f'{stock_name} 종가', format=',.0f')]
+                y=alt.Y('close_price:Q', title=f'{stock_name} 주가', scale=alt.Scale(zero=False)),
+                tooltip=[alt.Tooltip('price_date_str:N', title='날짜'), alt.Tooltip('close_price:Q', title='종가', format=',.0f')]
             )
 
             line_ma20 = base.mark_line(color='#ff4b4b', strokeDash=[4, 4]).encode(
                 y=alt.Y('ma20:Q')
             )
 
-            line_index = base.mark_line(color='#2ca02c', strokeWidth=1.5).encode(
-                y=alt.Y('index_price:Q'),
-                tooltip=[alt.Tooltip('index_price:Q', title=f'{idx_name} 지수', format=',.2f')]
-            )
-
-            # 왼쪽 레이어 통합 (resolve_scale 제거)
-            left_axis_layer = alt.layer(line_stock, line_ma20, line_index)
-
-            # 2. 오른쪽 Y축 지표
             line_rank = base.mark_line(color='#ff7f0e', point=True).encode(
                 y=alt.Y('momentum_rank:Q', title='모멘텀 순위 (1~100)', scale=alt.Scale(domain=[100, 0])),
                 tooltip=[alt.Tooltip('momentum_rank:Q', title='모멘텀 순위')]
             )
 
-            # 최종 결합 객체에서만 독립적 Y축(resolve_scale) 선언
-            final_combined_chart = alt.layer(left_axis_layer, line_rank).resolve_scale(
-                y='independent'
-            ).properties(
-                height=450
-            )
-            
+            chart_top = alt.layer(line_stock, line_ma20, line_rank).resolve_scale(y='independent').properties(height=350)
+
+            # [하단 차트] 시장 지수
+            chart_bottom = base.mark_line(color='#2ca02c', strokeWidth=2).encode(
+                y=alt.Y('index_price:Q', title=f'{idx_name} 지수', scale=alt.Scale(zero=False)),
+                tooltip=[alt.Tooltip('price_date_str:N', title='날짜'), alt.Tooltip('index_price:Q', title='지수', format=',.2f')]
+            ).properties(height=150)
+
+            # 레이아웃 렌더링
             st.markdown(f"""
             <div style="text-align: center; margin-bottom: 10px; font-size: 0.9em; color: #555555;">
                 <span style="color:#1f77b4; font-weight:bold;">━</span> {stock_name} 주가 | 
                 <span style="color:#ff4b4b; font-weight:bold;">---</span> {stock_name} MA20 | 
-                <span style="color:#2ca02c; font-weight:bold;">━</span> {idx_name} 지수 | 
                 <span style="color:#ff7f0e; font-weight:bold;">━●━</span> 모멘텀 순위 (우측 Y축 반전)
             </div>
             """, unsafe_allow_html=True)
             
-            st.altair_chart(final_combined_chart, use_container_width=True)
+            st.altair_chart(chart_top, use_container_width=True)
+            
+            st.markdown(f"""
+            <div style="text-align: center; margin-top: 5px; margin-bottom: 10px; font-size: 0.9em; color: #555555;">
+                <span style="color:#2ca02c; font-weight:bold;">━</span> {idx_name} 지수 흐름
+            </div>
+            """, unsafe_allow_html=True)
+            
+            st.altair_chart(chart_bottom, use_container_width=True)
 else:
     st.warning("데이터를 불러오는 중입니다.")
