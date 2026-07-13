@@ -102,7 +102,6 @@ def get_data(target_date, all_dates, market_type):
     target_date_str = target_date_ts.strftime('%Y-%m-%d')
     if target_date_str not in all_dates: return None
 
-    # 💡 데이터베이스 쿼리에 rs_score_10 필드 추가
     res_curr = supabase.table("daily_analysis") \
         .select("ticker, momentum_rank, weighted_momentum, rs_score, rs_score_10, close_price, ma10, ma20") \
         .eq("price_date", target_date_str) \
@@ -195,7 +194,7 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                     c2.markdown("<div style='color:#999999; font-size:0.85em; margin-top:8px; text-align:right;'>과거일 매매불가</div>", unsafe_allow_html=True)
 
 # --- 2. UI 메인 실행 파트 ---
-st.markdown("##### 📈 Momentum Dashboard v1.6.0")
+st.markdown("##### 📈 Momentum Dashboard v1.6.1")
 market_safe = get_market_regime()
 
 if not market_safe:
@@ -222,7 +221,6 @@ if 'trade_authenticated' not in st.session_state:
 if df_display is not None:
     tab1, tab2, tab3, tab4, tab5 = st.tabs(["Overview", "New Entries", "🎯 Pullback", "🚀 No.6 최적화", "📊 성과 분석"])
     
-    # 💡 순서 배열에 'RS(10)' 추가
     col_order = ['순위', '변동', '종목명', 'MOT', 'RS(90)', 'RS(10)', '종가', '상승금액', 'MA20', 'ticker'] 
     tab_dfs = [df_display.head(100), df_display[df_display['is_new_top30']], df_display[df_display['is_pullback']], df_display[df_display['is_no6_opt']]]
 
@@ -482,41 +480,70 @@ if df_display is not None:
     )
     
     if selected_chart_ticker:
+        # 1. 개별 종목 데이터 조회
         chart_res = supabase.table("daily_analysis") \
             .select("price_date, close_price, momentum_rank, ma20") \
             .eq("ticker", selected_chart_ticker) \
             .order("price_date", desc=True) \
             .limit(20).execute()
             
+        # 2. 시장 벤치마크 지수 데이터 조회 (💡 신규 추가)
+        benchmark_ticker = "^KS11" if market_type == "KR" else "^GSPC"
+        index_res = supabase.table("daily_analysis") \
+            .select("price_date, close_price, ma20") \
+            .eq("ticker", benchmark_ticker) \
+            .order("price_date", desc=True) \
+            .limit(20).execute()
+            
         if not chart_res.data:
             st.info("해당 종목의 시계열 차트 데이터가 존재하지 않습니다.")
         else:
+            # 개별 종목 DF 전처리
             df_chart = pd.DataFrame(chart_res.data)
             df_chart['price_date'] = pd.to_datetime(df_chart['price_date'])
             df_chart = df_chart.sort_values('price_date', ascending=True)
             df_chart['price_date'] = df_chart['price_date'].dt.strftime('%m-%d')
-            
             df_chart['close_price'] = pd.to_numeric(df_chart['close_price'], errors='coerce')
             df_chart['ma20'] = pd.to_numeric(df_chart['ma20'], errors='coerce')
             
-            c_left, c_right = st.columns(2)
+            # 지수 DF 전처리
+            has_index = False
+            if index_res.data:
+                df_idx_chart = pd.DataFrame(index_res.data)
+                df_idx_chart['price_date'] = pd.to_datetime(df_idx_chart['price_date'])
+                df_idx_chart = df_idx_chart.sort_values('price_date', ascending=True)
+                df_idx_chart['price_date'] = df_idx_chart['price_date'].dt.strftime('%m-%d')
+                df_idx_chart['close_price'] = pd.to_numeric(df_idx_chart['close_price'], errors='coerce')
+                df_idx_chart['ma20'] = pd.to_numeric(df_idx_chart['ma20'], errors='coerce')
+                has_index = True
+            
+            # 💡 3개의 컬럼으로 화면 분할
+            c_left, c_mid, c_right = st.columns(3)
             
             with c_left:
                 st.markdown(f"<p style='text-align:center; font-weight:bold;'>📈 최근 주가 & MA20 ({ticker_name_map.get(selected_chart_ticker, selected_chart_ticker)})</p>", unsafe_allow_html=True)
-                
                 df_price_chart = df_chart[['price_date', 'close_price', 'ma20']].set_index('price_date')
                 df_price_chart.columns = ['종가 (Close)', '20일선 (MA20)']
-                
                 st.line_chart(df_price_chart, color=["#1f77b4", "#ff4b4b"], use_container_width=True)
                 
-            with c_right:
+            with c_mid:
                 st.markdown("<p style='text-align:center; font-weight:bold;'>🏅 모멘텀 순위 (상단일수록 고순위)</p>", unsafe_allow_html=True)
-                
                 momentum_chart = alt.Chart(df_chart).mark_line(color='#ff7f0e', point=True).encode(
                     x=alt.X('price_date:N', title=None, axis=alt.Axis(labelAngle=-45)),
                     y=alt.Y('momentum_rank:Q', title='순위 (1~100)', scale=alt.Scale(domain=[100, 0])),
                     tooltip=['price_date', 'momentum_rank']
                 )
                 st.altair_chart(momentum_chart, use_container_width=True)
+                
+            with c_right:
+                if has_index:
+                    idx_name = "KOSPI" if market_type == "KR" else "S&P 500"
+                    st.markdown(f"<p style='text-align:center; font-weight:bold;'>📊 시장 지수 & MA20 ({idx_name})</p>", unsafe_allow_html=True)
+                    df_idx_price = df_idx_chart[['price_date', 'close_price', 'ma20']].set_index('price_date')
+                    df_idx_price.columns = ['지수 (Close)', '20일선 (MA20)']
+                    # 지수 차트는 초록색(#2ca02c)으로 개별 종목과 시각적으로 분리
+                    st.line_chart(df_idx_price, color=["#2ca02c", "#ff4b4b"], use_container_width=True)
+                else:
+                    st.info("비교할 지수 데이터가 없습니다.")
 else:
     st.warning("데이터를 불러오는 중입니다.")
