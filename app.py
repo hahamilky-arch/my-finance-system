@@ -194,7 +194,7 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                     c2.markdown("<div style='color:#999999; font-size:0.85em; margin-top:8px; text-align:right;'>과거일 매매불가</div>", unsafe_allow_html=True)
 
 # --- 2. UI 메인 실행 파트 ---
-st.markdown("##### 📈 Momentum Dashboard v1.6.2")
+st.markdown("##### 📈 Momentum Dashboard v1.6.3")
 market_safe = get_market_regime()
 
 if not market_safe:
@@ -518,49 +518,45 @@ if df_display is not None:
                 df_merged = df_chart
                 df_merged['index_price'] = 0.0
 
-            # 💡 [핵심] 3가지 상이한 성격의 지표를 단일 고도화 차트로 결합 (Altair Dual Y-Axis 활용)
             idx_name = "KOSPI" if market_type == "KR" else "S&P 500"
             stock_name = ticker_name_map.get(selected_chart_ticker, selected_chart_ticker)
 
-            # 베이스 차트 (X축 날짜 설정)
+            # 베이스 차트
             base = alt.Chart(df_merged).encode(
                 x=alt.X('price_date_str:N', title=None, axis=alt.Axis(labelAngle=-45))
             )
 
-            # 1. 왼쪽 Y축을 쓰는 지표들 (개별 주가, MA20, 지수)
-            # 개별 주가 라인 (파란색)
+            # 1. 왼쪽 Y축 지표들
             line_stock = base.mark_line(color='#1f77b4', strokeWidth=2.5).encode(
                 y=alt.Y('close_price:Q', title=f'주가 & {idx_name} 지수 스케일'),
                 tooltip=[alt.Tooltip('price_date_str:N', title='날짜'), alt.Tooltip('close_price:Q', title=f'{stock_name} 종가', format=',.0f')]
             )
 
-            # 20일 이동평균선 (빨간색 점선)
             line_ma20 = base.mark_line(color='#ff4b4b', strokeDash=[4, 4]).encode(
                 y=alt.Y('ma20:Q')
             )
 
-            # 시장 지수 라인 (초록색 실선)
             line_index = base.mark_line(color='#2ca02c', strokeWidth=1.5).encode(
                 y=alt.Y('index_price:Q'),
                 tooltip=[alt.Tooltip('index_price:Q', title=f'{idx_name} 지수', format=',.2f')]
             )
 
-            # 왼쪽 Y축 소속 레이어 통합
-            left_axis_layer = alt.layer(line_stock, line_ma20, line_index).resolve_scale(y='shared')
+            # 왼쪽 레이어 통합 (resolve_scale 제거)
+            left_axis_layer = alt.layer(line_stock, line_ma20, line_index)
 
-            # 2. 오른쪽 Y축을 쓰는 지표 (모멘텀 순위 - 주황색 스케일 반전)
-            line_rank = base.mark_line(color='#ff7f0e', point=alt.OverlayMarkDef(color='#ff7f0e')).encode(
+            # 2. 오른쪽 Y축 지표
+            line_rank = base.mark_line(color='#ff7f0e', point=True).encode(
                 y=alt.Y('momentum_rank:Q', title='모멘텀 순위 (1~100)', scale=alt.Scale(domain=[100, 0])),
                 tooltip=[alt.Tooltip('momentum_rank:Q', title='모멘텀 순위')]
-            ).resolve_scale(y='independent')
+            )
 
-            # 최종 왼쪽 그룹과 오른쪽 그룹의 결합 및 출력
-            final_combined_chart = alt.layer(left_axis_layer, line_rank).resolve_scale(y='independent').properties(
-                width='container',
+            # 최종 결합 객체에서만 독립적 Y축(resolve_scale) 선언
+            final_combined_chart = alt.layer(left_axis_layer, line_rank).resolve_scale(
+                y='independent'
+            ).properties(
                 height=450
             )
             
-            # 차트 상단 범례 성격의 설명 박스 렌더링
             st.markdown(f"""
             <div style="text-align: center; margin-bottom: 10px; font-size: 0.9em; color: #555555;">
                 <span style="color:#1f77b4; font-weight:bold;">━</span> {stock_name} 주가 | 
