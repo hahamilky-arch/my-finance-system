@@ -194,7 +194,7 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                     c2.markdown("<div style='color:#999999; font-size:0.85em; margin-top:8px; text-align:right;'>과거일 매매불가</div>", unsafe_allow_html=True)
 
 # --- 2. UI 메인 실행 파트 ---
-st.markdown("##### 📈 Momentum Dashboard v1.6.4")
+st.markdown("##### 📈 Momentum Dashboard v1.6.5")
 market_safe = get_market_regime()
 
 if not market_safe:
@@ -529,8 +529,9 @@ if df_display is not None:
                 tooltip=[alt.Tooltip('price_date_str:N', title='날짜'), alt.Tooltip('close_price:Q', title='종가', format=',.0f')]
             )
 
+            # 💡 수정: ma20 축 타이틀을 제거하여 주가와 깔끔하게 Y축 동기화
             line_ma20 = base.mark_line(color='#ff4b4b', strokeDash=[4, 4]).encode(
-                y=alt.Y('ma20:Q')
+                y=alt.Y('ma20:Q', title=None) 
             )
 
             line_rank = base.mark_line(color='#ff7f0e', point=True).encode(
@@ -538,7 +539,11 @@ if df_display is not None:
                 tooltip=[alt.Tooltip('momentum_rank:Q', title='모멘텀 순위')]
             )
 
-            chart_top = alt.layer(line_stock, line_ma20, line_rank).resolve_scale(y='independent').properties(height=350)
+            # 💡 수정: 주가와 MA20을 먼저 하나의 레이어로 묶어 왼쪽 축을 확정지음
+            chart_price_layer = alt.layer(line_stock, line_ma20)
+            
+            # 주가 레이어 그룹과 모멘텀 순위를 결합하며 축을 분리
+            chart_top = alt.layer(chart_price_layer, line_rank).resolve_scale(y='independent').properties(height=350)
 
             # [하단 차트] 시장 지수
             chart_bottom = base.mark_line(color='#2ca02c', strokeWidth=2).encode(
