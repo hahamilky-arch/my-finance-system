@@ -18,33 +18,49 @@ def apply_styles(df):
     if '상승금액' in df.columns:
         df_styles.loc[df['상승금액'] > 0, '상승금액'] = 'color: red;'
         df_styles.loc[df['상승금액'] < 0, '상승금액'] = 'color: blue;'
+    
+    # 매매상태 컬러링 (보유중, 매도필요 등 강조)
+    if '매매상태' in df.columns:
+        df_styles.loc[df['매매상태'] == '매수추천', '매매상태'] = 'color: #d62728; font-weight: bold;'
+        df_styles.loc[df['매매상태'] == '매도필요', '매매상태'] = 'color: #1f77b4; font-weight: bold;'
+        df_styles.loc[df['매매상태'] == '보유중', '매매상태'] = 'color: #2ca02c; font-weight: bold;'
+        df_styles.loc[df['매매상태'] == '관망', '매매상태'] = 'color: #888888;'
     return df_styles
 
-# 보유 종목 리스트 (매도일이 없는 '진짜 보유 중'인 종목의 티커만) 가져오기
-def get_current_holdings():
-    res = supabase.table("current_holdings").select("ticker").is_("sell_date", "null").execute()
-    return [item['ticker'] for item in res.data] if res.data else []
+# 시장(Market)에 따른 보유 종목 테이블명 반환
+def get_holdings_table(market_type):
+    return "current_holdings_us" if market_type == "US" else "current_holdings"
 
-# 매수/매도 처리 및 단일 테이블(current_holdings) 업데이트 로직
-def update_holdings(ticker, action, price, trade_date, quantity):
+# 보유 종목 리스트 가져오기 (마켓 구분 적용)
+def get_current_holdings(market_type):
+    table_name = get_holdings_table(market_type)
+    try:
+        res = supabase.table(table_name).select("ticker").is_("sell_date", "null").execute()
+        return [item['ticker'] for item in res.data] if res.data else []
+    except Exception as e:
+        return []
+
+# 매수/매도 처리 (마켓 구분 적용)
+def update_holdings(ticker, action, price, trade_date, quantity, market_type):
+    table_name = get_holdings_table(market_type)
     trade_date_str = trade_date.strftime('%Y-%m-%d')
     
     if action == 'BUY':
         try:
-            supabase.table("current_holdings").insert({
+            supabase.table(table_name).insert({
                 "ticker": str(ticker).strip(),
                 "buy_date": trade_date_str,
                 "buy_price": float(price),
                 "quantity": int(quantity)
             }).execute()
-            st.success(f"✅ [{ticker}] 매수 기록 완료!")
+            st.success(f"✅ [{ticker}] 매수 기록 완료! (저장경로: {table_name})")
         except Exception as e:
-            st.error(f"❌ 매수 DB 저장 실패: {str(e)}")
+            st.error(f"❌ 매수 DB 저장 실패 ({table_name} 테이블 확인 요망): {str(e)}")
             return
         
     elif action == 'SELL':
         try:
-            res = supabase.table("current_holdings").select("*").eq("ticker", ticker).is_("sell_date", "null").execute()
+            res = supabase.table(table_name).select("*").eq("ticker", ticker).is_("sell_date", "null").execute()
             
             if res.data:
                 holding = res.data[0]
@@ -62,7 +78,7 @@ def update_holdings(ticker, action, price, trade_date, quantity):
                     profit_amount = (float(price) - buy_price) * db_quantity
                     profit_rate = ((float(price) / buy_price) - 1) * 100
                 
-                supabase.table("current_holdings").update({
+                supabase.table(table_name).update({
                     "sell_date": trade_date_str,
                     "sell_price": float(price),
                     "profit_amount": float(profit_amount),
@@ -71,7 +87,7 @@ def update_holdings(ticker, action, price, trade_date, quantity):
                 
                 st.error(f"🗑️ [{ticker}] 매도 처리 및 정보 업데이트 완료!")
             else:
-                supabase.table("current_holdings").insert({
+                supabase.table(table_name).insert({
                     "ticker": str(ticker).strip(),
                     "sell_date": trade_date_str,
                     "sell_price": float(price),
@@ -148,8 +164,22 @@ def get_data(target_date, all_dates, market_type):
     else:
         df_stocks = pd.DataFrame(columns=['ticker', 'name'])
 
-    my_holdings = get_current_holdings()
+    # 종목명(name) 병합
+    df_final = pd.merge(df_final, df_stocks, on="ticker", how="left").rename(columns={'name': '종목명'})
+    df_final['종목명'] = df_final['종목명'].fillna(df_final['ticker'])
+
+    # 💡 [핵심] US 시장일 경우 종목명 옆에 (티커) 표기
+    if market_type == "US":
+        df_final['종목명'] = df_final.apply(lambda r: f"{r['종목명']} ({r['ticker']})", axis=1)
+
+    my_holdings = get_current_holdings(market_type)
     
+    # 💡 [핵심] 표 내부에서 직관적 확인을 위해 '보유 중'인 종목 앞에 가방 아이콘 추가
+    df_final['종목명'] = df_final.apply(
+        lambda r: f"💼 {r['종목명']}" if r['ticker'] in my_holdings else r['종목명'], 
+        axis=1
+    )
+
     def classify_status(row):
         is_in_holdings = row['ticker'] in my_holdings
         if row['is_no6_opt']:
@@ -159,9 +189,9 @@ def get_data(target_date, all_dates, market_type):
 
     df_final['매매상태'] = df_final.apply(classify_status, axis=1)
     
-    return pd.merge(df_final, df_stocks, on="ticker", how="left").rename(columns={'name': '종목명'}).sort_values('순위')
+    return df_final.sort_values('순위')
 
-def display_trade_list(data, title, button_label, key_prefix, target_date, is_latest_date):
+def display_trade_list(data, title, button_label, key_prefix, target_date, is_latest_date, market_type):
     with st.expander(f"🚨 {title} ({len(data)}개)", expanded=True):
         if data.empty:
             st.write(f"해당되는 {button_label} 종목이 없습니다.")
@@ -189,12 +219,12 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                         
                         if st.button("확인", key=f"btn_{key_prefix}_{row['ticker']}"):
                             action_type = 'SELL' if '매도' in title else 'BUY'
-                            update_holdings(row['ticker'], action_type, input_price, target_date, input_qty)
+                            update_holdings(row['ticker'], action_type, input_price, target_date, input_qty, market_type)
                 else:
                     c2.markdown("<div style='color:#999999; font-size:0.85em; margin-top:8px; text-align:right;'>과거일 매매불가</div>", unsafe_allow_html=True)
 
 # --- 2. UI 메인 실행 파트 ---
-st.markdown("##### 📈 Momentum Dashboard v1.6.5")
+st.markdown("##### 📈 Momentum Dashboard v1.7.0")
 market_safe = get_market_regime()
 
 if not market_safe:
@@ -221,11 +251,12 @@ if 'trade_authenticated' not in st.session_state:
 if df_display is not None:
     tab1, tab2, tab3, tab4, tab5 = st.tabs(["Overview", "New Entries", "🎯 Pullback", "🚀 No.6 최적화", "📊 성과 분석"])
     
-    col_order = ['순위', '변동', '종목명', 'MOT', 'RS(90)', 'RS(10)', '종가', '상승금액', 'MA20', 'ticker'] 
+    # 💡 [핵심] Overview 테이블에서도 매매상태 및 가방 아이콘으로 직관적 확인 가능
+    col_order = ['순위', '변동', '매매상태', '종목명', 'MOT', 'RS(90)', 'RS(10)', '종가', '상승금액', 'MA20', 'ticker'] 
     tab_dfs = [df_display.head(100), df_display[df_display['is_new_top30']], df_display[df_display['is_pullback']], df_display[df_display['is_no6_opt']]]
 
     tab_descriptions = [
-        "📌 **조회 기준**: 선택한 시장의 전체 종목 중 모멘텀 순위 **상위 100개 종목** (1위~100위 오름차순 정렬)",
+        "📌 **조회 기준**: 선택한 시장의 전체 종목 중 모멘텀 순위 **상위 100개 종목** (1위~100위 오름차순 정렬) <br><span style='font-size:0.9em; color:#1f77b4;'>※ 💼 아이콘 표시는 현재 보유 중인 종목을 의미합니다.</span>",
         "📌 **조회 기준**: 직전 거래일 30위 밖에서 당일 **상위 30위(Top 30) 이내로 새롭게 진입**한 종목",
         "📌 **조회 기준**: 모멘텀 순위 100위 이내, RS(90) 0 초과 조건에서 직전 대비 **순위가 상승 중(숫자 감소)인 눌림목 종목**"
     ]
@@ -234,7 +265,7 @@ if df_display is not None:
     
     for i, tab in enumerate([tab1, tab2, tab3]):
         with tab:
-            st.markdown(f"<span style='color: #555555; font-size: 0.9em;'>{tab_descriptions[i]}</span>", unsafe_allow_html=True)
+            st.markdown(f"<span style='color: #555555; font-size: 0.95em;'>{tab_descriptions[i]}</span>", unsafe_allow_html=True)
             st.write("")
             
             df_target = tab_dfs[i][col_order].copy()
@@ -248,16 +279,13 @@ if df_display is not None:
                 selection_mode="single-row",
                 column_config={
                     "MOT": st.column_config.NumberColumn(
-                        "MOT",
-                        help="가중 모멘텀(Weighted Momentum): 1, 2, 4, 6, 12개월 수익률에 각각 12, 6, 4, 2, 1의 가중치를 곱해 합산한 수치입니다."
+                        "MOT", help="가중 모멘텀(Weighted Momentum)"
                     ),
                     "RS(90)": st.column_config.NumberColumn(
-                        "RS(90)",
-                        help="중장기 상대강도(Relative Strength 90D): 벤치마크 지수 대비 최근 90일간의 강도를 의미하며 주도주 판별에 쓰입니다."
+                        "RS(90)", help="중장기 상대강도(Relative Strength 90D)"
                     ),
                     "RS(10)": st.column_config.NumberColumn(
-                        "RS(10)",
-                        help="단기 상대강도(Relative Strength 10D): 벤치마크 지수 대비 최근 10일간의 강도를 의미하며, 눌림목 후 단기 수급 유입 전환을 포착하기에 좋습니다."
+                        "RS(10)", help="단기 상대강도(Relative Strength 10D)"
                     )
                 },
                 key=f"df_tab_{i}"
@@ -297,10 +325,16 @@ if df_display is not None:
                     st.session_state['trade_authenticated'] = False
                     st.rerun()
 
-            holdings_res = supabase.table("current_holdings").select("*").is_("sell_date", "null").execute()
-            holdings_db = pd.DataFrame(holdings_res.data) if holdings_res.data else pd.DataFrame()
+            # 마켓별 보유종목 DB 분리
+            current_table_name = get_holdings_table(market_type)
+            try:
+                holdings_res = supabase.table(current_table_name).select("*").is_("sell_date", "null").execute()
+                holdings_db = pd.DataFrame(holdings_res.data) if holdings_res.data else pd.DataFrame()
+            except Exception as e:
+                st.error(f"⚠️ `{current_table_name}` 테이블을 불러올 수 없습니다. Supabase에 테이블이 생성되어 있는지 확인하세요.")
+                holdings_db = pd.DataFrame()
 
-            with st.expander(f"💼 현재 보유 종목 ({len(holdings_db)}개)", expanded=True):
+            with st.expander(f"💼 현재 {market_type} 시장 보유 종목 ({len(holdings_db)}개)", expanded=True):
                 if holdings_db.empty:
                     st.info("보유 종목이 없습니다.")
                 else:
@@ -316,6 +350,9 @@ if df_display is not None:
                         ticker = h_row['ticker']
                         name = h_row.get('name', ticker)
                         if pd.isna(name): name = ticker
+                        
+                        if market_type == "US":
+                            name = f"{name} ({ticker})"
                         
                         buy_date = h_row.get('buy_date')
                         buy_date = buy_date if pd.notna(buy_date) and buy_date is not None else '-'
@@ -343,16 +380,15 @@ if df_display is not None:
                         
                         c1.markdown(f"""
                         <div style="line-height: 1.6;">
-                            <strong style="font-size: 1.1em; color: #111111;">{name}</strong> 
-                            <span style="font-size: 0.8em; color: #888888; margin-left: 4px;">({ticker})</span>
+                            <strong style="font-size: 1.1em; color: #111111;">💼 {name}</strong> 
                             <span style="font-size: 0.95em; font-weight: bold; color: {p_color}; margin-left: 12px;">
                                 {profit_rate:+.2f}% ({profit_amount:+,.0f}원)
                             </span>
                             <br>
                             <span style="color: #555555; font-size: 0.85em;">
                                 매수일: <span style="background-color: #f1f3f6; padding: 2px 6px; border-radius: 4px; font-family: monospace;">{buy_date}</span> | 
-                                매수가: <span style="background-color: #f1f3f6; padding: 2px 6px; border-radius: 4px; font-family: monospace;">{buy_price:,.0f}원</span> | 
-                                현재가: <span style="background-color: #f1f3f6; padding: 2px 6px; border-radius: 4px; font-family: monospace;">{curr_price:,.0f}원</span> | 
+                                매수가: <span style="background-color: #f1f3f6; padding: 2px 6px; border-radius: 4px; font-family: monospace;">{buy_price:,.0f}</span> | 
+                                현재가: <span style="background-color: #f1f3f6; padding: 2px 6px; border-radius: 4px; font-family: monospace;">{curr_price:,.0f}</span> | 
                                 수량: <span style="background-color: #f1f3f6; padding: 2px 6px; border-radius: 4px; font-family: monospace;">{qty}주</span>
                             </span>
                         </div>
@@ -364,14 +400,14 @@ if df_display is not None:
                                 input_price = st.number_input("매도가", value=curr_price, key=f"p_force_{ticker}")
                                 input_qty = st.number_input("수량", value=qty, min_value=1, step=1, key=f"q_force_{ticker}")
                                 if st.button("매도 확정", key=f"btn_force_{ticker}"):
-                                    update_holdings(ticker, 'SELL', input_price, selected_date, input_qty)
+                                    update_holdings(ticker, 'SELL', input_price, selected_date, input_qty, market_type)
                         else:
                             c2.markdown("<div style='color:#999999; font-size:0.85em; margin-top:8px; text-align:right;'>과거일 매매불가</div>", unsafe_allow_html=True)
             
             st.write("") 
             df_rebal = df_display[df_display['매매상태'].isin(['매도필요', '매수추천'])]
-            display_trade_list(df_rebal[df_rebal['매매상태'] == '매도필요'], "시스템 매도 필요", "매도", "sys_s", selected_date, is_latest_date)
-            display_trade_list(df_rebal[df_rebal['매매상태'] == '매수추천'], "시스템 매수 추천", "매수", "sys_b", selected_date, is_latest_date)
+            display_trade_list(df_rebal[df_rebal['매매상태'] == '매도필요'], "시스템 매도 필요", "매도", "sys_s", selected_date, is_latest_date, market_type)
+            display_trade_list(df_rebal[df_rebal['매매상태'] == '매수추천'], "시스템 매수 추천", "매수", "sys_b", selected_date, is_latest_date, market_type)
         
             st.divider()
             with st.expander("🔍 No.6 전략 필터링 조건 보기"):
@@ -381,7 +417,7 @@ if df_display is not None:
 
     # --- Tab 5 (성과 분석 구역) ---
     with tab5:
-        st.markdown("##### 📊 단일 테이블 기반 매매 성과 분석")
+        st.markdown(f"##### 📊 {market_type} 시장 매매 성과 분석")
         
         if not st.session_state['trade_authenticated']:
             st.info("🔒 상세 성과 내역 확인을 위해 비밀번호를 입력해 주십시오.")
@@ -403,8 +439,12 @@ if df_display is not None:
                     st.session_state['trade_authenticated'] = False
                     st.rerun()
 
-            history_res = supabase.table("current_holdings").select("*").not_.is_("sell_date", "null").execute()
-            
+            current_table_name = get_holdings_table(market_type)
+            try:
+                history_res = supabase.table(current_table_name).select("*").not_.is_("sell_date", "null").execute()
+            except Exception as e:
+                history_res = type('obj', (object,), {'data': []})
+
             if not history_res.data:
                 st.info("청산된 매매 이력이 존재하지 않습니다.")
             else:
@@ -416,6 +456,9 @@ if df_display is not None:
                     df_hist['종목명'] = df_hist['name'].fillna(df_hist['ticker'])
                 else:
                     df_hist['종목명'] = df_hist['ticker']
+
+                if market_type == "US":
+                    df_hist['종목명'] = df_hist.apply(lambda r: f"{r['종목명']} ({r['ticker']})", axis=1)
 
                 df_hist['profit_amount'] = pd.to_numeric(df_hist['profit_amount'], errors='coerce').fillna(0.0)
                 df_hist['profit_rate'] = pd.to_numeric(df_hist['profit_rate'], errors='coerce').fillna(0.0)
@@ -476,7 +519,7 @@ if df_display is not None:
         "분석할 종목을 선택하세요 (위 표에서 종목 행을 직접 클릭해도 자동으로 변경됩니다)", 
         options=distinct_tickers, 
         index=default_index,
-        format_func=lambda x: f"{ticker_name_map.get(x, x)} ({x})"
+        format_func=lambda x: f"{ticker_name_map.get(x, x)}" # 티커가 이미 병합되어 있으므로 맵 데이터만 호출
     )
     
     if selected_chart_ticker:
@@ -525,11 +568,10 @@ if df_display is not None:
 
             # [상단 차트] 개별 종목 주가 + MA20 + 모멘텀 순위
             line_stock = base.mark_line(color='#1f77b4', strokeWidth=2.5).encode(
-                y=alt.Y('close_price:Q', title=f'{stock_name} 주가', scale=alt.Scale(zero=False)),
+                y=alt.Y('close_price:Q', title=f'주가', scale=alt.Scale(zero=False)),
                 tooltip=[alt.Tooltip('price_date_str:N', title='날짜'), alt.Tooltip('close_price:Q', title='종가', format=',.0f')]
             )
 
-            # 💡 수정: ma20 축 타이틀을 제거하여 주가와 깔끔하게 Y축 동기화
             line_ma20 = base.mark_line(color='#ff4b4b', strokeDash=[4, 4]).encode(
                 y=alt.Y('ma20:Q', title=None) 
             )
@@ -539,10 +581,7 @@ if df_display is not None:
                 tooltip=[alt.Tooltip('momentum_rank:Q', title='모멘텀 순위')]
             )
 
-            # 💡 수정: 주가와 MA20을 먼저 하나의 레이어로 묶어 왼쪽 축을 확정지음
             chart_price_layer = alt.layer(line_stock, line_ma20)
-            
-            # 주가 레이어 그룹과 모멘텀 순위를 결합하며 축을 분리
             chart_top = alt.layer(chart_price_layer, line_rank).resolve_scale(y='independent').properties(height=350)
 
             # [하단 차트] 시장 지수
@@ -551,11 +590,10 @@ if df_display is not None:
                 tooltip=[alt.Tooltip('price_date_str:N', title='날짜'), alt.Tooltip('index_price:Q', title='지수', format=',.2f')]
             ).properties(height=150)
 
-            # 레이아웃 렌더링
             st.markdown(f"""
             <div style="text-align: center; margin-bottom: 10px; font-size: 0.9em; color: #555555;">
                 <span style="color:#1f77b4; font-weight:bold;">━</span> {stock_name} 주가 | 
-                <span style="color:#ff4b4b; font-weight:bold;">---</span> {stock_name} MA20 | 
+                <span style="color:#ff4b4b; font-weight:bold;">---</span> MA20 | 
                 <span style="color:#ff7f0e; font-weight:bold;">━●━</span> 모멘텀 순위 (우측 Y축 반전)
             </div>
             """, unsafe_allow_html=True)
