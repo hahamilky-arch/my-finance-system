@@ -170,13 +170,13 @@ def get_data(target_date, all_dates, market_type):
 
     # 💡 [핵심] US 시장일 경우 종목명 옆에 (티커) 표기
     if market_type == "US":
-        df_final['종목명'] = df_final.apply(lambda r: f"{r['ticker']} ({r['종목명']})", axis=1)
+        df_final['종목명'] = df_final.apply(lambda r: f"[{r['ticker']}] {r['종목명']}", axis=1)
 
     my_holdings = get_current_holdings(market_type)
     
     # 💡 [핵심] 표 내부에서 직관적 확인을 위해 '보유 중'인 종목 앞에 가방 아이콘 추가
     df_final['종목명'] = df_final.apply(
-        lambda r: f"💼 {r['종목명']}" if r['ticker'] in my_holdings else r['종목명'], 
+        lambda r: f"{r['종목명']}" if r['ticker'] in my_holdings else r['종목명'], 
         axis=1
     )
 
