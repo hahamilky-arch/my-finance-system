@@ -218,8 +218,9 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                             if not matched_h.empty:
                                 default_qty = int(matched_h.iloc[0].get('quantity', 1))
 
-                        input_qty = st.number_input("수량", value=default_qty, min_value=1, step=1, key=f"q_{key_prefix}_{ticker}")
-                        
+                        # input_qty = st.number_input("수량", value=default_qty, min_value=1, step=1, key=f"q_{key_prefix}_{ticker}")
+                        input_qty = st.number_input("수량", value=float(default_qty), min_value=0.000001, format="%.6f", key=f"q_{key_prefix}_{row['ticker']}")
+
                         if st.button("확인", key=f"btn_{key_prefix}_{ticker}"):
                             action_type = 'SELL' if '매도' in title else 'BUY'
                             update_holdings(ticker, action_type, input_price, target_date, input_qty, market_type)
@@ -388,8 +389,9 @@ if df_display is not None:
                                 input_price = st.number_input("매도가", value=curr_price, key=f"p_force_{ticker}")
                                 
                                 # 💡 개별 매도 팝업에서도 현재 보유 수량이 기본 세팅되도록 반영
-                                input_qty = st.number_input("수량", value=qty, min_value=1, step=1, key=f"q_force_{ticker}")
-                                
+                                # input_qty = st.number_input("수량", value=qty, min_value=1, step=1, key=f"q_force_{ticker}")
+                                input_qty = st.number_input("수량", value=float(qty), min_value=0.000001, format="%.6f", key=f"q_force_{ticker}")
+
                                 if st.button("매도 확정", key=f"btn_force_{ticker}"):
                                     update_holdings(ticker, 'SELL', input_price, selected_date, input_qty, market_type)
                         else:
