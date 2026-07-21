@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 from database.client import supabase
 
 def sync_us_stocks(start_date=None, end_date=None):
-    # 1. 대상 종목 조회 (💡 일반 US 종목 + 미국 시장 벤치마크 지수 ^GSPC 포함)
+    # 1. 대상 종목 조회 (일반 US 종목 + 미국 시장 벤치마크 지수 ^GSPC 포함)
     stocks = supabase.table("stocks") \
         .select("ticker") \
         .or_("market.eq.US,ticker.eq.^GSPC") \
@@ -12,12 +12,12 @@ def sync_us_stocks(start_date=None, end_date=None):
     for stock in stocks:
         ticker = stock["ticker"]
         
-        # 2. 날짜 결정 로직 (인자 우선 적용)
+        # 2. 날짜 결정 로직
         if start_date:
             start_dt = datetime.strptime(start_date, '%Y-%m-%d')
             end_dt = datetime.strptime(end_date, '%Y-%m-%d') if end_date else datetime.now()
         else:
-            # 기존 로직: DB의 마지막 데이터 기준
+            # DB 조회 시 해당 ticker로 검색
             last_data = supabase.table("stock_prices") \
                 .select("price_date") \
                 .eq("ticker", ticker) \
@@ -34,14 +34,17 @@ def sync_us_stocks(start_date=None, end_date=None):
         
         # 3. 데이터 수집
         try:
-            # yfinance 호출 시 end 날짜 포함을 위해 하루 추가
             fetch_end = end_dt + timedelta(days=1)
-            df = yf.Ticker(ticker).history(start=start_dt.strftime('%Y-%m-%d'), end=fetch_end.strftime('%Y-%m-%d'))
+            start_str = start_dt.strftime('%Y-%m-%d')
+            end_str = fetch_end.strftime('%Y-%m-%d')
+            
+            df = yf.Ticker(ticker).history(start=start_str, end=end_str)
             
             if df.empty:
+                # 주말, 공휴일이거나 유효하지 않은 데이터인 경우 건너뜀
                 continue
-            
-            # 4. DB 적재 (대량 upsert)
+                
+            # 4. DB 적재
             records = []
             for date, row in df.iterrows():
                 records.append({
@@ -53,10 +56,10 @@ def sync_us_stocks(start_date=None, end_date=None):
             
             if records:
                 supabase.table("stock_prices").upsert(records, on_conflict="ticker,price_date").execute()
-                print(f"[{ticker}] 데이터 적재 완료")  # 💡 진행 상황 로깅
+                print(f"[{ticker}] 데이터 적재 완료")
                 
         except Exception as e:
-            print(f"Error syncing US stock [{ticker}]: {e}")
+            print(f"Error syncing {ticker}: {e}")
             continue
             
     print("US 주식 데이터 동기화 완료.")
