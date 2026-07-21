@@ -170,7 +170,7 @@ def get_data(target_date, all_dates, market_type):
 
     # 💡 [핵심] US 시장일 경우 종목명 옆에 (티커) 표기
     if market_type == "US":
-        df_final['종목명'] = df_final.apply(lambda r: f"{r['종목명']} ({r['ticker']})", axis=1)
+        df_final['종목명'] = df_final.apply(lambda r: f"{r['ticker']} ({r['종목명']})", axis=1)
 
     my_holdings = get_current_holdings(market_type)
     
