@@ -168,17 +168,11 @@ def get_data(target_date, all_dates, market_type):
     df_final = pd.merge(df_final, df_stocks, on="ticker", how="left").rename(columns={'name': '종목명'})
     df_final['종목명'] = df_final['종목명'].fillna(df_final['ticker'])
 
-    # 💡 [핵심] US 시장일 경우 종목명 옆에 (티커) 표기
+    # US 시장일 경우 종목명 앞에 [티커] 표기
     if market_type == "US":
         df_final['종목명'] = df_final.apply(lambda r: f"[{r['ticker']}] {r['종목명']}", axis=1)
 
     my_holdings = get_current_holdings(market_type)
-    
-    # 💡 [핵심] 표 내부에서 직관적 확인을 위해 '보유 중'인 종목 앞에 가방 아이콘 추가
-    df_final['종목명'] = df_final.apply(
-        lambda r: f"{r['종목명']}" if r['ticker'] in my_holdings else r['종목명'], 
-        axis=1
-    )
 
     def classify_status(row):
         is_in_holdings = row['ticker'] in my_holdings
@@ -191,18 +185,19 @@ def get_data(target_date, all_dates, market_type):
     
     return df_final.sort_values('순위')
 
-def display_trade_list(data, title, button_label, key_prefix, target_date, is_latest_date, market_type):
+def display_trade_list(data, title, button_label, key_prefix, target_date, is_latest_date, market_type, holdings_df):
     with st.expander(f"🚨 {title} ({len(data)}개)", expanded=True):
         if data.empty:
             st.write(f"해당되는 {button_label} 종목이 없습니다.")
         else:
             for _, row in data.iterrows():
+                ticker = row['ticker']
                 c1, c2 = st.columns([4, 1])
                 
                 c1.markdown(f"""
                 <div style="line-height: 1.6; margin-top: 4px;">
                     <strong style="font-size: 1.1em; color: #111111;">{row['종목명']}</strong> 
-                    <span style="font-size: 0.8em; color: #888888; margin-left: 4px;">({row['ticker']})</span>
+                    <span style="font-size: 0.8em; color: #888888; margin-left: 4px;">({ticker})</span>
                     <span style="font-size: 0.9em; margin-left: 12px; color: #444444;">
                         | MOT: <span style="font-family: monospace; background-color: #f1f3f6; padding: 2px 5px; border-radius: 4px;">{row['MOT']:.2f}</span> 
                         | RS(90): <span style="color: #137333; font-weight: bold; font-family: monospace; background-color: #e6f4ea; padding: 2px 5px; border-radius: 4px;">{row['RS(90)']:.2f}</span>
@@ -214,17 +209,25 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                 if is_latest_date:
                     with c2.popover(button_label):
                         st.write(f"**{row['종목명']}**")
-                        input_price = st.number_input(f"{button_label}가", value=float(row['종가']), key=f"p_{key_prefix}_{row['ticker']}")
-                        input_qty = st.number_input("수량", value=1, min_value=1, step=1, key=f"q_{key_prefix}_{row['ticker']}")
+                        input_price = st.number_input(f"{button_label}가", value=float(row['종가']), key=f"p_{key_prefix}_{ticker}")
                         
-                        if st.button("확인", key=f"btn_{key_prefix}_{row['ticker']}"):
+                        # 💡 매도인 경우 기존 보유 수량 자동 세팅 (없으면 기본값 1)
+                        default_qty = 1
+                        if button_label == '매도' and not holdings_df.empty:
+                            matched_h = holdings_df[holdings_df['ticker'] == ticker]
+                            if not matched_h.empty:
+                                default_qty = int(matched_h.iloc[0].get('quantity', 1))
+
+                        input_qty = st.number_input("수량", value=default_qty, min_value=1, step=1, key=f"q_{key_prefix}_{ticker}")
+                        
+                        if st.button("확인", key=f"btn_{key_prefix}_{ticker}"):
                             action_type = 'SELL' if '매도' in title else 'BUY'
-                            update_holdings(row['ticker'], action_type, input_price, target_date, input_qty, market_type)
+                            update_holdings(ticker, action_type, input_price, target_date, input_qty, market_type)
                 else:
                     c2.markdown("<div style='color:#999999; font-size:0.85em; margin-top:8px; text-align:right;'>과거일 매매불가</div>", unsafe_allow_html=True)
 
 # --- 2. UI 메인 실행 파트 ---
-st.markdown("##### 📈 Momentum Dashboard v1.7.0")
+st.markdown("##### 📈 Momentum Dashboard v1.7.1")
 market_safe = get_market_regime()
 
 if not market_safe:
@@ -251,12 +254,11 @@ if 'trade_authenticated' not in st.session_state:
 if df_display is not None:
     tab1, tab2, tab3, tab4, tab5 = st.tabs(["Overview", "New Entries", "🎯 Pullback", "🚀 No.6 최적화", "📊 성과 분석"])
     
-    # 💡 [핵심] Overview 테이블에서도 매매상태 및 가방 아이콘으로 직관적 확인 가능
     col_order = ['순위', '변동', '매매상태', '종목명', 'MOT', 'RS(90)', 'RS(10)', '종가', '상승금액', 'MA20', 'ticker'] 
     tab_dfs = [df_display.head(100), df_display[df_display['is_new_top30']], df_display[df_display['is_pullback']], df_display[df_display['is_no6_opt']]]
 
     tab_descriptions = [
-        "📌 **조회 기준**: 선택한 시장의 전체 종목 중 모멘텀 순위 **상위 100개 종목** (1위~100위 오름차순 정렬) <br><span style='font-size:0.9em; color:#1f77b4;'>※ 💼 아이콘 표시는 현재 보유 중인 종목을 의미합니다.</span>",
+        "📌 **조회 기준**: 선택한 시장의 전체 종목 중 모멘텀 순위 **상위 100개 종목** (1위~100위 오름차순 정렬)",
         "📌 **조회 기준**: 직전 거래일 30위 밖에서 당일 **상위 30위(Top 30) 이내로 새롭게 진입**한 종목",
         "📌 **조회 기준**: 모멘텀 순위 100위 이내, RS(90) 0 초과 조건에서 직전 대비 **순위가 상승 중(숫자 감소)인 눌림목 종목**"
     ]
@@ -278,15 +280,9 @@ if df_display is not None:
                 on_select="rerun",  
                 selection_mode="single-row",
                 column_config={
-                    "MOT": st.column_config.NumberColumn(
-                        "MOT", help="가중 모멘텀(Weighted Momentum)"
-                    ),
-                    "RS(90)": st.column_config.NumberColumn(
-                        "RS(90)", help="중장기 상대강도(Relative Strength 90D)"
-                    ),
-                    "RS(10)": st.column_config.NumberColumn(
-                        "RS(10)", help="단기 상대강도(Relative Strength 10D)"
-                    )
+                    "MOT": st.column_config.NumberColumn("MOT", help="가중 모멘텀(Weighted Momentum)"),
+                    "RS(90)": st.column_config.NumberColumn("RS(90)", help="중장기 상대강도(Relative Strength 90D)"),
+                    "RS(10)": st.column_config.NumberColumn("RS(10)", help="단기 상대강도(Relative Strength 10D)")
                 },
                 key=f"df_tab_{i}"
             )
@@ -325,13 +321,12 @@ if df_display is not None:
                     st.session_state['trade_authenticated'] = False
                     st.rerun()
 
-            # 마켓별 보유종목 DB 분리
+            # 마켓별 보유종목 DB 조회
             current_table_name = get_holdings_table(market_type)
             try:
                 holdings_res = supabase.table(current_table_name).select("*").is_("sell_date", "null").execute()
                 holdings_db = pd.DataFrame(holdings_res.data) if holdings_res.data else pd.DataFrame()
             except Exception as e:
-                st.error(f"⚠️ `{current_table_name}` 테이블을 불러올 수 없습니다. Supabase에 테이블이 생성되어 있는지 확인하세요.")
                 holdings_db = pd.DataFrame()
 
             with st.expander(f"💼 현재 {market_type} 시장 보유 종목 ({len(holdings_db)}개)", expanded=True):
@@ -352,15 +347,13 @@ if df_display is not None:
                         if pd.isna(name): name = ticker
                         
                         if market_type == "US":
-                            name = f"{name} ({ticker})"
+                            name = f"[{ticker}] {name}"
                         
-                        buy_date = h_row.get('buy_date')
-                        buy_date = buy_date if pd.notna(buy_date) and buy_date is not None else '-'
-                        
-                        raw_bp = h_row.get('buy_price')
+                        buy_date = h_row.get('buy_date', '-')
+                        raw_bp = h_row.get('buy_price', 0.0)
                         buy_price = float(raw_bp) if pd.notna(raw_bp) and raw_bp is not None else 0.0
                         
-                        raw_qty = h_row.get('quantity')
+                        raw_qty = h_row.get('quantity', 1)
                         qty = int(raw_qty) if pd.notna(raw_qty) and raw_qty is not None else 1
                         
                         curr_row = df_display[df_display['ticker'] == ticker]
@@ -369,18 +362,13 @@ if df_display is not None:
                         profit_amount = (curr_price - buy_price) * qty if buy_price > 0 else 0.0
                         profit_rate = ((curr_price / buy_price) - 1) * 100 if buy_price > 0 else 0.0
                         
-                        if profit_rate > 0:
-                            p_color = "#d62728"
-                        elif profit_rate < 0:
-                            p_color = "#1f77b4"
-                        else:
-                            p_color = "#555555"
+                        p_color = "#d62728" if profit_rate > 0 else ("#1f77b4" if profit_rate < 0 else "#555555")
                         
                         c1, c2 = st.columns([4, 1])
                         
                         c1.markdown(f"""
                         <div style="line-height: 1.6;">
-                            <strong style="font-size: 1.1em; color: #111111;">💼 {name}</strong> 
+                            <strong style="font-size: 1.1em; color: #111111;">{name}</strong> 
                             <span style="font-size: 0.95em; font-weight: bold; color: {p_color}; margin-left: 12px;">
                                 {profit_rate:+.2f}% ({profit_amount:+,.0f}원)
                             </span>
@@ -398,7 +386,10 @@ if df_display is not None:
                             with c2.popover("개별 매도"):
                                 st.write(f"**{name}** 수동 매도")
                                 input_price = st.number_input("매도가", value=curr_price, key=f"p_force_{ticker}")
+                                
+                                # 💡 개별 매도 팝업에서도 현재 보유 수량이 기본 세팅되도록 반영
                                 input_qty = st.number_input("수량", value=qty, min_value=1, step=1, key=f"q_force_{ticker}")
+                                
                                 if st.button("매도 확정", key=f"btn_force_{ticker}"):
                                     update_holdings(ticker, 'SELL', input_price, selected_date, input_qty, market_type)
                         else:
@@ -406,8 +397,10 @@ if df_display is not None:
             
             st.write("") 
             df_rebal = df_display[df_display['매매상태'].isin(['매도필요', '매수추천'])]
-            display_trade_list(df_rebal[df_rebal['매매상태'] == '매도필요'], "시스템 매도 필요", "매도", "sys_s", selected_date, is_latest_date, market_type)
-            display_trade_list(df_rebal[df_rebal['매매상태'] == '매수추천'], "시스템 매수 추천", "매수", "sys_b", selected_date, is_latest_date, market_type)
+            
+            # 💡 시스템 매도 리스트에 holdings_df 전달하여 기존 수량 자동 세팅 연동
+            display_trade_list(df_rebal[df_rebal['매매상태'] == '매도필요'], "시스템 매도 필요", "매도", "sys_s", selected_date, is_latest_date, market_type, holdings_db)
+            display_trade_list(df_rebal[df_rebal['매매상태'] == '매수추천'], "시스템 매수 추천", "매수", "sys_b", selected_date, is_latest_date, market_type, holdings_db)
         
             st.divider()
             with st.expander("🔍 No.6 전략 필터링 조건 보기"):
@@ -458,7 +451,7 @@ if df_display is not None:
                     df_hist['종목명'] = df_hist['ticker']
 
                 if market_type == "US":
-                    df_hist['종목명'] = df_hist.apply(lambda r: f"{r['종목명']} ({r['ticker']})", axis=1)
+                    df_hist['종목명'] = df_hist.apply(lambda r: f"[{r['ticker']}] {r['종목명']}", axis=1)
 
                 df_hist['profit_amount'] = pd.to_numeric(df_hist['profit_amount'], errors='coerce').fillna(0.0)
                 df_hist['profit_rate'] = pd.to_numeric(df_hist['profit_rate'], errors='coerce').fillna(0.0)
@@ -519,7 +512,7 @@ if df_display is not None:
         "분석할 종목을 선택하세요 (위 표에서 종목 행을 직접 클릭해도 자동으로 변경됩니다)", 
         options=distinct_tickers, 
         index=default_index,
-        format_func=lambda x: f"{ticker_name_map.get(x, x)}" # 티커가 이미 병합되어 있으므로 맵 데이터만 호출
+        format_func=lambda x: f"{ticker_name_map.get(x, x)}"
     )
     
     if selected_chart_ticker:
@@ -541,7 +534,6 @@ if df_display is not None:
         if not chart_res.data:
             st.info("해당 종목의 시계열 차트 데이터가 존재하지 않습니다.")
         else:
-            # 개별 종목 DF 전처리
             df_chart = pd.DataFrame(chart_res.data)
             df_chart['price_date'] = pd.to_datetime(df_chart['price_date'])
             df_chart = df_chart.sort_values('price_date', ascending=True)
@@ -549,7 +541,6 @@ if df_display is not None:
             df_chart['close_price'] = pd.to_numeric(df_chart['close_price'], errors='coerce')
             df_chart['ma20'] = pd.to_numeric(df_chart['ma20'], errors='coerce')
             
-            # 지수 DF 전처리 후 머지
             if index_res.data:
                 df_idx_chart = pd.DataFrame(index_res.data).rename(columns={'close_price': 'index_price'})
                 df_idx_chart['price_date'] = pd.to_datetime(df_idx_chart['price_date'])
@@ -566,7 +557,6 @@ if df_display is not None:
                 x=alt.X('price_date_str:N', title=None, axis=alt.Axis(labelAngle=-45))
             )
 
-            # [상단 차트] 개별 종목 주가 + MA20 + 모멘텀 순위
             line_stock = base.mark_line(color='#1f77b4', strokeWidth=2.5).encode(
                 y=alt.Y('close_price:Q', title=f'주가', scale=alt.Scale(zero=False)),
                 tooltip=[alt.Tooltip('price_date_str:N', title='날짜'), alt.Tooltip('close_price:Q', title='종가', format=',.0f')]
@@ -584,7 +574,6 @@ if df_display is not None:
             chart_price_layer = alt.layer(line_stock, line_ma20)
             chart_top = alt.layer(chart_price_layer, line_rank).resolve_scale(y='independent').properties(height=350)
 
-            # [하단 차트] 시장 지수
             chart_bottom = base.mark_line(color='#2ca02c', strokeWidth=2).encode(
                 y=alt.Y('index_price:Q', title=f'{idx_name} 지수', scale=alt.Scale(zero=False)),
                 tooltip=[alt.Tooltip('price_date_str:N', title='날짜'), alt.Tooltip('index_price:Q', title='지수', format=',.2f')]
