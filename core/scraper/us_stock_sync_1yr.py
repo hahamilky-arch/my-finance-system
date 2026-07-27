@@ -1,3 +1,4 @@
+import sys
 import yfinance as yf
 from datetime import datetime, timedelta
 from database.client import supabase
@@ -61,6 +62,9 @@ def sync_us_stocks_1year(target_ticker=None):
     print("=== US 주식 최근 1년치 데이터 동기화 완료 ===")
 
 if __name__ == "__main__":
-    # 터미널 인자가 전달된 경우 해당 티커만 수집, 없으면 전체 US 종목 대상 수집
-    target = sys.argv[1] if len(sys.argv) > 1 else None
+    if len(sys.argv) < 2 or not sys.argv[1].strip():
+        print("❌ [중단] 티커가 전달되지 않아 실행을 중단합니다.")
+        sys.exit(1)
+        
+    target = sys.argv[1]
     sync_us_stocks_1year(target_ticker=target)
