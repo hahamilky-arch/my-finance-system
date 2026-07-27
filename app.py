@@ -97,7 +97,7 @@ def apply_styles(df):
         df_styles.loc[df['RS(10)'] > 0, 'RS(10)'] += 'color: #d62728; font-weight: bold;'
         df_styles.loc[df['RS(10)'] <= 0, 'RS(10)'] += 'color: #bbbbbb;'
 
-    # 💡 [요구사항 반영] 주가가 MA20보다 위인 경우에는 MA20 강조, 아니면 흐리게
+    # 주가가 MA20보다 위인 경우에는 MA20 강조, 아니면 흐리게
     if '종가' in df.columns and 'MA20' in df.columns:
         above_ma20 = (df['MA20'] > 0) & (df['종가'] > df['MA20'])
         df_styles.loc[above_ma20, 'MA20'] += 'color: #d62728; font-weight: bold;'
@@ -242,7 +242,7 @@ def get_data(target_date, all_dates, market_type):
     df_final['is_pullback'] = (df_final['순위'] <= 100) & (df_final['RS(90)'] > 0) & (df_final['변동'] > 0)
     df_final['MA20'] = df_final['MA20'].fillna(0)
     
-    # 💡 백테스트 최적화 조건: 모멘텀 30위 이내 + RS(90) > 0 + RS(10) > 0 + 종가 > MA20
+    # 백테스트 최적화 조건: 모멘텀 30위 이내 + RS(90) > 0 + RS(10) > 0 + 종가 > MA20
     df_final['is_no6_opt'] = (df_final['순위'] <= 30) & (df_final['RS(90)'] > 0) & (df_final['RS(10)'] > 0) & (df_final['MA20'] > 0) & (df_final['종가'] > df_final['MA20'])
     
     df_stocks = pd.DataFrame(supabase.table("stocks").select("ticker, name").execute().data)
@@ -259,7 +259,7 @@ def get_data(target_date, all_dates, market_type):
 
     my_holdings = get_current_holdings(market_type)
 
-    # 💡 보유 여부 및 매매 조건에 따른 상태 분류 (매도: 20일선 이탈 OR RS(10) <= 0 OR 순위 30위 밖)
+    # 보유 여부 및 매매 조건에 따른 상태 분류
     def classify_status(row):
         is_in_holdings = row['ticker'] in my_holdings
         if is_in_holdings:
@@ -421,7 +421,7 @@ if df_display is not None:
             except Exception as e:
                 holdings_db = pd.DataFrame()
 
-            # 💼 보유 종목 현황 및 -5% 손절 감지 알림
+            # 보유 종목 현황 및 손절/트레일링 스탑 감지 알림
             with st.expander(f"💼 현재 {market_type} 시장 보유 종목 ({len(holdings_db)}개)", expanded=True):
                 if holdings_db.empty:
                     st.info("보유 종목이 없습니다.")
@@ -456,10 +456,13 @@ if df_display is not None:
                         profit_amount = (curr_price - buy_price) * qty if buy_price > 0 else 0.0
                         profit_rate = ((curr_price / buy_price) - 1) * 100 if buy_price > 0 else 0.0
                         
-                        # 💡 -5% 이하 손절 이탈 감지 알림 표시
+                        # 손절 및 트레일링 스탑 상태 알림
                         stop_loss_warning = ""
-                        if profit_rate <= -5.0:
-                            stop_loss_warning = " 🚨 [손절 경고: -5% 이탈]"
+                        if profit_rate <= -3.0:
+                            stop_loss_warning = " 🚨 [손절 경고: -3% 이탈]"
+                            p_color = "#d62728"
+                        elif profit_rate >= 20.0:
+                            stop_loss_warning = " 🎯 [트레일링 스탑: 고점 대비 -10% 하락 시 익절]"
                             p_color = "#d62728"
                         elif profit_rate > 0:
                             p_color = "#d62728"
@@ -502,8 +505,7 @@ if df_display is not None:
             display_trade_list(df_rebal[df_rebal['매매상태'] == '매수추천'], "시스템 매수 추천 종목", "매수", "sys_b", selected_date, is_latest_date, market_type, holdings_db)
         
             st.divider()
-            # 💡 [매매 조건 안내 사항 표시 구역]
-            with st.expander("🔍 백테스트 검증 최적 매매 전략 및 필터링 조건 안내", expanded=True):
+            with st.expander("🔍 백테스트 검증 최적 매매 전략 및 트레일링 스탑 필터 안내", expanded=True):
                 c1, c2 = st.columns(2)
                 with c1: 
                     st.markdown("""
@@ -512,17 +514,18 @@ if df_display is not None:
                     - **중장기 강세:** `RS(90) > 0`
                     - **단기 수급:** `RS(10) > 0` (단기 탄력성 확보)
                     - **추세 정배열:** 현재가 > 20일 이동평균선 (`종가 > MA20`, MA20 정상 산출 필수)
+                    - **비중:** 최상위 3개 종목 동일 비중(각 33.3%) 편입
                     """)
                 with c2: 
                     st.markdown("""
-                    **[매도 조건 (Exit Rule)]**
+                    **[매도 및 리스크 관리 조건 (Exit Rule)]**
                     - **추세 이탈:** 현재가 < 20일 이동평균선 (`종가 < MA20`)
                     - **단기 수급 이탈:** `RS(10) <= 0` 전환 시
-                    - **순위 하락:** 모멘텀 순위 30위 밖으로 이탈
-                    - **손절 라인:** 보유 종목 손익률 **-5.0% 이탈 시 즉시 손절**
+                    - **손절 라인:** 보유 종목 손익률 **-3.0% 이탈 시 즉시 손절**
+                    - **트레일링 스탑:** 수익률 **+20% 달성 후 고점 대비 -10% 하락 시 익절**
                     """)
 
-    # --- Tab 5 (성과 분석 구역 - 💡 기간 조회 기능 추가) ---
+    # --- Tab 5 (성과 분석 구역 - 기간 조회) ---
     with tab5:
         st.markdown(f"##### 📊 {market_type} 시장 매매 성과 분석")
         
@@ -558,7 +561,6 @@ if df_display is not None:
                 df_hist_raw = pd.DataFrame(history_res.data)
                 df_hist_raw['sell_date_dt'] = pd.to_datetime(df_hist_raw['sell_date'])
                 
-                # 💡 [요구사항 반영] 성과 분석 기간 조회 필터 추가
                 st.markdown("###### 📅 성과 분석 기간 설정")
                 min_sell_date = df_hist_raw['sell_date_dt'].min().date()
                 max_sell_date = df_hist_raw['sell_date_dt'].max().date()
@@ -569,7 +571,6 @@ if df_display is not None:
                 with col_d2:
                     end_date_perf = st.date_input("조회 종료일", value=max_sell_date, key="perf_end_date")
                 
-                # 선택된 기간에 따른 데이터 필터링
                 mask_period = (df_hist_raw['sell_date_dt'].dt.date >= start_date_perf) & (df_hist_raw['sell_date_dt'].dt.date <= end_date_perf)
                 df_hist = df_hist_raw[mask_period].copy()
                 
