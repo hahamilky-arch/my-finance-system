@@ -6,6 +6,23 @@ import altair as alt
 # 백지화 방지를 위해 최상단 배치
 st.set_page_config(layout="wide")
 
+# 💡 [수정] 상단 여백 축소 및 전체 폰트 크기 조정 CSS 적용
+st.markdown("""
+    <style>
+    .block-container {
+        padding-top: 1.5rem !important;
+        padding-bottom: 2rem !important;
+    }
+    html, body, [class*="st-"] {
+        font-size: 14px !important;
+    }
+    h5 {
+        font-size: 1.2rem !important;
+        margin-bottom: 0.5rem !important;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
 # Supabase 연결
 supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
 
@@ -227,7 +244,7 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                     c2.markdown("<div style='color:#999999; font-size:0.85em; margin-top:8px; text-align:right;'>과거일 매매불가</div>", unsafe_allow_html=True)
 
 # --- 2. UI 메인 실행 파트 ---
-st.markdown("##### 📈 Momentum Dashboard v1.7.3")
+st.markdown("##### 📈 Momentum Dashboard v1.7.4")
 market_safe = get_market_regime()
 
 if not market_safe:
@@ -500,11 +517,17 @@ if df_display is not None:
     distinct_tickers = sorted(df_display['ticker'].unique())
     ticker_name_map = dict(zip(df_display['ticker'], df_display['종목명']))
     
-    default_index = 0
+    # 💡 [수정] 표 클릭 내역이 없으면 순위 1위 종목을 기본으로 찾아서 설정
+    default_ticker = None
+    if not df_display.empty:
+        default_ticker = df_display.loc[df_display['순위'].idxmin(), 'ticker']
+    
     if 'selected_ticker_from_table' in st.session_state:
         target_ticker = st.session_state['selected_ticker_from_table']
         if target_ticker in distinct_tickers:
-            default_index = distinct_tickers.index(target_ticker)
+            default_ticker = target_ticker
+            
+    default_index = distinct_tickers.index(default_ticker) if default_ticker in distinct_tickers else 0
             
     selected_chart_ticker = st.selectbox(
         "분석할 종목을 선택하세요 (위 표에서 종목 행을 직접 클릭해도 자동으로 변경됩니다)", 
@@ -536,7 +559,6 @@ if df_display is not None:
             df_chart['price_date_str'] = df_chart['price_date'].dt.strftime('%m-%d')
             df_chart['close_price'] = pd.to_numeric(df_chart['close_price'], errors='coerce')
             
-            # 💡 [버그 수정 1] MA20 값이 0일 경우 Y축이 0으로 끌어내려지는 현상(찌그러짐) 방지
             df_chart['ma20'] = pd.to_numeric(df_chart['ma20'], errors='coerce')
             df_chart.loc[df_chart['ma20'] == 0, 'ma20'] = None
             
@@ -552,7 +574,6 @@ if df_display is not None:
             idx_name = "KOSPI" if market_type == "KR" else "S&P 500"
             stock_name = ticker_name_map.get(selected_chart_ticker, selected_chart_ticker)
 
-            # 💡 [버그 수정 2] 레이어 최상단이 아닌 Base 차트에 직접 높이 속성 부여하여 UI 높이 축소 문제 해결
             base_top = alt.Chart(df_merged).encode(
                 x=alt.X('price_date_str:N', title=None, axis=alt.Axis(labelAngle=-45))
             ).properties(height=350)
@@ -562,7 +583,6 @@ if df_display is not None:
                 tooltip=[alt.Tooltip('price_date_str:N', title='날짜'), alt.Tooltip('close_price:Q', title='종가', format=',.0f')]
             )
 
-            # MA20에도 scale(zero=False) 명시적 적용
             line_ma20 = base_top.mark_line(color='#ff4b4b', strokeDash=[4, 4]).encode(
                 y=alt.Y('ma20:Q', title=None, scale=alt.Scale(zero=False)) 
             )
