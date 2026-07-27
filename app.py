@@ -303,7 +303,7 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                     c2.markdown("<div style='color:#999999; font-size:0.85em; margin-top:8px; text-align:right;'>과거일 매매불가</div>", unsafe_allow_html=True)
 
 # UI 실행 파트
-st.markdown("##### 📈 Momentum Dashboard v1.8.3")
+st.markdown("##### 📈 Momentum Dashboard v1.8.4")
 market_safe = get_market_regime()
 
 if 'trigger_scroll' not in st.session_state:
@@ -352,8 +352,8 @@ if all_dates and selected_date:
 df_display = get_data(selected_date, all_dates, market_type, top_n_cfg, sl_cfg)
 
 if df_display is not None:
-    # [요청 2 반영] 4탭명을 '🚀 백테스트 최적화'로 정식 적용
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["Overview", "New Entries", "🎯 Pullback", "​📋 매매 지시서 (Action Plan)", "📊 성과 분석"])
+    # 4번 탭명을 '🚀 알파 시그널'로 직관성 있게 변경
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["Overview", "New Entries", "🎯 Pullback", "🚀 알파 시그널", "📊 성과 분석"])
     
     col_order = ['순위', '변동', '매매상태', '종목명', 'MOT', 'RS(90)', 'RS(10)', '종가', '상승금액', 'MA20', 'ticker'] 
     tab_dfs = [df_display.head(100), df_display[df_display['is_new_top30']], df_display[df_display['is_pullback']], df_display[df_display['is_no6_opt']]]
@@ -377,55 +377,77 @@ if df_display is not None:
                 st.session_state['selected_ticker_from_table'] = clicked_ticker
                 st.session_state['trigger_scroll'] = True
 
+    # --- 4번 탭: 누락된 잠금 기능 완벽 복구 ---
     with tab4:
-        st.markdown("##### 📋 백테스트 최적화 기반 매매 지시서")
-        current_table_name = get_holdings_table(market_type)
-        try:
-            holdings_res = supabase.table(current_table_name).select("*").is_("sell_date", "null").execute()
-            holdings_db = pd.DataFrame(holdings_res.data) if holdings_res.data else pd.DataFrame()
-        except Exception as e:
-            holdings_db = pd.DataFrame()
-
-        with st.expander(f"💼 현재 {market_type} 시장 보유 종목 ({len(holdings_db)}개)", expanded=True):
-            if not holdings_db.empty:
-                df_stocks = pd.DataFrame(supabase.table("stocks").select("ticker, name").execute().data)
-                if not df_stocks.empty:
-                    df_stocks['ticker'] = df_stocks['ticker'].astype(str).str.strip()
-                    holdings_merged = pd.merge(holdings_db, df_stocks, on="ticker", how="left")
-                else:
-                    holdings_merged = holdings_db
-                    holdings_merged['name'] = holdings_merged['ticker']
-                
-                for _, h_row in holdings_merged.iterrows():
-                    ticker = h_row['ticker']
-                    raw_name = h_row.get('name', ticker)
-                    if pd.isna(raw_name): raw_name = ticker
-                    
-                    if market_type == "US":
-                        display_name = f"[{ticker}] {raw_name}"
+        st.markdown("##### 📋 시스템 매매 지시서 (알파 시그널)")
+        
+        if not st.session_state.get('trade_authenticated', False):
+            st.info("🔒 실제 매매 신호 및 보유 종목 확인을 위해 비밀번호를 입력해 주십시오.")
+            col_pwd1, col_pwd2 = st.columns([3, 1])
+            with col_pwd1:
+                input_pwd_4 = st.text_input("매매 비밀번호", type="password", key="pwd_tab4", label_visibility="collapsed")
+            with col_pwd2:
+                if st.button("잠금 해제", key="btn_unlock_tab4", use_container_width=True):
+                    valid_pwd = st.secrets.get("TRADE_PASSWORD", "1234")
+                    if input_pwd_4 == valid_pwd:
+                        st.session_state['trade_authenticated'] = True
+                        st.rerun()
                     else:
-                        display_name = f"{raw_name} ({ticker})"
+                        st.error("비밀번호가 일치하지 않습니다.")
+        else:
+            col_header1, col_header2 = st.columns([5, 1])
+            with col_header2:
+                if st.button("🔒 다시 잠금", key="btn_lock_tab4", use_container_width=True):
+                    st.session_state['trade_authenticated'] = False
+                    st.rerun()
+
+            current_table_name = get_holdings_table(market_type)
+            try:
+                holdings_res = supabase.table(current_table_name).select("*").is_("sell_date", "null").execute()
+                holdings_db = pd.DataFrame(holdings_res.data) if holdings_res.data else pd.DataFrame()
+            except Exception as e:
+                holdings_db = pd.DataFrame()
+
+            with st.expander(f"💼 현재 {market_type} 시장 보유 종목 ({len(holdings_db)}개)", expanded=True):
+                if not holdings_db.empty:
+                    df_stocks = pd.DataFrame(supabase.table("stocks").select("ticker, name").execute().data)
+                    if not df_stocks.empty:
+                        df_stocks['ticker'] = df_stocks['ticker'].astype(str).str.strip()
+                        holdings_merged = pd.merge(holdings_db, df_stocks, on="ticker", how="left")
+                    else:
+                        holdings_merged = holdings_db
+                        holdings_merged['name'] = holdings_merged['ticker']
+                    
+                    for _, h_row in holdings_merged.iterrows():
+                        ticker = h_row['ticker']
+                        raw_name = h_row.get('name', ticker)
+                        if pd.isna(raw_name): raw_name = ticker
                         
-                    buy_price = float(h_row.get('buy_price', 0.0))
-                    qty = float(h_row.get('quantity', 1.0))
-                    
-                    curr_row = df_display[df_display['ticker'] == ticker]
-                    curr_price = float(curr_row['종가'].values[0]) if not curr_row.empty else buy_price
-                    profit_rate = ((curr_price / buy_price) - 1) * 100 if buy_price > 0 else 0.0
-                    
-                    warning_desc = ""
-                    if profit_rate <= sl_cfg:
-                        warning_desc = f" 🚨 [손절 경고: {sl_cfg}% 이탈 - 매도 권장]"
-                    elif profit_rate >= trig_cfg:
-                        warning_desc = f" 🎯 [트레일링 스탑: 고점 대비 {stop_cfg}% 반락 시 익절]"
+                        if market_type == "US":
+                            display_name = f"[{ticker}] {raw_name}"
+                        else:
+                            display_name = f"{raw_name} ({ticker})"
+                            
+                        buy_price = float(h_row.get('buy_price', 0.0))
+                        qty = float(h_row.get('quantity', 1.0))
+                        
+                        curr_row = df_display[df_display['ticker'] == ticker]
+                        curr_price = float(curr_row['종가'].values[0]) if not curr_row.empty else buy_price
+                        profit_rate = ((curr_price / buy_price) - 1) * 100 if buy_price > 0 else 0.0
+                        
+                        warning_desc = ""
+                        if profit_rate <= sl_cfg:
+                            warning_desc = f" 🚨 [손절 경고: {sl_cfg}% 이탈 - 매도 권장]"
+                        elif profit_rate >= trig_cfg:
+                            warning_desc = f" 🎯 [트레일링 스탑: 고점 대비 {stop_cfg}% 반락 시 익절]"
 
-                    st.markdown(f"**{display_name}** | Profit: {profit_rate:+.2f}%{warning_desc}")
+                        st.markdown(f"**{display_name}** | Profit: {profit_rate:+.2f}%{warning_desc}")
 
-        df_rebal = df_display[df_display['매매상태'].isin(['매도필요', '매수추천'])]
-        display_trade_list(df_rebal[df_rebal['매매상태'] == '매도필요'], "시스템 매도 필요 종목", "매도", "sys_s", selected_date, is_latest_date, market_type, holdings_db)
-        display_trade_list(df_rebal[df_rebal['매매상태'] == '매수추천'], "시스템 매수 추천 종목", "매수", "sys_b", selected_date, is_latest_date, market_type, holdings_db)
+            df_rebal = df_display[df_display['매매상태'].isin(['매도필요', '매수추천'])]
+            display_trade_list(df_rebal[df_rebal['매매상태'] == '매도필요'], "시스템 매도 필요 종목", "매도", "sys_s", selected_date, is_latest_date, market_type, holdings_db)
+            display_trade_list(df_rebal[df_rebal['매매상태'] == '매수추천'], "시스템 매수 추천 종목", "매수", "sys_b", selected_date, is_latest_date, market_type, holdings_db)
 
-    # --- [요청 1, 3, 4 반영] 성과 분석 탭 완전 개편 구역 ---
+    # --- 5번 탭: 성과 분석 구역 ---
     with tab5:
         st.markdown(f"##### 📊 {market_type} 시장 매매 성과 분석")
         
@@ -461,7 +483,6 @@ if df_display is not None:
                 df_hist_raw = pd.DataFrame(history_res.data)
                 df_hist_raw['sell_date_dt'] = pd.to_datetime(df_hist_raw['sell_date'])
                 
-                # [요청 3 반영] 성과 분석 기간 조회 기능
                 st.markdown("###### 📅 성과 분석 기간 설정")
                 min_sell_date = df_hist_raw['sell_date_dt'].min().date()
                 max_sell_date = df_hist_raw['sell_date_dt'].max().date()
@@ -492,7 +513,6 @@ if df_display is not None:
                     df_hist['profit_amount'] = pd.to_numeric(df_hist['profit_amount'], errors='coerce').fillna(0.0)
                     df_hist['profit_rate'] = pd.to_numeric(df_hist['profit_rate'], errors='coerce').fillna(0.0)
                     
-                    # [요청 4 반영] 지표 정밀 계산: 손익비, 승률, 실패율, 건수, 평균익절/손절금
                     total_profit = df_hist['profit_amount'].sum()
                     total_trades = len(df_hist)
                     win_df = df_hist[df_hist['profit_amount'] > 0]
@@ -509,7 +529,6 @@ if df_display is not None:
                     
                     profit_factor = (avg_win_amt / avg_loss_amt) if avg_loss_amt > 0 else (999.0 if avg_win_amt > 0 else 0.0)
                     
-                    # 1줄 메트릭 카드 배치
                     m1, m2, m3, m4 = st.columns(4)
                     m1.metric("총 실현 손익", f"{total_profit:,.0f} 원")
                     m2.metric("총 매매 건수", f"{total_trades} 건 (성공 {win_trades} / 실패 {loss_trades})")
