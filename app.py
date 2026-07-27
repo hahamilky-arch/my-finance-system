@@ -262,7 +262,7 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                 ticker = row['ticker']
                 c1, c2 = st.columns([4, 1])
                 
-                # 매수/매도 사유 명시
+                # 매수/매도 사유 출력
                 if '매도' in title:
                     reason_desc = "20일 이동평균선 이탈 (`종가 < MA20`) 또는 순위 밀림 발생"
                 else:
@@ -305,7 +305,7 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                     c2.markdown("<div style='color:#999999; font-size:0.85em; margin-top:8px; text-align:right;'>과거일 매매불가</div>", unsafe_allow_html=True)
 
 # UI 실행 파트
-st.markdown("##### 📈 Momentum Dashboard v1.8.0")
+st.markdown("##### 📈 Momentum Dashboard v1.8.1")
 market_safe = get_market_regime()
 
 # 사이드바 매매 전략 조건 설정 구역
@@ -316,15 +316,25 @@ with st.sidebar:
     selected_date = st.date_input("Date", value=pd.to_datetime(all_dates[0]) if all_dates else None)
     
     st.divider()
-    st.markdown("#### 🎯 모드별 상세 매매변수 설정")
-    if market_safe:
-        st.success("🟢 상승장 모드 (지수 > 20MA)")
+    st.markdown("#### 🎯 전략 세팅 모드 선택")
+    strategy_mode = st.radio("운용 모드 선택", ["자동 감지 모드", "상승장 세팅 (1구간)", "하락장 세팅 (2구간)"], index=0)
+    
+    # 세팅 모드별 디폴트 파라미터 제어
+    if strategy_mode == "상승장 세팅 (1구간)":
+        is_bull = True
+    elif strategy_mode == "하락장 세팅 (2구간)":
+        is_bull = False
+    else:
+        is_bull = market_safe
+
+    if is_bull:
+        st.success("🟢 상승장 모드 (Bull Market)")
         top_n_cfg = st.number_input("편입 종목 수 (Top N)", value=3, min_value=1, max_value=10)
         sl_cfg = st.number_input("손절 임계값 (%)", value=-3.0, step=0.5)
         trig_cfg = st.number_input("트레일링 익절 트리거 (%)", value=20.0, step=1.0)
         stop_cfg = st.number_input("고점 대비 반락 익절폭 (%)", value=-10.0, step=1.0)
     else:
-        st.error("🔴 하락장 모드 (지수 ≤ 20MA)")
+        st.error("🔴 하락장 모드 (Bear Market)")
         top_n_cfg = st.number_input("편입 종목 수 (Top N)", value=1, min_value=1, max_value=5)
         sl_cfg = st.number_input("손절 임계값 (%)", value=-1.0, step=0.1)
         trig_cfg = st.number_input("트레일링 익절 트리거 (%)", value=5.0, step=0.5)
@@ -366,14 +376,28 @@ if df_display is not None:
         except Exception as e:
             holdings_db = pd.DataFrame()
 
+        # 보유 종목 현황 및 US 마켓 [티커] 표기 반영
         with st.expander(f"💼 현재 {market_type} 시장 보유 종목 ({len(holdings_db)}개)", expanded=True):
             if not holdings_db.empty:
                 df_stocks = pd.DataFrame(supabase.table("stocks").select("ticker, name").execute().data)
-                holdings_merged = pd.merge(holdings_db, df_stocks, on="ticker", how="left") if not df_stocks.empty else holdings_db
+                if not df_stocks.empty:
+                    df_stocks['ticker'] = df_stocks['ticker'].astype(str).str.strip()
+                    holdings_merged = pd.merge(holdings_db, df_stocks, on="ticker", how="left")
+                else:
+                    holdings_merged = holdings_db
+                    holdings_merged['name'] = holdings_merged['ticker']
                 
                 for _, h_row in holdings_merged.iterrows():
                     ticker = h_row['ticker']
-                    name = h_row.get('name', ticker)
+                    raw_name = h_row.get('name', ticker)
+                    if pd.isna(raw_name): raw_name = ticker
+                    
+                    # [요청 1 반영] US 마켓 보유 종목명 앞에 [티커] 표시
+                    if market_type == "US":
+                        display_name = f"[{ticker}] {raw_name}"
+                    else:
+                        display_name = f"{raw_name} ({ticker})"
+                        
                     buy_price = float(h_row.get('buy_price', 0.0))
                     qty = float(h_row.get('quantity', 1.0))
                     
@@ -381,14 +405,14 @@ if df_display is not None:
                     curr_price = float(curr_row['종가'].values[0]) if not curr_row.empty else buy_price
                     profit_rate = ((curr_price / buy_price) - 1) * 100 if buy_price > 0 else 0.0
                     
-                    # 손절 및 익절 사유 명시
+                    # 경고 문구 사유 표시
                     warning_desc = ""
                     if profit_rate <= sl_cfg:
                         warning_desc = f" 🚨 [손절 경고: {sl_cfg}% 이탈 - 매도 권장]"
                     elif profit_rate >= trig_cfg:
                         warning_desc = f" 🎯 [트레일링 스탑: 고점 대비 {stop_cfg}% 반락 시 익절]"
 
-                    st.markdown(f"**{name}** | Profit: {profit_rate:+.2f}%{warning_desc}")
+                    st.markdown(f"**{display_name}** | Profit: {profit_rate:+.2f}%{warning_desc}")
 
         df_rebal = df_display[df_display['매매상태'].isin(['매도필요', '매수추천'])]
         display_trade_list(df_rebal[df_rebal['매매상태'] == '매도필요'], "시스템 매도 필요 종목", "매도", "sys_s", selected_date, is_latest_date, market_type, holdings_db)
