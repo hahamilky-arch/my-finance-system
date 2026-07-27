@@ -41,4 +41,6 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
         run: |
-          python core/scraper/us_stock_sync_1yr.py "${{ github.event.inputs.ticker }}"
+          CMD="python core/scraper/us_stock_sync_1yr.py ${{ github.event.inputs.ticker }}"
+          echo "Executing: $CMD"
+          $CMD
