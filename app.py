@@ -221,12 +221,10 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg):
     df_final['is_pullback'] = (df_final['순위'] <= 100) & (df_final['RS(90)'] > 0) & (df_final['변동'] > 0)
     df_final['MA20'] = df_final['MA20'].fillna(0)
     
-    # --- 수정 구역: 30위 이내에서 조건을 만족하는 상위 N개 추출 ---
     tech_cond = (df_final['순위'] <= 30) & (df_final['RS(90)'] > 0) & (df_final['MA20'] > 0) & (df_final['종가'] > df_final['MA20'])
     df_final['is_no6_opt'] = False
     valid_indices = df_final[tech_cond].nsmallest(int(top_n_cfg), '순위').index
     df_final.loc[valid_indices, 'is_no6_opt'] = True
-    # -----------------------------------------------------------
     
     df_stocks = pd.DataFrame(supabase.table("stocks").select("ticker, name").execute().data)
     if not df_stocks.empty:
@@ -245,7 +243,6 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg):
     def classify_status(row):
         is_in_holdings = row['ticker'] in my_holdings
         if is_in_holdings:
-            # 매도 기준 30위 밖 밀림으로 고정
             if (row['MA20'] > 0 and row['종가'] < row['MA20']) or (row['순위'] > 30):
                 return '매도필요'
             return '보유중'
@@ -333,20 +330,48 @@ with st.sidebar:
     else:
         is_bull = market_safe
 
+    # st.session_state 기반으로 입력 초기값 설정
     if is_bull:
         st.success("🟢 상승장 모드 (Bull Market)")
-        top_n_cfg = st.number_input("편입 종목 수 (Top N)", value=3, min_value=1, max_value=10)
-        sl_cfg = st.number_input("손절 임계값 (%)", value=-3.0, step=0.5)
-        trig_cfg = st.number_input("트레일링 익절 트리거 (%)", value=20.0, step=1.0)
-        stop_cfg = st.number_input("고점 대비 반락 익절폭 (%)", value=-10.0, step=1.0)
+        top_n_cfg = st.number_input("편입 종목 수 (Top N)", value=st.session_state.get('bull_top_n', 3), min_value=1, max_value=10)
+        sl_cfg = st.number_input("손절 임계값 (%)", value=st.session_state.get('bull_sl', -3.0), step=0.5)
+        trig_cfg = st.number_input("트레일링 익절 트리거 (%)", value=st.session_state.get('bull_trig', 20.0), step=1.0)
+        stop_cfg = st.number_input("고점 대비 반락 익절폭 (%)", value=st.session_state.get('bull_stop', -10.0), step=1.0)
     else:
         st.error("🔴 하락장 모드 (Bear Market)")
-        top_n_cfg = st.number_input("편입 종목 수 (Top N)", value=1, min_value=1, max_value=5)
-        sl_cfg = st.number_input("손절 임계값 (%)", value=-1.0, step=0.1)
-        trig_cfg = st.number_input("트레일링 익절 트리거 (%)", value=5.0, step=0.5)
-        stop_cfg = st.number_input("고점 대비 반락 익절폭 (%)", value=-3.0, step=0.5)
+        top_n_cfg = st.number_input("편입 종목 수 (Top N)", value=st.session_state.get('bear_top_n', 1), min_value=1, max_value=5)
+        sl_cfg = st.number_input("손절 임계값 (%)", value=st.session_state.get('bear_sl', -1.0), step=0.1)
+        trig_cfg = st.number_input("트레일링 익절 트리거 (%)", value=st.session_state.get('bear_trig', 5.0), step=0.5)
+        stop_cfg = st.number_input("고점 대비 반락 익절폭 (%)", value=st.session_state.get('bear_stop', -3.0), step=0.5)
 
-    if st.button("Refresh"): st.rerun()
+    st.divider()
+    
+    # 설정값 저장 및 비밀번호 인증 구역 추가
+    with st.expander("💾 설정값 저장 (비밀번호 필요)", expanded=False):
+        config_pwd = st.text_input("매매 비밀번호 입력", type="password", key="pwd_config")
+        
+        if st.button("현재 설정값 저장", use_container_width=True):
+            if config_pwd == st.secrets.get("TRADE_PASSWORD", "1234"):
+                if is_bull:
+                    st.session_state['bull_top_n'] = top_n_cfg
+                    st.session_state['bull_sl'] = sl_cfg
+                    st.session_state['bull_trig'] = trig_cfg
+                    st.session_state['bull_stop'] = stop_cfg
+                else:
+                    st.session_state['bear_top_n'] = top_n_cfg
+                    st.session_state['bear_sl'] = sl_cfg
+                    st.session_state['bear_trig'] = trig_cfg
+                    st.session_state['bear_stop'] = stop_cfg
+                
+                # DB 영구 저장이 필요한 경우 아래와 같이 활용할 수 있습니다.
+                # supabase.table("strategy_settings").upsert({...}).execute()
+                
+                st.success("✅ 현재 설정값이 세션에 성공적으로 저장되었습니다.")
+            else:
+                st.error("❌ 비밀번호가 일치하지 않습니다.")
+
+    if st.button("Refresh", use_container_width=True): 
+        st.rerun()
 
 is_latest_date = False
 if all_dates and selected_date:
@@ -451,7 +476,6 @@ if df_display is not None:
             display_trade_list(df_rebal[df_rebal['매매상태'] == '매도필요'], "시스템 매도 필요 종목", "매도", "sys_s", selected_date, is_latest_date, market_type, holdings_db, top_n_cfg)
             display_trade_list(df_rebal[df_rebal['매매상태'] == '매수추천'], "시스템 매수 추천 종목", "매수", "sys_b", selected_date, is_latest_date, market_type, holdings_db, top_n_cfg)
 
-        # --- 매수/매도 기준 안내 (하단으로 이동) ---
         st.info(f"""
         📌 **매수·매도 기준 안내**
         * **매수 추천 기준**: 모멘텀 순위 상위 **30위 이내** 종목 중 RS(90) > 0 및 20일선 정배열(`종가 > MA20`)을 만족하는 상위 **{top_n_cfg}개** 종목
