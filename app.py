@@ -221,7 +221,6 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg):
     df_final['is_pullback'] = (df_final['순위'] <= 100) & (df_final['RS(90)'] > 0) & (df_final['변동'] > 0)
     df_final['MA20'] = df_final['MA20'].fillna(0)
     
-    # 사이드바 설정 기반 백테스트 최적화 종목 필터링
     df_final['is_no6_opt'] = (df_final['순위'] <= top_n_cfg) & (df_final['RS(90)'] > 0) & (df_final['MA20'] > 0) & (df_final['종가'] > df_final['MA20'])
     
     df_stocks = pd.DataFrame(supabase.table("stocks").select("ticker, name").execute().data)
@@ -262,7 +261,6 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                 ticker = row['ticker']
                 c1, c2 = st.columns([4, 1])
                 
-                # 매수/매도 사유 출력
                 if '매도' in title:
                     reason_desc = "20일 이동평균선 이탈 (`종가 < MA20`) 또는 순위 밀림 발생"
                 else:
@@ -305,8 +303,11 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                     c2.markdown("<div style='color:#999999; font-size:0.85em; margin-top:8px; text-align:right;'>과거일 매매불가</div>", unsafe_allow_html=True)
 
 # UI 실행 파트
-st.markdown("##### 📈 Momentum Dashboard v1.8.1")
+st.markdown("##### 📈 Momentum Dashboard v1.8.2")
 market_safe = get_market_regime()
+
+if 'trigger_scroll' not in st.session_state:
+    st.session_state['trigger_scroll'] = False
 
 # 사이드바 매매 전략 조건 설정 구역
 with st.sidebar:
@@ -319,7 +320,6 @@ with st.sidebar:
     st.markdown("#### 🎯 전략 세팅 모드 선택")
     strategy_mode = st.radio("운용 모드 선택", ["자동 감지 모드", "상승장 세팅 (1구간)", "하락장 세팅 (2구간)"], index=0)
     
-    # 세팅 모드별 디폴트 파라미터 제어
     if strategy_mode == "상승장 세팅 (1구간)":
         is_bull = True
     elif strategy_mode == "하락장 세팅 (2구간)":
@@ -360,12 +360,21 @@ if df_display is not None:
     for i, tab in enumerate([tab1, tab2, tab3]):
         with tab:
             df_target = tab_dfs[i][col_order].copy()
-            st.dataframe(
+            event = st.dataframe(
                 df_target.style.apply(apply_styles, axis=None).format({
                     'MOT': '{:.2f}', 'RS(90)': '{:.2f}', 'RS(10)': '{:.2f}', '종가': '{:,.0f}', '상승금액': '{:+,.0f}', 'MA20': '{:,.0f}', '변동': '{:+.0f}'
                 }, na_rep='-'), 
-                hide_index=True, use_container_width=True
+                hide_index=True, use_container_width=True,
+                on_select="rerun",
+                selection_mode="single-row",
+                key=f"df_tab_{i}"
             )
+            
+            if event and "rows" in event.get("selection", {}) and event["selection"]["rows"]:
+                selected_row_idx = event["selection"]["rows"][0]
+                clicked_ticker = df_target.iloc[selected_row_idx]['ticker']
+                st.session_state['selected_ticker_from_table'] = clicked_ticker
+                st.session_state['trigger_scroll'] = True
 
     with tab4:
         st.markdown("##### 📋 백테스트 최적화 기반 매매 지시서")
@@ -376,7 +385,6 @@ if df_display is not None:
         except Exception as e:
             holdings_db = pd.DataFrame()
 
-        # 보유 종목 현황 및 US 마켓 [티커] 표기 반영
         with st.expander(f"💼 현재 {market_type} 시장 보유 종목 ({len(holdings_db)}개)", expanded=True):
             if not holdings_db.empty:
                 df_stocks = pd.DataFrame(supabase.table("stocks").select("ticker, name").execute().data)
@@ -392,7 +400,6 @@ if df_display is not None:
                     raw_name = h_row.get('name', ticker)
                     if pd.isna(raw_name): raw_name = ticker
                     
-                    # [요청 1 반영] US 마켓 보유 종목명 앞에 [티커] 표시
                     if market_type == "US":
                         display_name = f"[{ticker}] {raw_name}"
                     else:
@@ -405,7 +412,6 @@ if df_display is not None:
                     curr_price = float(curr_row['종가'].values[0]) if not curr_row.empty else buy_price
                     profit_rate = ((curr_price / buy_price) - 1) * 100 if buy_price > 0 else 0.0
                     
-                    # 경고 문구 사유 표시
                     warning_desc = ""
                     if profit_rate <= sl_cfg:
                         warning_desc = f" 🚨 [손절 경고: {sl_cfg}% 이탈 - 매도 권장]"
@@ -417,3 +423,124 @@ if df_display is not None:
         df_rebal = df_display[df_display['매매상태'].isin(['매도필요', '매수추천'])]
         display_trade_list(df_rebal[df_rebal['매매상태'] == '매도필요'], "시스템 매도 필요 종목", "매도", "sys_s", selected_date, is_latest_date, market_type, holdings_db)
         display_trade_list(df_rebal[df_rebal['매매상태'] == '매수추천'], "시스템 매수 추천 종목", "매수", "sys_b", selected_date, is_latest_date, market_type, holdings_db)
+
+    # --- 📉 하단 주가 및 모멘텀 순위 시계열 차트 구역 (정상 표시 및 스크롤 연동) ---
+    st.divider()
+    st.markdown("<div id='chart-section'></div>", unsafe_allow_html=True)
+    st.markdown("##### 📉 종목별 최근 주가 및 시장 흐름 통합 추이")
+    
+    if st.session_state.get('trigger_scroll'):
+        scroll_to_chart()
+        st.session_state['trigger_scroll'] = False 
+    
+    df_top100 = df_display.head(100)
+    top100_tickers = df_top100['ticker'].tolist() if not df_top100.empty else []
+    
+    if 'selected_ticker_from_table' in st.session_state:
+        target_ticker = st.session_state['selected_ticker_from_table']
+        if target_ticker not in top100_tickers:
+            top100_tickers.append(target_ticker)
+
+    ticker_name_map = dict(zip(df_display['ticker'], df_display['종목명']))
+    
+    default_ticker = top100_tickers[0] if top100_tickers else None
+    if 'selected_ticker_from_table' in st.session_state:
+        target_ticker = st.session_state['selected_ticker_from_table']
+        if target_ticker in top100_tickers:
+            default_ticker = target_ticker
+            
+    default_index = top100_tickers.index(default_ticker) if default_ticker in top100_tickers else 0
+            
+    selected_chart_ticker = st.selectbox(
+        "분석할 종목을 선택하세요 (위 표에서 종목 행을 직접 클릭해도 자동으로 변경됩니다)", 
+        options=top100_tickers, 
+        index=default_index,
+        format_func=lambda x: f"{ticker_name_map.get(x, x)}"
+    )
+    
+    if selected_chart_ticker:
+        chart_res = supabase.table("daily_analysis") \
+            .select("price_date, close_price, momentum_rank, ma20") \
+            .eq("ticker", selected_chart_ticker) \
+            .order("price_date", desc=True) \
+            .limit(20).execute()
+            
+        benchmark_ticker = "^KS11" if market_type == "KR" else "^GSPC"
+        index_res = supabase.table("daily_analysis") \
+            .select("price_date, close_price") \
+            .eq("ticker", benchmark_ticker) \
+            .order("price_date", desc=True) \
+            .limit(20).execute()
+            
+        if not chart_res.data:
+            st.info("해당 종목의 시계열 차트 데이터가 존재하지 않습니다.")
+        else:
+            df_chart = pd.DataFrame(chart_res.data)
+            df_chart['price_date'] = pd.to_datetime(df_chart['price_date'])
+            df_chart = df_chart.sort_values('price_date', ascending=True)
+            df_chart['price_date_str'] = df_chart['price_date'].dt.strftime('%m-%d')
+            df_chart['close_price'] = pd.to_numeric(df_chart['close_price'], errors='coerce')
+            df_chart['ma20'] = pd.to_numeric(df_chart['ma20'], errors='coerce')
+            df_chart.loc[df_chart['ma20'] == 0, 'ma20'] = None
+            
+            if index_res.data:
+                df_idx_chart = pd.DataFrame(index_res.data).rename(columns={'close_price': 'index_price'})
+                df_idx_chart['price_date'] = pd.to_datetime(df_idx_chart['price_date'])
+                df_idx_chart['index_price'] = pd.to_numeric(df_idx_chart['index_price'], errors='coerce')
+                df_merged = pd.merge(df_chart, df_idx_chart, on='price_date', how='left')
+            else:
+                df_merged = df_chart
+                df_merged['index_price'] = None
+
+            idx_name = "KOSPI" if market_type == "KR" else "S&P 500"
+            stock_name = ticker_name_map.get(selected_chart_ticker, selected_chart_ticker)
+
+            base_top = alt.Chart(df_merged).encode(
+                x=alt.X('price_date_str:N', title=None, axis=alt.Axis(labelAngle=-45))
+            ).properties(height=350)
+
+            line_stock = base_top.mark_line(color='#1f77b4', strokeWidth=2.5).encode(
+                y=alt.Y('close_price:Q', title='주가', scale=alt.Scale(zero=False)),
+                tooltip=[alt.Tooltip('price_date_str:N', title='날짜'), alt.Tooltip('close_price:Q', title='종가', format=',.0f')]
+            )
+
+            line_ma20 = base_top.mark_line(color='#ff4b4b', strokeDash=[4, 4]).encode(
+                y=alt.Y('ma20:Q', title=None, scale=alt.Scale(zero=False)) 
+            )
+
+            line_rank = base_top.mark_line(color='#ff7f0e', point=True).encode(
+                y=alt.Y('momentum_rank:Q', title='모멘텀 순위 (1~100)', scale=alt.Scale(domain=[100, 0])),
+                tooltip=[alt.Tooltip('momentum_rank:Q', title='모멘텀 순위')]
+            )
+
+            chart_price_layer = alt.layer(line_stock, line_ma20)
+            chart_top = alt.layer(chart_price_layer, line_rank).resolve_scale(y='independent')
+
+            base_bottom = alt.Chart(df_merged).encode(
+                x=alt.X('price_date_str:N', title=None, axis=alt.Axis(labelAngle=-45))
+            ).properties(height=150)
+
+            chart_bottom = base_bottom.mark_line(color='#2ca02c', strokeWidth=2).encode(
+                y=alt.Y('index_price:Q', title=f'{idx_name} 지수', scale=alt.Scale(zero=False)),
+                tooltip=[alt.Tooltip('price_date_str:N', title='날짜'), alt.Tooltip('index_price:Q', title='지수', format=',.2f')]
+            )
+
+            st.markdown(f"""
+            <div style="text-align: center; margin-bottom: 10px; font-size: 0.9em; color: #555555;">
+                <span style="color:#1f77b4; font-weight:bold;">━</span> {stock_name} 주가 | 
+                <span style="color:#ff4b4b; font-weight:bold;">---</span> MA20 | 
+                <span style="color:#ff7f0e; font-weight:bold;">━●━</span> 모멘텀 순위 (우측 Y축 반전)
+            </div>
+            """, unsafe_allow_html=True)
+            
+            st.altair_chart(chart_top, use_container_width=True)
+            
+            st.markdown(f"""
+            <div style="text-align: center; margin-top: 5px; margin-bottom: 10px; font-size: 0.9em; color: #555555;">
+                <span style="color:#2ca02c; font-weight:bold;">━</span> {idx_name} 지수 흐름
+            </div>
+            """, unsafe_allow_html=True)
+            
+            st.altair_chart(chart_bottom, use_container_width=True)
+else:
+    st.warning("데이터를 불러오는 중입니다.")
