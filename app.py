@@ -1,16 +1,20 @@
 import streamlit as st
 import pandas as pd
 from supabase import create_client
-import altair as alt  
+import altair as alt
+import streamlit.components.v1 as components
 
 # 백지화 방지를 위해 최상단 배치
 st.set_page_config(layout="wide")
 
-# 💡 상단 여백 조정(타이틀 짤림 방지) 및 폰트 축소 CSS
+# 💡 최상단 앵커 (플로팅 버튼 클릭 시 이동할 타겟)
+st.markdown("<div id='top-section'></div>", unsafe_allow_html=True)
+
+# 상단 여백 조정 및 플로팅 버튼 CSS
 st.markdown("""
     <style>
     .block-container {
-        padding-top: 3rem !important; /* 타이틀 짤림 해결을 위해 3rem으로 여유 확보 */
+        padding-top: 3rem !important;
         padding-bottom: 2rem !important;
     }
     html, body, [class*="st-"] {
@@ -20,11 +24,49 @@ st.markdown("""
         font-size: 1.2rem !important;
         margin-bottom: 0.5rem !important;
     }
+    /* 💡 우측 하단 위로가기 플로팅 버튼 스타일 */
+    .floating-btn {
+        position: fixed;
+        bottom: 30px;
+        right: 30px;
+        background-color: #1f77b4;
+        color: white !important;
+        border-radius: 50%;
+        width: 50px;
+        height: 50px;
+        text-align: center;
+        line-height: 50px;
+        font-size: 24px;
+        box-shadow: 2px 2px 5px rgba(0,0,0,0.3);
+        cursor: pointer;
+        z-index: 99999;
+        text-decoration: none;
+        transition: background-color 0.3s;
+    }
+    .floating-btn:hover {
+        background-color: #155c8a;
+    }
     </style>
+    <!-- 플로팅 버튼 HTML -->
+    <a href="#top-section" class="floating-btn" title="위로 가기">⬆️</a>
 """, unsafe_allow_html=True)
 
 # Supabase 연결
 supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
+
+# JS 자동 스크롤 함수
+def scroll_to_chart():
+    js = """
+    <script>
+        setTimeout(function() {
+            const el = window.parent.document.getElementById('chart-section');
+            if (el) {
+                el.scrollIntoView({behavior: 'smooth', block: 'start'});
+            }
+        }, 100);
+    </script>
+    """
+    components.html(js, height=0)
 
 # --- 1. 데이터 처리 및 스타일 함수 ---
 def apply_styles(df):
@@ -44,7 +86,7 @@ def apply_styles(df):
         df_styles.loc[df['매매상태'] == '매도필요', '매매상태'] += 'color: #1f77b4; font-weight: bold;'
         df_styles.loc[df['매매상태'] == '보유중', '매매상태'] += 'color: #2ca02c; font-weight: bold;'
 
-    # 💡 [요청사항 5] RS값 0초과는 붉고 진하게, 0이하는 흐릿하게(회색)
+    # RS값 색상 지정
     if 'RS(90)' in df.columns:
         df_styles.loc[df['RS(90)'] > 0, 'RS(90)'] += 'color: #d62728; font-weight: bold;'
         df_styles.loc[df['RS(90)'] <= 0, 'RS(90)'] += 'color: #bbbbbb;'
@@ -52,24 +94,22 @@ def apply_styles(df):
         df_styles.loc[df['RS(10)'] > 0, 'RS(10)'] += 'color: #d62728; font-weight: bold;'
         df_styles.loc[df['RS(10)'] <= 0, 'RS(10)'] += 'color: #bbbbbb;'
 
-    # 💡 [요청사항 4] 10위, 20위, 30위까지의 행 배경색 차등 적용
+    # 순위 배경색 차등 적용
     if '순위' in df.columns:
         for idx, rank in df['순위'].items():
             if pd.notna(rank):
                 if rank <= 10:
-                    df_styles.loc[idx, :] = df_styles.loc[idx, :] + 'background-color: rgba(255, 235, 156, 0.4);' # 1~10위 (연노랑)
+                    df_styles.loc[idx, :] = df_styles.loc[idx, :] + 'background-color: rgba(255, 235, 156, 0.4);' 
                 elif rank <= 20:
-                    df_styles.loc[idx, :] = df_styles.loc[idx, :] + 'background-color: rgba(198, 239, 206, 0.4);' # 11~20위 (연초록)
+                    df_styles.loc[idx, :] = df_styles.loc[idx, :] + 'background-color: rgba(198, 239, 206, 0.4);' 
                 elif rank <= 30:
-                    df_styles.loc[idx, :] = df_styles.loc[idx, :] + 'background-color: rgba(189, 215, 238, 0.4);' # 21~30위 (연파랑)
+                    df_styles.loc[idx, :] = df_styles.loc[idx, :] + 'background-color: rgba(189, 215, 238, 0.4);' 
                     
     return df_styles
 
-# 시장(Market)에 따른 보유 종목 테이블명 반환
 def get_holdings_table(market_type):
     return "current_holdings_us" if market_type == "US" else "current_holdings"
 
-# 보유 종목 리스트 가져오기 (마켓 구분 적용)
 def get_current_holdings(market_type):
     table_name = get_holdings_table(market_type)
     try:
@@ -78,7 +118,6 @@ def get_current_holdings(market_type):
     except Exception as e:
         return []
 
-# 매수/매도 처리 (마켓 구분 적용)
 def update_holdings(ticker, action, price, trade_date, quantity, market_type):
     table_name = get_holdings_table(market_type)
     trade_date_str = trade_date.strftime('%Y-%m-%d')
@@ -215,7 +254,7 @@ def get_data(target_date, all_dates, market_type):
         if row['is_no6_opt']:
             return '보유중' if is_in_holdings else '매수추천'
         else:
-            return '매도필요' if is_in_holdings else '' # 💡 [요청사항 3] 관망 대신 빈문자열 반환
+            return '매도필요' if is_in_holdings else '' 
 
     df_final['매매상태'] = df_final.apply(classify_status, axis=1)
     
@@ -265,7 +304,7 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                     c2.markdown("<div style='color:#999999; font-size:0.85em; margin-top:8px; text-align:right;'>과거일 매매불가</div>", unsafe_allow_html=True)
 
 # --- 2. UI 메인 실행 파트 ---
-st.markdown("##### 📈 Momentum Dashboard v1.7.5")
+st.markdown("##### 📈 Momentum Dashboard v1.7.6")
 market_safe = get_market_regime()
 
 if not market_safe:
@@ -289,6 +328,9 @@ df_display = get_data(selected_date, all_dates, market_type)
 if 'trade_authenticated' not in st.session_state:
     st.session_state['trade_authenticated'] = False
 
+if 'trigger_scroll' not in st.session_state:
+    st.session_state['trigger_scroll'] = False
+
 if df_display is not None:
     tab1, tab2, tab3, tab4, tab5 = st.tabs(["Overview", "New Entries", "🎯 Pullback", "🚀 No.6 최적화", "📊 성과 분석"])
     
@@ -301,8 +343,6 @@ if df_display is not None:
         "📌 **조회 기준**: 모멘텀 순위 100위 이내, RS(90) 0 초과 조건에서 직전 대비 **순위가 상승 중(숫자 감소)인 눌림목 종목**"
     ]
 
-    clicked_ticker = None
-    
     for i, tab in enumerate([tab1, tab2, tab3]):
         with tab:
             st.markdown(f"<span style='color: #555555; font-size: 0.95em;'>{tab_descriptions[i]}</span>", unsafe_allow_html=True)
@@ -325,12 +365,13 @@ if df_display is not None:
                 key=f"df_tab_{i}"
             )
             
+            # 💡 [요청사항 1] 체크박스 선택 시 스크롤 트리거 활성화
             if event and "rows" in event.get("selection", {}) and event["selection"]["rows"]:
                 selected_row_idx = event["selection"]["rows"][0]
                 clicked_ticker = df_target.iloc[selected_row_idx]['ticker']
-
-    if clicked_ticker:
-        st.session_state['selected_ticker_from_table'] = clicked_ticker
+                
+                st.session_state['selected_ticker_from_table'] = clicked_ticker
+                st.session_state['trigger_scroll'] = True
 
     # --- Tab 4 (매매 지시서 구역) ---
     with tab4:
@@ -533,9 +574,16 @@ if df_display is not None:
 
     # --- 📉 하단 주가 및 모멘텀 순위 시계열 차트 구역 ---
     st.divider()
+    
+    # 💡 [요청사항 1] 스크롤 이동 타겟 앵커
+    st.markdown("<div id='chart-section'></div>", unsafe_allow_html=True)
     st.markdown("##### 📉 종목별 최근 주가 및 시장 흐름 통합 추이")
     
-    # 💡 [요청사항 1] 표에 있는 상위 100개 종목으로만 SelectBox 제한
+    # 표에서 클릭(선택)이 감지되어 trigger_scroll이 True가 되었다면 JS 실행
+    if st.session_state.get('trigger_scroll'):
+        scroll_to_chart()
+        st.session_state['trigger_scroll'] = False # 1회 실행 후 초기화
+    
     df_top100 = df_display.head(100)
     top100_tickers = df_top100['ticker'].tolist()
     
@@ -547,7 +595,6 @@ if df_display is not None:
 
     ticker_name_map = dict(zip(df_display['ticker'], df_display['종목명']))
     
-    # 표 클릭 이벤트가 없으면 전체 중 모멘텀 순위 1위 종목이 기본 조회되도록 처리
     default_ticker = None
     if not df_top100.empty:
         default_ticker = df_top100.loc[df_top100['순위'].idxmin(), 'ticker']
