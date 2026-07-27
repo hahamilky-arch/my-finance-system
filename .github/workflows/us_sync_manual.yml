@@ -17,7 +17,6 @@ jobs:
 
       - name: Validate Ticker Input
         run: |
-          # 입력된 티커가 비어있거나 공백만 있는 경우 작업 중단
           TICKER="${{ github.event.inputs.ticker }}"
           if [ -z "$TICKER" ] || [ "$TICKER" = " " ]; then
             echo "❌ [중단] 티커가 입력되지 않았습니다. 워크플로우를 실행하지 않습니다."
@@ -40,6 +39,7 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          PYTHONPATH: ${{ github.workspace }}
         run: |
           CMD="python core/scraper/us_stock_sync_1yr.py ${{ github.event.inputs.ticker }}"
           echo "Executing: $CMD"
