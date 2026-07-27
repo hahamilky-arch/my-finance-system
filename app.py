@@ -221,7 +221,12 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg):
     df_final['is_pullback'] = (df_final['순위'] <= 100) & (df_final['RS(90)'] > 0) & (df_final['변동'] > 0)
     df_final['MA20'] = df_final['MA20'].fillna(0)
     
-    df_final['is_no6_opt'] = (df_final['순위'] <= top_n_cfg) & (df_final['RS(90)'] > 0) & (df_final['MA20'] > 0) & (df_final['종가'] > df_final['MA20'])
+    # --- 수정 구역: 30위 이내에서 조건을 만족하는 상위 N개 추출 ---
+    tech_cond = (df_final['순위'] <= 30) & (df_final['RS(90)'] > 0) & (df_final['MA20'] > 0) & (df_final['종가'] > df_final['MA20'])
+    df_final['is_no6_opt'] = False
+    valid_indices = df_final[tech_cond].nsmallest(int(top_n_cfg), '순위').index
+    df_final.loc[valid_indices, 'is_no6_opt'] = True
+    # -----------------------------------------------------------
     
     df_stocks = pd.DataFrame(supabase.table("stocks").select("ticker, name").execute().data)
     if not df_stocks.empty:
@@ -240,7 +245,8 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg):
     def classify_status(row):
         is_in_holdings = row['ticker'] in my_holdings
         if is_in_holdings:
-            if (row['MA20'] > 0 and row['종가'] < row['MA20']) or (row['순위'] > top_n_cfg):
+            # 매도 기준 30위 밖 밀림으로 고정
+            if (row['MA20'] > 0 and row['종가'] < row['MA20']) or (row['순위'] > 30):
                 return '매도필요'
             return '보유중'
         else:
@@ -262,9 +268,9 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                 c1, c2 = st.columns([4, 1])
                 
                 if '매도' in title:
-                    reason_desc = f"20일 이동평균선 이탈 (`종가 < MA20`) 또는 순위 {top_n_cfg}위 밀림 발생"
+                    reason_desc = f"20일 이동평균선 이탈 (`종가 < MA20`) 또는 순위 30위 밖으로 밀림 발생"
                 else:
-                    reason_desc = f"모멘텀 상위 {row['순위']}위 (Top {top_n_cfg} 이내), RS(90) {row['RS(90)']:.2f} (0 초과) 및 20일선 정배열 충족"
+                    reason_desc = f"모멘텀 상위 30위 내 및 RS(90) > 0, 20일선 정배열 충족 (설정 편입수 {top_n_cfg}개 내 진입)"
 
                 c1.markdown(f"""
                 <div style="line-height: 1.6; margin-top: 4px;">
@@ -379,13 +385,6 @@ if df_display is not None:
     with tab4:
         st.markdown("##### 📋 시스템 매매 지시서 (알파 시그널)")
         
-        # --- 매수/매도 기준 안내 추가 ---
-        st.info(f"""
-        📌 **매수·매도 기준 안내**
-        * **매수 추천 기준**: 모멘텀 순위 상위 **{top_n_cfg}위 이내**, RS(90) > 0, 20일 이동평균선 정배열(`종가 > MA20`)을 모두 만족하는 종목
-        * **매도 필요 기준**: 보유 종목 중 20일 이동평균선 이탈(`종가 < MA20`) 또는 순위가 상위 **{top_n_cfg}위** 밖으로 밀려난 종목
-        """)
-        
         if not st.session_state.get('trade_authenticated', False):
             st.info("🔒 실제 매매 신호 및 보유 종목 확인을 위해 비밀번호를 입력해 주십시오.")
             col_pwd1, col_pwd2 = st.columns([3, 1])
@@ -451,6 +450,13 @@ if df_display is not None:
             df_rebal = df_display[df_display['매매상태'].isin(['매도필요', '매수추천'])]
             display_trade_list(df_rebal[df_rebal['매매상태'] == '매도필요'], "시스템 매도 필요 종목", "매도", "sys_s", selected_date, is_latest_date, market_type, holdings_db, top_n_cfg)
             display_trade_list(df_rebal[df_rebal['매매상태'] == '매수추천'], "시스템 매수 추천 종목", "매수", "sys_b", selected_date, is_latest_date, market_type, holdings_db, top_n_cfg)
+
+        # --- 매수/매도 기준 안내 (하단으로 이동) ---
+        st.info(f"""
+        📌 **매수·매도 기준 안내**
+        * **매수 추천 기준**: 모멘텀 순위 상위 **30위 이내** 종목 중 RS(90) > 0 및 20일선 정배열(`종가 > MA20`)을 만족하는 상위 **{top_n_cfg}개** 종목
+        * **매도 필요 기준**: 보유 종목 중 20일 이동평균선 이탈(`종가 < MA20`) 또는 순위가 상위 **30위** 밖으로 밀려난 종목
+        """)
 
     # --- 5번 탭: 성과 분석 구역 ---
     with tab5:
