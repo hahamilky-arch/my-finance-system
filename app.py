@@ -221,10 +221,12 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg):
     df_final['is_pullback'] = (df_final['순위'] <= 100) & (df_final['RS(90)'] > 0) & (df_final['변동'] > 0)
     df_final['MA20'] = df_final['MA20'].fillna(0)
     
-    tech_cond = (df_final['순위'] <= 30) & (df_final['RS(90)'] > 0) & (df_final['MA20'] > 0) & (df_final['종가'] > df_final['MA20'])
+    # --- 수정 구역: 30위 이내 및 RS(90) > 0, RS(10) > 0 조건 추가 ---
+    tech_cond = (df_final['순위'] <= 30) & (df_final['RS(90)'] > 0) & (df_final['RS(10)'] > 0) & (df_final['MA20'] > 0) & (df_final['종가'] > df_final['MA20'])
     df_final['is_no6_opt'] = False
     valid_indices = df_final[tech_cond].nsmallest(int(top_n_cfg), '순위').index
     df_final.loc[valid_indices, 'is_no6_opt'] = True
+    # -----------------------------------------------------------
     
     df_stocks = pd.DataFrame(supabase.table("stocks").select("ticker, name").execute().data)
     if not df_stocks.empty:
@@ -267,7 +269,7 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                 if '매도' in title:
                     reason_desc = f"20일 이동평균선 이탈 (`종가 < MA20`) 또는 순위 30위 밖으로 밀림 발생"
                 else:
-                    reason_desc = f"모멘텀 상위 30위 내 및 RS(90) > 0, 20일선 정배열 충족 (설정 편입수 {top_n_cfg}개 내 진입)"
+                    reason_desc = f"모멘텀 상위 30위 내, RS(90)>0 및 RS(10)>0, 20일선 정배열 충족 (설정 편입수 {top_n_cfg}개 내 진입)"
 
                 c1.markdown(f"""
                 <div style="line-height: 1.6; margin-top: 4px;">
@@ -279,7 +281,7 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                     </span>
                     <br>
                     <span style="font-size: 0.85em; color: #444444;">
-                        MOT: {row['MOT']:.2f} | RS(90): {row['RS(90)']:.2f} | RS(10): {row['RS(10)']}
+                        MOT: {row['MOT']:.2f} | RS(90): {row['RS(90)']:.2f} | RS(10): {row['RS(10)']:.2f}
                     </span>
                 </div>
                 """, unsafe_allow_html=True)
@@ -330,7 +332,6 @@ with st.sidebar:
     else:
         is_bull = market_safe
 
-    # st.session_state 기반으로 입력 초기값 설정
     if is_bull:
         st.success("🟢 상승장 모드 (Bull Market)")
         top_n_cfg = st.number_input("편입 종목 수 (Top N)", value=st.session_state.get('bull_top_n', 3), min_value=1, max_value=10)
@@ -346,7 +347,6 @@ with st.sidebar:
 
     st.divider()
     
-    # 설정값 저장 및 비밀번호 인증 구역 추가
     with st.expander("💾 설정값 저장 (비밀번호 필요)", expanded=False):
         config_pwd = st.text_input("매매 비밀번호 입력", type="password", key="pwd_config")
         
@@ -362,9 +362,6 @@ with st.sidebar:
                     st.session_state['bear_sl'] = sl_cfg
                     st.session_state['bear_trig'] = trig_cfg
                     st.session_state['bear_stop'] = stop_cfg
-                
-                # DB 영구 저장이 필요한 경우 아래와 같이 활용할 수 있습니다.
-                # supabase.table("strategy_settings").upsert({...}).execute()
                 
                 st.success("✅ 현재 설정값이 세션에 성공적으로 저장되었습니다.")
             else:
@@ -385,7 +382,7 @@ df_display = get_data(selected_date, all_dates, market_type, top_n_cfg, sl_cfg)
 if df_display is not None:
     tab1, tab2, tab3, tab4, tab5 = st.tabs(["Overview", "New Entries", "🎯 Pullback", "🚀 알파 시그널", "📊 성과 분석"])
     
-    col_order = ['순위', '변동', '매매상태', '종목명', 'MOT', 'RS(90)', 'RS(10)', '종가', '상승금액', 'MA20', 'ticker'] 
+    col_order = ['순위', '변동', '매매상태', '종목명', 'MOT', 'RS(90)', 'RS(10)', 'MA20, '종가', '상승금액'', 'ticker'] 
     tab_dfs = [df_display.head(100), df_display[df_display['is_new_top30']], df_display[df_display['is_pullback']], df_display[df_display['is_no6_opt']]]
 
     for i, tab in enumerate([tab1, tab2, tab3]):
@@ -478,7 +475,7 @@ if df_display is not None:
 
         st.info(f"""
         📌 **매수·매도 기준 안내**
-        * **매수 추천 기준**: 모멘텀 순위 상위 **30위 이내** 종목 중 RS(90) > 0 및 20일선 정배열(`종가 > MA20`)을 만족하는 상위 **{top_n_cfg}개** 종목
+        * **매수 추천 기준**: 모멘텀 순위 상위 **30위 이내** 종목 중 RS(90) > 0, **RS(10) > 0**, 20일선 정배열(`종가 > MA20`)을 모두 만족하는 상위 **{top_n_cfg}개** 종목
         * **매도 필요 기준**: 보유 종목 중 20일 이동평균선 이탈(`종가 < MA20`) 또는 순위가 상위 **30위** 밖으로 밀려난 종목
         """)
 
