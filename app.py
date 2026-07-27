@@ -6,11 +6,11 @@ import altair as alt
 # 백지화 방지를 위해 최상단 배치
 st.set_page_config(layout="wide")
 
-# 💡 [수정] 상단 여백 축소 및 전체 폰트 크기 조정 CSS 적용
+# 💡 상단 여백 조정(타이틀 짤림 방지) 및 폰트 축소 CSS
 st.markdown("""
     <style>
     .block-container {
-        padding-top: 1.5rem !important;
+        padding-top: 3rem !important; /* 타이틀 짤림 해결을 위해 3rem으로 여유 확보 */
         padding-bottom: 2rem !important;
     }
     html, body, [class*="st-"] {
@@ -29,19 +29,40 @@ supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
 # --- 1. 데이터 처리 및 스타일 함수 ---
 def apply_styles(df):
     df_styles = pd.DataFrame('', index=df.index, columns=df.columns)
-    if '변동' in df.columns:
-        df_styles.loc[df['변동'] > 0, '변동'] = 'color: red;'
-        df_styles.loc[df['변동'] < 0, '변동'] = 'color: blue;'
-    if '상승금액' in df.columns:
-        df_styles.loc[df['상승금액'] > 0, '상승금액'] = 'color: red;'
-        df_styles.loc[df['상승금액'] < 0, '상승금액'] = 'color: blue;'
     
-    # 매매상태 컬러링 (보유중, 매도필요 등 강조)
+    # 텍스트 컬러링 기본
+    if '변동' in df.columns:
+        df_styles.loc[df['변동'] > 0, '변동'] += 'color: red;'
+        df_styles.loc[df['변동'] < 0, '변동'] += 'color: blue;'
+    if '상승금액' in df.columns:
+        df_styles.loc[df['상승금액'] > 0, '상승금액'] += 'color: red;'
+        df_styles.loc[df['상승금액'] < 0, '상승금액'] += 'color: blue;'
+    
+    # 매매상태 컬러링
     if '매매상태' in df.columns:
-        df_styles.loc[df['매매상태'] == '매수추천', '매매상태'] = 'color: #d62728; font-weight: bold;'
-        df_styles.loc[df['매매상태'] == '매도필요', '매매상태'] = 'color: #1f77b4; font-weight: bold;'
-        df_styles.loc[df['매매상태'] == '보유중', '매매상태'] = 'color: #2ca02c; font-weight: bold;'
-        df_styles.loc[df['매매상태'] == '관망', '매매상태'] = 'color: #888888;'
+        df_styles.loc[df['매매상태'] == '매수추천', '매매상태'] += 'color: #d62728; font-weight: bold;'
+        df_styles.loc[df['매매상태'] == '매도필요', '매매상태'] += 'color: #1f77b4; font-weight: bold;'
+        df_styles.loc[df['매매상태'] == '보유중', '매매상태'] += 'color: #2ca02c; font-weight: bold;'
+
+    # 💡 [요청사항 5] RS값 0초과는 붉고 진하게, 0이하는 흐릿하게(회색)
+    if 'RS(90)' in df.columns:
+        df_styles.loc[df['RS(90)'] > 0, 'RS(90)'] += 'color: #d62728; font-weight: bold;'
+        df_styles.loc[df['RS(90)'] <= 0, 'RS(90)'] += 'color: #bbbbbb;'
+    if 'RS(10)' in df.columns:
+        df_styles.loc[df['RS(10)'] > 0, 'RS(10)'] += 'color: #d62728; font-weight: bold;'
+        df_styles.loc[df['RS(10)'] <= 0, 'RS(10)'] += 'color: #bbbbbb;'
+
+    # 💡 [요청사항 4] 10위, 20위, 30위까지의 행 배경색 차등 적용
+    if '순위' in df.columns:
+        for idx, rank in df['순위'].items():
+            if pd.notna(rank):
+                if rank <= 10:
+                    df_styles.loc[idx, :] = df_styles.loc[idx, :] + 'background-color: rgba(255, 235, 156, 0.4);' # 1~10위 (연노랑)
+                elif rank <= 20:
+                    df_styles.loc[idx, :] = df_styles.loc[idx, :] + 'background-color: rgba(198, 239, 206, 0.4);' # 11~20위 (연초록)
+                elif rank <= 30:
+                    df_styles.loc[idx, :] = df_styles.loc[idx, :] + 'background-color: rgba(189, 215, 238, 0.4);' # 21~30위 (연파랑)
+                    
     return df_styles
 
 # 시장(Market)에 따른 보유 종목 테이블명 반환
@@ -194,7 +215,7 @@ def get_data(target_date, all_dates, market_type):
         if row['is_no6_opt']:
             return '보유중' if is_in_holdings else '매수추천'
         else:
-            return '매도필요' if is_in_holdings else '관망'
+            return '매도필요' if is_in_holdings else '' # 💡 [요청사항 3] 관망 대신 빈문자열 반환
 
     df_final['매매상태'] = df_final.apply(classify_status, axis=1)
     
@@ -244,7 +265,7 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                     c2.markdown("<div style='color:#999999; font-size:0.85em; margin-top:8px; text-align:right;'>과거일 매매불가</div>", unsafe_allow_html=True)
 
 # --- 2. UI 메인 실행 파트 ---
-st.markdown("##### 📈 Momentum Dashboard v1.7.4")
+st.markdown("##### 📈 Momentum Dashboard v1.7.5")
 market_safe = get_market_regime()
 
 if not market_safe:
@@ -514,24 +535,33 @@ if df_display is not None:
     st.divider()
     st.markdown("##### 📉 종목별 최근 주가 및 시장 흐름 통합 추이")
     
-    distinct_tickers = sorted(df_display['ticker'].unique())
+    # 💡 [요청사항 1] 표에 있는 상위 100개 종목으로만 SelectBox 제한
+    df_top100 = df_display.head(100)
+    top100_tickers = df_top100['ticker'].tolist()
+    
+    # 예외처리: 100위 밖의 종목을 표에서 직접 클릭했을 경우 옵션 리스트에 임시 추가
+    if 'selected_ticker_from_table' in st.session_state:
+        target_ticker = st.session_state['selected_ticker_from_table']
+        if target_ticker not in top100_tickers:
+            top100_tickers.append(target_ticker)
+
     ticker_name_map = dict(zip(df_display['ticker'], df_display['종목명']))
     
-    # 💡 [수정] 표 클릭 내역이 없으면 순위 1위 종목을 기본으로 찾아서 설정
+    # 표 클릭 이벤트가 없으면 전체 중 모멘텀 순위 1위 종목이 기본 조회되도록 처리
     default_ticker = None
-    if not df_display.empty:
-        default_ticker = df_display.loc[df_display['순위'].idxmin(), 'ticker']
+    if not df_top100.empty:
+        default_ticker = df_top100.loc[df_top100['순위'].idxmin(), 'ticker']
     
     if 'selected_ticker_from_table' in st.session_state:
         target_ticker = st.session_state['selected_ticker_from_table']
-        if target_ticker in distinct_tickers:
+        if target_ticker in top100_tickers:
             default_ticker = target_ticker
             
-    default_index = distinct_tickers.index(default_ticker) if default_ticker in distinct_tickers else 0
+    default_index = top100_tickers.index(default_ticker) if default_ticker in top100_tickers else 0
             
     selected_chart_ticker = st.selectbox(
         "분석할 종목을 선택하세요 (위 표에서 종목 행을 직접 클릭해도 자동으로 변경됩니다)", 
-        options=distinct_tickers, 
+        options=top100_tickers, 
         index=default_index,
         format_func=lambda x: f"{ticker_name_map.get(x, x)}"
     )
