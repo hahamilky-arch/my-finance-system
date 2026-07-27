@@ -11,7 +11,7 @@ st.set_page_config(layout="wide")
 # 최상단 앵커 (플로팅 버튼 클릭 시 이동할 타겟)
 st.markdown("<div id='top-section'></div>", unsafe_allow_html=True)
 
-# 상단 여백 조정 및 센스 있는 왼쪽 하단 플로팅 버튼 CSS
+# 상단 여백 조정 및 왼쪽 하단 플로팅 버튼 CSS
 st.markdown("""
     <style>
     .block-container {
@@ -25,7 +25,6 @@ st.markdown("""
         font-size: 1.2rem !important;
         margin-bottom: 0.5rem !important;
     }
-    /* 💡 센스 있는 왼쪽 하단 플로팅 캡슐 버튼 스타일 */
     .floating-btn-left {
         position: fixed;
         bottom: 25px;
@@ -52,7 +51,6 @@ st.markdown("""
         background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
     }
     </style>
-    <!-- 플로팅 버튼 HTML (왼쪽 하단 배치) -->
     <a href="#top-section" class="floating-btn-left" title="상단 표로 이동">
         <span>⬆️</span> <span>상단 표로 이동</span>
     </a>
@@ -237,7 +235,10 @@ def get_data(target_date, all_dates, market_type):
     df_final['is_new_top30'] = (df_final['순위'] <= 30) & (df_final['순위_prev'] > 30)
     df_final['is_pullback'] = (df_final['순위'] <= 100) & (df_final['RS(90)'] > 0) & (df_final['변동'] > 0)
     df_final['MA20'] = df_final['MA20'].fillna(0)
-    df_final['is_no6_opt'] = (df_final['순위'] <= 30) & (df_final['RS(90)'] > 0) & (df_final['종가'] > df_final['MA20']) & (df_final['MA20'] > 0)
+    
+    # 💡 백테스트 검증 최적 전략 조건
+    # 매수 조건: 모멘텀 순위 30위 이내 + RS(90) > 0 + 종가 > MA20 (MA20 정상 산출)
+    df_final['is_no6_opt'] = (df_final['순위'] <= 30) & (df_final['RS(90)'] > 0) & (df_final['MA20'] > 0) & (df_final['종가'] > df_final['MA20'])
     
     df_stocks = pd.DataFrame(supabase.table("stocks").select("ticker, name").execute().data)
     if not df_stocks.empty:
@@ -253,12 +254,18 @@ def get_data(target_date, all_dates, market_type):
 
     my_holdings = get_current_holdings(market_type)
 
+    # 💡 보유 여부 및 백테스트 매매 조건에 따른 상태 분류
     def classify_status(row):
         is_in_holdings = row['ticker'] in my_holdings
-        if row['is_no6_opt']:
-            return '보유중' if is_in_holdings else '매수추천'
+        if is_in_holdings:
+            # 매도 필요 조건: 20일선 이탈(종가 < MA20) OR 모멘텀 순위 30위 밖 하락
+            if (row['MA20'] > 0 and row['종가'] < row['MA20']) or (row['순위'] > 30):
+                return '매도필요'
+            return '보유중'
         else:
-            return '매도필요' if is_in_holdings else '' 
+            if row['is_no6_opt']:
+                return '매수추천'
+            return ''
 
     df_final['매매상태'] = df_final.apply(classify_status, axis=1)
     
@@ -376,9 +383,9 @@ if df_display is not None:
                 st.session_state['selected_ticker_from_table'] = clicked_ticker
                 st.session_state['trigger_scroll'] = True
 
-    # --- Tab 4 (매매 지시서 구역) ---
+    # --- Tab 4 (백테스트 최적화 기반 매매 지시서 구역) ---
     with tab4:
-        st.markdown("##### 📋 오늘의 매매 지시서")
+        st.markdown("##### 📋 백테스트 최적화 기반 매매 지시서")
         
         if not is_latest_date:
             st.warning("⚠️ 과거 영업일의 데이터를 조회 중입니다. 시스템 및 개별 매매는 가장 최근 영업일에만 활성화됩니다.")
@@ -410,6 +417,7 @@ if df_display is not None:
             except Exception as e:
                 holdings_db = pd.DataFrame()
 
+            # 💼 보유 종목 현황 및 -5% 손절 감지 알림
             with st.expander(f"💼 현재 {market_type} 시장 보유 종목 ({len(holdings_db)}개)", expanded=True):
                 if holdings_db.empty:
                     st.info("보유 종목이 없습니다.")
@@ -436,8 +444,7 @@ if df_display is not None:
                         
                         raw_qty = h_row.get('quantity', 1.0)
                         qty = float(raw_qty) if pd.notna(raw_qty) and raw_qty is not None else 1.0
-                        if qty <= 0:
-                            qty = 0.000001
+                        if qty <= 0: qty = 0.000001
                         
                         curr_row = df_display[df_display['ticker'] == ticker]
                         curr_price = float(curr_row['종가'].values[0]) if not curr_row.empty else buy_price
@@ -445,7 +452,15 @@ if df_display is not None:
                         profit_amount = (curr_price - buy_price) * qty if buy_price > 0 else 0.0
                         profit_rate = ((curr_price / buy_price) - 1) * 100 if buy_price > 0 else 0.0
                         
-                        p_color = "#d62728" if profit_rate > 0 else ("#1f77b4" if profit_rate < 0 else "#555555")
+                        # 💡 -5% 이하 감지 시 손절 경고 문구 추가
+                        stop_loss_warning = ""
+                        if profit_rate <= -5.0:
+                            stop_loss_warning = " 🚨 [손절 경고: -5% 이탈]"
+                            p_color = "#d62728"
+                        elif profit_rate > 0:
+                            p_color = "#d62728"
+                        else:
+                            p_color = "#1f77b4"
                         
                         c1, c2 = st.columns([4, 1])
                         
@@ -453,7 +468,7 @@ if df_display is not None:
                         <div style="line-height: 1.6;">
                             <strong style="font-size: 1.1em; color: #111111;">{name}</strong> 
                             <span style="font-size: 0.95em; font-weight: bold; color: {p_color}; margin-left: 12px;">
-                                {profit_rate:+.2f}% ({profit_amount:+,.0f}원)
+                                {profit_rate:+.2f}% ({profit_amount:+,.0f}원){stop_loss_warning}
                             </span>
                             <br>
                             <span style="color: #555555; font-size: 0.85em;">
@@ -479,14 +494,26 @@ if df_display is not None:
             st.write("") 
             df_rebal = df_display[df_display['매매상태'].isin(['매도필요', '매수추천'])]
             
-            display_trade_list(df_rebal[df_rebal['매매상태'] == '매도필요'], "시스템 매도 필요", "매도", "sys_s", selected_date, is_latest_date, market_type, holdings_db)
-            display_trade_list(df_rebal[df_rebal['매매상태'] == '매수추천'], "시스템 매수 추천", "매수", "sys_b", selected_date, is_latest_date, market_type, holdings_db)
+            display_trade_list(df_rebal[df_rebal['매매상태'] == '매도필요'], "시스템 매도 필요 종목", "매도", "sys_s", selected_date, is_latest_date, market_type, holdings_db)
+            display_trade_list(df_rebal[df_rebal['매매상태'] == '매수추천'], "시스템 매수 추천 종목", "매수", "sys_b", selected_date, is_latest_date, market_type, holdings_db)
         
             st.divider()
-            with st.expander("🔍 No.6 전략 필터링 조건 보기"):
+            with st.expander("🔍 백테스트 검증 필터링 조건 보기"):
                 c1, c2 = st.columns(2)
-                with c1: st.markdown("**[매수 조건]**\n- 순위: 30위 이내\n- RS: 0 초과\n- 추세: 종가 > MA20")
-                with c2: st.markdown("**[매도 조건]**\n- 순위: 30위 밖\n- 추세: 종가 < MA20")
+                with c1: 
+                    st.markdown("""
+                    **[진입/매수 조건]**
+                    - **순위:** 모멘텀 순위 30위 이내
+                    - **RS:** RS(90) 점수 0 초과 (시장 대비 강세)
+                    - **추세:** 현재가 > 20일 이동평균선 (MA20 정상 산출 필수)
+                    """)
+                with c2: 
+                    st.markdown("""
+                    **[청산/매도 조건]**
+                    - **추세 이탈:** 현재가 < 20일 이동평균선(MA20)
+                    - **순위 하락:** 모멘텀 순위 30위 밖으로 이탈
+                    - **손절 라인:** 보유 종목 손익률 **-5.0% 이탈 시 즉시 손절**
+                    """)
 
     # --- Tab 5 (성과 분석 구역) ---
     with tab5:
