@@ -221,12 +221,10 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg):
     df_final['is_pullback'] = (df_final['순위'] <= 100) & (df_final['RS(90)'] > 0) & (df_final['변동'] > 0)
     df_final['MA20'] = df_final['MA20'].fillna(0)
     
-    # --- 수정 구역: 30위 이내 및 RS(90) > 0, RS(10) > 0 조건 추가 ---
     tech_cond = (df_final['순위'] <= 30) & (df_final['RS(90)'] > 0) & (df_final['RS(10)'] > 0) & (df_final['MA20'] > 0) & (df_final['종가'] > df_final['MA20'])
     df_final['is_no6_opt'] = False
     valid_indices = df_final[tech_cond].nsmallest(int(top_n_cfg), '순위').index
     df_final.loc[valid_indices, 'is_no6_opt'] = True
-    # -----------------------------------------------------------
     
     df_stocks = pd.DataFrame(supabase.table("stocks").select("ticker, name").execute().data)
     if not df_stocks.empty:
@@ -314,6 +312,24 @@ market_safe = get_market_regime()
 if 'trigger_scroll' not in st.session_state:
     st.session_state['trigger_scroll'] = False
 
+# DB에서 설정값 불러오기 (앱 구동 시 1회)
+if 'db_settings_loaded' not in st.session_state:
+    try:
+        res = supabase.table("strategy_settings").select("*").eq("id", 1).execute()
+        if res.data:
+            db_cfg = res.data[0]
+            st.session_state['bull_top_n'] = int(db_cfg.get('bull_top_n', 3))
+            st.session_state['bull_sl'] = float(db_cfg.get('bull_sl', -3.0))
+            st.session_state['bull_trig'] = float(db_cfg.get('bull_trig', 20.0))
+            st.session_state['bull_stop'] = float(db_cfg.get('bull_stop', -10.0))
+            st.session_state['bear_top_n'] = int(db_cfg.get('bear_top_n', 1))
+            st.session_state['bear_sl'] = float(db_cfg.get('bear_sl', -1.0))
+            st.session_state['bear_trig'] = float(db_cfg.get('bear_trig', 5.0))
+            st.session_state['bear_stop'] = float(db_cfg.get('bear_stop', -3.0))
+    except Exception as e:
+        pass # 테이블이 없거나 에러 시 기본값 유지
+    st.session_state['db_settings_loaded'] = True
+
 # 사이드바 매매 전략 조건 설정 구역
 with st.sidebar:
     st.markdown("### ⚙️ 전략 매매 조건 설정")
@@ -347,11 +363,12 @@ with st.sidebar:
 
     st.divider()
     
-    with st.expander("💾 설정값 저장 (비밀번호 필요)", expanded=False):
+    with st.expander("💾 설정값 DB 저장 (비밀번호 필요)", expanded=False):
         config_pwd = st.text_input("매매 비밀번호 입력", type="password", key="pwd_config")
         
-        if st.button("현재 설정값 저장", use_container_width=True):
+        if st.button("현재 설정값 DB에 저장", use_container_width=True):
             if config_pwd == st.secrets.get("TRADE_PASSWORD", "1234"):
+                # 1. 세션 스테이트 갱신
                 if is_bull:
                     st.session_state['bull_top_n'] = top_n_cfg
                     st.session_state['bull_sl'] = sl_cfg
@@ -363,7 +380,24 @@ with st.sidebar:
                     st.session_state['bear_trig'] = trig_cfg
                     st.session_state['bear_stop'] = stop_cfg
                 
-                st.success("✅ 현재 설정값이 세션에 성공적으로 저장되었습니다.")
+                # 2. Supabase DB 갱신
+                settings_data = {
+                    "id": 1,
+                    "bull_top_n": int(st.session_state.get('bull_top_n', 3)),
+                    "bull_sl": float(st.session_state.get('bull_sl', -3.0)),
+                    "bull_trig": float(st.session_state.get('bull_trig', 20.0)),
+                    "bull_stop": float(st.session_state.get('bull_stop', -10.0)),
+                    "bear_top_n": int(st.session_state.get('bear_top_n', 1)),
+                    "bear_sl": float(st.session_state.get('bear_sl', -1.0)),
+                    "bear_trig": float(st.session_state.get('bear_trig', 5.0)),
+                    "bear_stop": float(st.session_state.get('bear_stop', -3.0))
+                }
+                
+                try:
+                    supabase.table("strategy_settings").upsert(settings_data).execute()
+                    st.success("✅ 현재 설정값이 Supabase DB에 성공적으로 저장되었습니다.")
+                except Exception as e:
+                    st.error(f"❌ DB 저장 중 오류가 발생했습니다: {e}")
             else:
                 st.error("❌ 비밀번호가 일치하지 않습니다.")
 
