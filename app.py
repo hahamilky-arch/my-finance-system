@@ -240,7 +240,7 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg):
     def classify_status(row):
         is_in_holdings = row['ticker'] in my_holdings
         if is_in_holdings:
-            if (row['MA20'] > 0 and row['종가'] < row['MA20']) or (row['순위'] > 30):
+            if (row['MA20'] > 0 and row['종가'] < row['MA20']) or (row['순위'] > top_n_cfg):
                 return '매도필요'
             return '보유중'
         else:
@@ -252,7 +252,7 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg):
     
     return df_final.sort_values('순위')
 
-def display_trade_list(data, title, button_label, key_prefix, target_date, is_latest_date, market_type, holdings_df):
+def display_trade_list(data, title, button_label, key_prefix, target_date, is_latest_date, market_type, holdings_df, top_n_cfg):
     with st.expander(f"🚨 {title} ({len(data)}개)", expanded=True):
         if data.empty:
             st.write(f"해당되는 {button_label} 종목이 없습니다.")
@@ -262,9 +262,9 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                 c1, c2 = st.columns([4, 1])
                 
                 if '매도' in title:
-                    reason_desc = "20일 이동평균선 이탈 (`종가 < MA20`) 또는 순위 밀림 발생"
+                    reason_desc = f"20일 이동평균선 이탈 (`종가 < MA20`) 또는 순위 {top_n_cfg}위 밀림 발생"
                 else:
-                    reason_desc = f"모멘텀 상위 {row['순위']}위, RS(90) {row['RS(90)']:.2f} (0 초과) 및 20일선 정배열 충족"
+                    reason_desc = f"모멘텀 상위 {row['순위']}위 (Top {top_n_cfg} 이내), RS(90) {row['RS(90)']:.2f} (0 초과) 및 20일선 정배열 충족"
 
                 c1.markdown(f"""
                 <div style="line-height: 1.6; margin-top: 4px;">
@@ -276,7 +276,7 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                     </span>
                     <br>
                     <span style="font-size: 0.85em; color: #444444;">
-                        MOT: {row['MOT']:.2f} | RS(90): {row['RS(90)']:.2f} | RS(10): {row['RS(10)']:.2f}
+                        MOT: {row['MOT']:.2f} | RS(90): {row['RS(90)']:.2f} | RS(10): {row['RS(10)']}
                     </span>
                 </div>
                 """, unsafe_allow_html=True)
@@ -352,7 +352,6 @@ if all_dates and selected_date:
 df_display = get_data(selected_date, all_dates, market_type, top_n_cfg, sl_cfg)
 
 if df_display is not None:
-    # 4번 탭명을 '🚀 알파 시그널'로 직관성 있게 변경
     tab1, tab2, tab3, tab4, tab5 = st.tabs(["Overview", "New Entries", "🎯 Pullback", "🚀 알파 시그널", "📊 성과 분석"])
     
     col_order = ['순위', '변동', '매매상태', '종목명', 'MOT', 'RS(90)', 'RS(10)', '종가', '상승금액', 'MA20', 'ticker'] 
@@ -377,9 +376,15 @@ if df_display is not None:
                 st.session_state['selected_ticker_from_table'] = clicked_ticker
                 st.session_state['trigger_scroll'] = True
 
-    # --- 4번 탭: 누락된 잠금 기능 완벽 복구 ---
     with tab4:
         st.markdown("##### 📋 시스템 매매 지시서 (알파 시그널)")
+        
+        # --- 매수/매도 기준 안내 추가 ---
+        st.info(f"""
+        📌 **매수·매도 기준 안내**
+        * **매수 추천 기준**: 모멘텀 순위 상위 **{top_n_cfg}위 이내**, RS(90) > 0, 20일 이동평균선 정배열(`종가 > MA20`)을 모두 만족하는 종목
+        * **매도 필요 기준**: 보유 종목 중 20일 이동평균선 이탈(`종가 < MA20`) 또는 순위가 상위 **{top_n_cfg}위** 밖으로 밀려난 종목
+        """)
         
         if not st.session_state.get('trade_authenticated', False):
             st.info("🔒 실제 매매 신호 및 보유 종목 확인을 위해 비밀번호를 입력해 주십시오.")
@@ -444,8 +449,8 @@ if df_display is not None:
                         st.markdown(f"**{display_name}** | Profit: {profit_rate:+.2f}%{warning_desc}")
 
             df_rebal = df_display[df_display['매매상태'].isin(['매도필요', '매수추천'])]
-            display_trade_list(df_rebal[df_rebal['매매상태'] == '매도필요'], "시스템 매도 필요 종목", "매도", "sys_s", selected_date, is_latest_date, market_type, holdings_db)
-            display_trade_list(df_rebal[df_rebal['매매상태'] == '매수추천'], "시스템 매수 추천 종목", "매수", "sys_b", selected_date, is_latest_date, market_type, holdings_db)
+            display_trade_list(df_rebal[df_rebal['매매상태'] == '매도필요'], "시스템 매도 필요 종목", "매도", "sys_s", selected_date, is_latest_date, market_type, holdings_db, top_n_cfg)
+            display_trade_list(df_rebal[df_rebal['매매상태'] == '매수추천'], "시스템 매수 추천 종목", "매수", "sys_b", selected_date, is_latest_date, market_type, holdings_db, top_n_cfg)
 
     # --- 5번 탭: 성과 분석 구역 ---
     with tab5:
