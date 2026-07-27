@@ -3,11 +3,12 @@ import pandas as pd
 from supabase import create_client
 import altair as alt
 import streamlit.components.v1 as components
+import time  # 💡 [추가] 캐싱 방지용 타임스탬프 생성을 위해 추가
 
 # 백지화 방지를 위해 최상단 배치
 st.set_page_config(layout="wide")
 
-# 💡 최상단 앵커 (플로팅 버튼 클릭 시 이동할 타겟)
+# 최상단 앵커 (플로팅 버튼 클릭 시 이동할 타겟)
 st.markdown("<div id='top-section'></div>", unsafe_allow_html=True)
 
 # 상단 여백 조정 및 플로팅 버튼 CSS
@@ -24,7 +25,7 @@ st.markdown("""
         font-size: 1.2rem !important;
         margin-bottom: 0.5rem !important;
     }
-    /* 💡 우측 하단 위로가기 플로팅 버튼 스타일 */
+    /* 우측 하단 위로가기 플로팅 버튼 스타일 */
     .floating-btn {
         position: fixed;
         bottom: 30px;
@@ -56,14 +57,16 @@ supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
 
 # JS 자동 스크롤 함수
 def scroll_to_chart():
-    js = """
+    # 💡 [수정] time.time()을 주입하여 매번 새로운 스트링으로 강제 인식시켜 중복 클릭 시에도 스크롤 작동
+    js = f"""
     <script>
-        setTimeout(function() {
+        /* Timestamp for cache busting: {time.time()} */
+        setTimeout(function() {{
             const el = window.parent.document.getElementById('chart-section');
-            if (el) {
-                el.scrollIntoView({behavior: 'smooth', block: 'start'});
-            }
-        }, 100);
+            if (el) {{
+                el.scrollIntoView({{behavior: 'smooth', block: 'start'}});
+            }}
+        }}, 100);
     </script>
     """
     components.html(js, height=0)
@@ -304,7 +307,7 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                     c2.markdown("<div style='color:#999999; font-size:0.85em; margin-top:8px; text-align:right;'>과거일 매매불가</div>", unsafe_allow_html=True)
 
 # --- 2. UI 메인 실행 파트 ---
-st.markdown("##### 📈 Momentum Dashboard v1.7.6")
+st.markdown("##### 📈 Momentum Dashboard v1.7.7")
 market_safe = get_market_regime()
 
 if not market_safe:
@@ -365,7 +368,6 @@ if df_display is not None:
                 key=f"df_tab_{i}"
             )
             
-            # 💡 [요청사항 1] 체크박스 선택 시 스크롤 트리거 활성화
             if event and "rows" in event.get("selection", {}) and event["selection"]["rows"]:
                 selected_row_idx = event["selection"]["rows"][0]
                 clicked_ticker = df_target.iloc[selected_row_idx]['ticker']
@@ -575,7 +577,7 @@ if df_display is not None:
     # --- 📉 하단 주가 및 모멘텀 순위 시계열 차트 구역 ---
     st.divider()
     
-    # 💡 [요청사항 1] 스크롤 이동 타겟 앵커
+    # 스크롤 이동 타겟 앵커
     st.markdown("<div id='chart-section'></div>", unsafe_allow_html=True)
     st.markdown("##### 📉 종목별 최근 주가 및 시장 흐름 통합 추이")
     
