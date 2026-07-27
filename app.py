@@ -382,7 +382,7 @@ df_display = get_data(selected_date, all_dates, market_type, top_n_cfg, sl_cfg)
 if df_display is not None:
     tab1, tab2, tab3, tab4, tab5 = st.tabs(["Overview", "New Entries", "🎯 Pullback", "🚀 알파 시그널", "📊 성과 분석"])
     
-    col_order = ['순위', '변동', '매매상태', '종목명', 'MOT', 'RS(90)', 'RS(10)', 'MA20, '종가', '상승금액'', 'ticker'] 
+    col_order = ['순위', '변동', '매매상태', '종목명', 'MOT', 'RS(90)', 'RS(10)', 'MA20', '종가', '상승금액'', 'ticker'] 
     tab_dfs = [df_display.head(100), df_display[df_display['is_new_top30']], df_display[df_display['is_pullback']], df_display[df_display['is_no6_opt']]]
 
     for i, tab in enumerate([tab1, tab2, tab3]):
