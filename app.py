@@ -236,9 +236,8 @@ def get_data(target_date, all_dates, market_type):
     df_final['is_pullback'] = (df_final['순위'] <= 100) & (df_final['RS(90)'] > 0) & (df_final['변동'] > 0)
     df_final['MA20'] = df_final['MA20'].fillna(0)
     
-    # 💡 백테스트 검증 최적 전략 조건
-    # 매수 조건: 모멘텀 순위 30위 이내 + RS(90) > 0 + 종가 > MA20 (MA20 정상 산출)
-    df_final['is_no6_opt'] = (df_final['순위'] <= 30) & (df_final['RS(90)'] > 0) & (df_final['MA20'] > 0) & (df_final['종가'] > df_final['MA20'])
+    # 💡 백테스트 최적화 조건: 모멘텀 30위 이내 + RS(90) > 0 + RS(10) > 0 + 종가 > MA20
+    df_final['is_no6_opt'] = (df_final['순위'] <= 30) & (df_final['RS(90)'] > 0) & (df_final['RS(10)'] > 0) & (df_final['MA20'] > 0) & (df_final['종가'] > df_final['MA20'])
     
     df_stocks = pd.DataFrame(supabase.table("stocks").select("ticker, name").execute().data)
     if not df_stocks.empty:
@@ -254,12 +253,11 @@ def get_data(target_date, all_dates, market_type):
 
     my_holdings = get_current_holdings(market_type)
 
-    # 💡 보유 여부 및 백테스트 매매 조건에 따른 상태 분류
+    # 💡 보유 여부 및 매매 조건에 따른 상태 분류 (매도: 20일선 이탈 OR RS(10) <= 0 OR 순위 30위 밖)
     def classify_status(row):
         is_in_holdings = row['ticker'] in my_holdings
         if is_in_holdings:
-            # 매도 필요 조건: 20일선 이탈(종가 < MA20) OR 모멘텀 순위 30위 밖 하락
-            if (row['MA20'] > 0 and row['종가'] < row['MA20']) or (row['순위'] > 30):
+            if (row['MA20'] > 0 and row['종가'] < row['MA20']) or (row['RS(10)'] <= 0) or (row['순위'] > 30):
                 return '매도필요'
             return '보유중'
         else:
@@ -383,7 +381,7 @@ if df_display is not None:
                 st.session_state['selected_ticker_from_table'] = clicked_ticker
                 st.session_state['trigger_scroll'] = True
 
-    # --- Tab 4 (백테스트 최적화 기반 매매 지시서 구역) ---
+    # --- Tab 4 (백테스트 최적화 매매 지시서 구역) ---
     with tab4:
         st.markdown("##### 📋 백테스트 최적화 기반 매매 지시서")
         
@@ -452,7 +450,7 @@ if df_display is not None:
                         profit_amount = (curr_price - buy_price) * qty if buy_price > 0 else 0.0
                         profit_rate = ((curr_price / buy_price) - 1) * 100 if buy_price > 0 else 0.0
                         
-                        # 💡 -5% 이하 감지 시 손절 경고 문구 추가
+                        # 💡 -5% 이하 손절 이탈 감지 알림 표시
                         stop_loss_warning = ""
                         if profit_rate <= -5.0:
                             stop_loss_warning = " 🚨 [손절 경고: -5% 이탈]"
@@ -498,19 +496,22 @@ if df_display is not None:
             display_trade_list(df_rebal[df_rebal['매매상태'] == '매수추천'], "시스템 매수 추천 종목", "매수", "sys_b", selected_date, is_latest_date, market_type, holdings_db)
         
             st.divider()
-            with st.expander("🔍 백테스트 검증 필터링 조건 보기"):
+            # 💡 [매매 조건 안내 사항 표시 구역]
+            with st.expander("🔍 백테스트 검증 최적 매매 전략 및 필터링 조건 안내", expanded=True):
                 c1, c2 = st.columns(2)
                 with c1: 
                     st.markdown("""
-                    **[진입/매수 조건]**
-                    - **순위:** 모멘텀 순위 30위 이내
-                    - **RS:** RS(90) 점수 0 초과 (시장 대비 강세)
-                    - **추세:** 현재가 > 20일 이동평균선 (MA20 정상 산출 필수)
+                    **[매수 조건 (Entry Rule)]**
+                    - **모멘텀 순위:** 상위 30위 이내 (`순위 <= 30`)
+                    - **중장기 강세:** `RS(90) > 0`
+                    - **단기 수급:** `RS(10) > 0` (단기 탄력성 확보)
+                    - **추세 정배열:** 현재가 > 20일 이동평균선 (`종가 > MA20`, MA20 정상 산출 필수)
                     """)
                 with c2: 
                     st.markdown("""
-                    **[청산/매도 조건]**
-                    - **추세 이탈:** 현재가 < 20일 이동평균선(MA20)
+                    **[매도 조건 (Exit Rule)]**
+                    - **추세 이탈:** 현재가 < 20일 이동평균선 (`종가 < MA20`)
+                    - **단기 수급 이탈:** `RS(10) <= 0` 전환 시
                     - **순위 하락:** 모멘텀 순위 30위 밖으로 이탈
                     - **손절 라인:** 보유 종목 손익률 **-5.0% 이탈 시 즉시 손절**
                     """)
