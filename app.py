@@ -3,7 +3,7 @@ import pandas as pd
 from supabase import create_client
 import altair as alt
 import streamlit.components.v1 as components
-import time  # 💡 [추가] 캐싱 방지용 타임스탬프 생성을 위해 추가
+import time
 
 # 백지화 방지를 위해 최상단 배치
 st.set_page_config(layout="wide")
@@ -11,7 +11,7 @@ st.set_page_config(layout="wide")
 # 최상단 앵커 (플로팅 버튼 클릭 시 이동할 타겟)
 st.markdown("<div id='top-section'></div>", unsafe_allow_html=True)
 
-# 상단 여백 조정 및 플로팅 버튼 CSS
+# 상단 여백 조정 및 센스 있는 왼쪽 하단 플로팅 버튼 CSS
 st.markdown("""
     <style>
     .block-container {
@@ -25,31 +25,37 @@ st.markdown("""
         font-size: 1.2rem !important;
         margin-bottom: 0.5rem !important;
     }
-    /* 우측 하단 위로가기 플로팅 버튼 스타일 */
-    .floating-btn {
+    /* 💡 센스 있는 왼쪽 하단 플로팅 캡슐 버튼 스타일 */
+    .floating-btn-left {
         position: fixed;
-        bottom: 30px;
-        right: 30px;
-        background-color: #1f77b4;
+        bottom: 25px;
+        left: 25px;
+        background: linear-gradient(135deg, #2b5876 0%, #4e4376 100%);
         color: white !important;
-        border-radius: 50%;
-        width: 50px;
-        height: 50px;
-        text-align: center;
-        line-height: 50px;
-        font-size: 24px;
-        box-shadow: 2px 2px 5px rgba(0,0,0,0.3);
+        border-radius: 30px;
+        padding: 10px 18px;
+        font-size: 13px;
+        font-weight: bold;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.2);
         cursor: pointer;
         z-index: 99999;
         text-decoration: none;
-        transition: background-color 0.3s;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        transition: all 0.3s ease;
+        border: 1px solid rgba(255,255,255,0.2);
     }
-    .floating-btn:hover {
-        background-color: #155c8a;
+    .floating-btn-left:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+        background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
     }
     </style>
-    <!-- 플로팅 버튼 HTML -->
-    <a href="#top-section" class="floating-btn" title="위로 가기">⬆️</a>
+    <!-- 플로팅 버튼 HTML (왼쪽 하단 배치) -->
+    <a href="#top-section" class="floating-btn-left" title="상단 표로 이동">
+        <span>⬆️</span> <span>상단 표로 이동</span>
+    </a>
 """, unsafe_allow_html=True)
 
 # Supabase 연결
@@ -57,7 +63,6 @@ supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
 
 # JS 자동 스크롤 함수
 def scroll_to_chart():
-    # 💡 [수정] time.time()을 주입하여 매번 새로운 스트링으로 강제 인식시켜 중복 클릭 시에도 스크롤 작동
     js = f"""
     <script>
         /* Timestamp for cache busting: {time.time()} */
@@ -75,7 +80,6 @@ def scroll_to_chart():
 def apply_styles(df):
     df_styles = pd.DataFrame('', index=df.index, columns=df.columns)
     
-    # 텍스트 컬러링 기본
     if '변동' in df.columns:
         df_styles.loc[df['변동'] > 0, '변동'] += 'color: red;'
         df_styles.loc[df['변동'] < 0, '변동'] += 'color: blue;'
@@ -83,13 +87,11 @@ def apply_styles(df):
         df_styles.loc[df['상승금액'] > 0, '상승금액'] += 'color: red;'
         df_styles.loc[df['상승금액'] < 0, '상승금액'] += 'color: blue;'
     
-    # 매매상태 컬러링
     if '매매상태' in df.columns:
         df_styles.loc[df['매매상태'] == '매수추천', '매매상태'] += 'color: #d62728; font-weight: bold;'
         df_styles.loc[df['매매상태'] == '매도필요', '매매상태'] += 'color: #1f77b4; font-weight: bold;'
         df_styles.loc[df['매매상태'] == '보유중', '매매상태'] += 'color: #2ca02c; font-weight: bold;'
 
-    # RS값 색상 지정
     if 'RS(90)' in df.columns:
         df_styles.loc[df['RS(90)'] > 0, 'RS(90)'] += 'color: #d62728; font-weight: bold;'
         df_styles.loc[df['RS(90)'] <= 0, 'RS(90)'] += 'color: #bbbbbb;'
@@ -97,7 +99,6 @@ def apply_styles(df):
         df_styles.loc[df['RS(10)'] > 0, 'RS(10)'] += 'color: #d62728; font-weight: bold;'
         df_styles.loc[df['RS(10)'] <= 0, 'RS(10)'] += 'color: #bbbbbb;'
 
-    # 순위 배경색 차등 적용
     if '순위' in df.columns:
         for idx, rank in df['순위'].items():
             if pd.notna(rank):
@@ -307,7 +308,7 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                     c2.markdown("<div style='color:#999999; font-size:0.85em; margin-top:8px; text-align:right;'>과거일 매매불가</div>", unsafe_allow_html=True)
 
 # --- 2. UI 메인 실행 파트 ---
-st.markdown("##### 📈 Momentum Dashboard v1.7.7")
+st.markdown("##### 📈 Momentum Dashboard v1.7.8")
 market_safe = get_market_regime()
 
 if not market_safe:
@@ -577,19 +578,16 @@ if df_display is not None:
     # --- 📉 하단 주가 및 모멘텀 순위 시계열 차트 구역 ---
     st.divider()
     
-    # 스크롤 이동 타겟 앵커
     st.markdown("<div id='chart-section'></div>", unsafe_allow_html=True)
     st.markdown("##### 📉 종목별 최근 주가 및 시장 흐름 통합 추이")
     
-    # 표에서 클릭(선택)이 감지되어 trigger_scroll이 True가 되었다면 JS 실행
     if st.session_state.get('trigger_scroll'):
         scroll_to_chart()
-        st.session_state['trigger_scroll'] = False # 1회 실행 후 초기화
+        st.session_state['trigger_scroll'] = False 
     
     df_top100 = df_display.head(100)
     top100_tickers = df_top100['ticker'].tolist()
     
-    # 예외처리: 100위 밖의 종목을 표에서 직접 클릭했을 경우 옵션 리스트에 임시 추가
     if 'selected_ticker_from_table' in st.session_state:
         target_ticker = st.session_state['selected_ticker_from_table']
         if target_ticker not in top100_tickers:
