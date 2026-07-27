@@ -1,7 +1,7 @@
-import sys
+import yfinance as yf
 from datetime import datetime, timedelta
 from database.client import supabase
-import yfinance as yf
+
 
 def sync_us_stocks_1year(target_ticker=None):
     """
