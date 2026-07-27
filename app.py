@@ -97,6 +97,12 @@ def apply_styles(df):
         df_styles.loc[df['RS(10)'] > 0, 'RS(10)'] += 'color: #d62728; font-weight: bold;'
         df_styles.loc[df['RS(10)'] <= 0, 'RS(10)'] += 'color: #bbbbbb;'
 
+    # 💡 [요구사항 반영] 주가가 MA20보다 위인 경우에는 MA20 강조, 아니면 흐리게
+    if '종가' in df.columns and 'MA20' in df.columns:
+        above_ma20 = (df['MA20'] > 0) & (df['종가'] > df['MA20'])
+        df_styles.loc[above_ma20, 'MA20'] += 'color: #d62728; font-weight: bold;'
+        df_styles.loc[~above_ma20, 'MA20'] += 'color: #aaaaaa;'
+
     if '순위' in df.columns:
         for idx, rank in df['순위'].items():
             if pd.notna(rank):
@@ -516,7 +522,7 @@ if df_display is not None:
                     - **손절 라인:** 보유 종목 손익률 **-5.0% 이탈 시 즉시 손절**
                     """)
 
-    # --- Tab 5 (성과 분석 구역) ---
+    # --- Tab 5 (성과 분석 구역 - 💡 기간 조회 기능 추가) ---
     with tab5:
         st.markdown(f"##### 📊 {market_type} 시장 매매 성과 분석")
         
@@ -549,59 +555,79 @@ if df_display is not None:
             if not history_res.data:
                 st.info("청산된 매매 이력이 존재하지 않습니다.")
             else:
-                df_hist = pd.DataFrame(history_res.data)
-                df_stocks_info = pd.DataFrame(supabase.table("stocks").select("ticker, name").execute().data)
-                if not df_stocks_info.empty:
-                    df_stocks_info['ticker'] = df_stocks_info['ticker'].astype(str).str.strip()
-                    df_hist = pd.merge(df_hist, df_stocks_info, on="ticker", how="left")
-                    df_hist['종목명'] = df_hist['name'].fillna(df_hist['ticker'])
+                df_hist_raw = pd.DataFrame(history_res.data)
+                df_hist_raw['sell_date_dt'] = pd.to_datetime(df_hist_raw['sell_date'])
+                
+                # 💡 [요구사항 반영] 성과 분석 기간 조회 필터 추가
+                st.markdown("###### 📅 성과 분석 기간 설정")
+                min_sell_date = df_hist_raw['sell_date_dt'].min().date()
+                max_sell_date = df_hist_raw['sell_date_dt'].max().date()
+                
+                col_d1, col_d2 = st.columns(2)
+                with col_d1:
+                    start_date_perf = st.date_input("조회 시작일", value=min_sell_date, key="perf_start_date")
+                with col_d2:
+                    end_date_perf = st.date_input("조회 종료일", value=max_sell_date, key="perf_end_date")
+                
+                # 선택된 기간에 따른 데이터 필터링
+                mask_period = (df_hist_raw['sell_date_dt'].dt.date >= start_date_perf) & (df_hist_raw['sell_date_dt'].dt.date <= end_date_perf)
+                df_hist = df_hist_raw[mask_period].copy()
+                
+                if df_hist.empty:
+                    st.warning("선택하신 기간 내에 매도 완료된 거래 내역이 없습니다.")
                 else:
-                    df_hist['종목명'] = df_hist['ticker']
+                    df_stocks_info = pd.DataFrame(supabase.table("stocks").select("ticker, name").execute().data)
+                    if not df_stocks_info.empty:
+                        df_stocks_info['ticker'] = df_stocks_info['ticker'].astype(str).str.strip()
+                        df_hist = pd.merge(df_hist, df_stocks_info, on="ticker", how="left")
+                        df_hist['종목명'] = df_hist['name'].fillna(df_hist['ticker'])
+                    else:
+                        df_hist['종목명'] = df_hist['ticker']
 
-                if market_type == "US":
-                    df_hist['종목명'] = df_hist.apply(lambda r: f"[{r['ticker']}] {r['종목명']}", axis=1)
+                    if market_type == "US":
+                        df_hist['종목명'] = df_hist.apply(lambda r: f"[{r['ticker']}] {r['종목명']}", axis=1)
 
-                df_hist['profit_amount'] = pd.to_numeric(df_hist['profit_amount'], errors='coerce').fillna(0.0)
-                df_hist['profit_rate'] = pd.to_numeric(df_hist['profit_rate'], errors='coerce').fillna(0.0)
-                
-                total_profit = df_hist['profit_amount'].sum()
-                total_trades = len(df_hist)
-                win_trades = len(df_hist[df_hist['profit_amount'] > 0])
-                win_rate = (win_trades / total_trades * 100) if total_trades > 0 else 0.0
-                avg_return = df_hist['profit_rate'].mean()
-                
-                m1, m2, m3, m4 = st.columns(4)
-                m1.metric("총 실현 손익", f"{total_profit:,.0f} 원")
-                m2.metric("총 매매 회수", f"{total_trades} 건")
-                m3.metric("승률", f"{win_rate:.1f} %")
-                m4.metric("평균 수익률", f"{avg_return:+.2f} %")
-                
-                st.write("")
-                st.markdown("###### 📅 월별 성과 종합")
-                df_hist['sell_month'] = pd.to_datetime(df_hist['sell_date']).dt.strftime('%Y-%m')
-                df_monthly = df_hist.groupby('sell_month').agg(
-                    월간손익=('profit_amount', 'sum'),
-                    매매건수=('id', 'count'),
-                    평균수익률=('profit_rate', 'mean')
-                ).reset_index().sort_values('sell_month', ascending=False)
-                
-                st.dataframe(
-                    df_monthly.style.format({'월간손익': '{:,.0f}', '평균수익률': '{:+.2f}%'}),
-                    hide_index=True, use_container_width=True
-                )
-                
-                st.write("")
-                st.markdown("###### 📜 상세 매매 완료 내역")
-                display_hist_cols = ['sell_date', 'ticker', '종목명', 'buy_date', 'buy_price', 'sell_price', 'quantity', 'profit_amount', 'profit_rate']
-                df_hist_sorted = df_hist.sort_values('sell_date', ascending=False)
-                
-                st.dataframe(
-                    df_hist_sorted[display_hist_cols].style.format({
-                        'buy_price': '{:,.0f}', 'sell_price': '{:,.0f}', 'quantity': '{:,.6f}',
-                        'profit_amount': '{:,.0f}', 'profit_rate': '{:+.2f}%'
-                    }),
-                    hide_index=True, use_container_width=True
-                )
+                    df_hist['profit_amount'] = pd.to_numeric(df_hist['profit_amount'], errors='coerce').fillna(0.0)
+                    df_hist['profit_rate'] = pd.to_numeric(df_hist['profit_rate'], errors='coerce').fillna(0.0)
+                    
+                    total_profit = df_hist['profit_amount'].sum()
+                    total_trades = len(df_hist)
+                    win_trades = len(df_hist[df_hist['profit_amount'] > 0])
+                    win_rate = (win_trades / total_trades * 100) if total_trades > 0 else 0.0
+                    avg_return = df_hist['profit_rate'].mean()
+                    
+                    m1, m2, m3, m4 = st.columns(4)
+                    m1.metric("총 실현 손익", f"{total_profit:,.0f} 원")
+                    m2.metric("총 매매 회수", f"{total_trades} 건")
+                    m3.metric("승률", f"{win_rate:.1f} %")
+                    m4.metric("평균 수익률", f"{avg_return:+.2f} %")
+                    
+                    st.write("")
+                    st.markdown("###### 📅 월별 성과 종합")
+                    df_hist['sell_month'] = pd.to_datetime(df_hist['sell_date']).dt.strftime('%Y-%m')
+                    df_monthly = df_hist.groupby('sell_month').agg(
+                        월간손익=('profit_amount', 'sum'),
+                        매매건수=('id', 'count'),
+                        평균수익률=('profit_rate', 'mean')
+                    ).reset_index().sort_values('sell_month', ascending=False)
+                    
+                    st.dataframe(
+                        df_monthly.style.format({'월간손익': '{:,.0f}', '평균수익률': '{:+.2f}%'}),
+                        hide_index=True, use_container_width=True
+                    )
+                    
+                    st.write("")
+                    st.markdown("###### 📜 상세 매매 완료 내역")
+                    display_hist_cols = ['sell_date', 'ticker', '종목명', 'buy_date', 'buy_price', 'sell_price', 'quantity', 'profit_amount', 'profit_rate']
+                    df_hist_sorted = df_hist.sort_values('sell_date', ascending=False)
+                    
+                    st.dataframe(
+                        df_hist_sorted[display_hist_cols].style.format({
+                            'buy_price': '{:,.0f}', 'sell_price': '{:,.0f}', 'quantity': '{:,.6f}',
+                            'profit_amount': '{:,.0f}', 'profit_rate': '{:+.2f}%'
+                        }),
+                        hide_index=True, use_container_width=True
+                    )
 
     # --- 📉 하단 주가 및 모멘텀 순위 시계열 차트 구역 ---
     st.divider()
