@@ -68,12 +68,12 @@ def scroll_to_chart():
     """
     components.html(js, height=0)
 
-# 💡 [추가] 매입금 입력 시 수량을 자동 계산해주는 콜백 함수
+# 💡 [수정] 소수점 매수는 불가하므로 정수형(내림)으로 자동 계산
 def calc_buy_qty(p_key, amt_key, q_key):
     p = st.session_state.get(p_key, 0.0)
     amt = st.session_state.get(amt_key, 0.0)
     if p > 0:
-        st.session_state[q_key] = amt / p
+        st.session_state[q_key] = float(int(amt / p))
 
 def apply_styles(df):
     df_styles = pd.DataFrame('', index=df.index, columns=df.columns)
@@ -125,7 +125,6 @@ def get_current_holdings(market_type):
     except Exception as e:
         return []
 
-# --- 쿨다운 처리를 위한 최근 매도 기록 조회 함수 ---
 def get_recently_sold_info(market_type, target_date, cooldown_days=3):
     table_name = get_holdings_table(market_type)
     try:
@@ -139,7 +138,6 @@ def get_recently_sold_info(market_type, target_date, cooldown_days=3):
         target_dt = pd.to_datetime(target_date)
         recent_limit = target_dt - pd.Timedelta(days=cooldown_days)
         
-        # 선택한 날짜 기준 N일 이내의 매도 건만 필터링
         recent_df = df_sold[(df_sold['sell_date'] >= recent_limit) & (df_sold['sell_date'] <= target_dt)]
         
         sold_dict = {}
@@ -149,11 +147,15 @@ def get_recently_sold_info(market_type, target_date, cooldown_days=3):
         return sold_dict
     except Exception:
         return {}
-# ---------------------------------------------------
 
 def update_holdings(ticker, action, price, trade_date, quantity, market_type):
     table_name = get_holdings_table(market_type)
     trade_date_str = trade_date.strftime('%Y-%m-%d')
+    
+    # 💡 [수정] DB의 integer 타입 에러 방지 (소수점이 없는 경우 강제로 int 변환하여 저장)
+    qty_val = float(quantity)
+    if qty_val.is_integer():
+        qty_val = int(qty_val)
     
     if action == 'BUY':
         try:
@@ -161,7 +163,7 @@ def update_holdings(ticker, action, price, trade_date, quantity, market_type):
                 "ticker": str(ticker).strip(),
                 "buy_date": trade_date_str,
                 "buy_price": float(price),
-                "quantity": float(quantity)
+                "quantity": qty_val
             }).execute()
             st.success(f"✅ [{ticker}] 매수 기록 완료!")
         except Exception as e:
@@ -195,7 +197,7 @@ def update_holdings(ticker, action, price, trade_date, quantity, market_type):
                     "ticker": str(ticker).strip(),
                     "sell_date": trade_date_str,
                     "sell_price": float(price),
-                    "quantity": float(quantity)
+                    "quantity": qty_val
                 }).execute()
                 st.error(f"🗑️ [{ticker}] 매도 기록 생성 완료!")
         except Exception as e:
@@ -291,11 +293,10 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg):
             if row['is_no6_opt']:
                 if ticker in sold_info:
                     last_sell_price = sold_info[ticker]
-                    # 직전 매도가 돌파 시 쿨다운 즉시 해제
                     if row['종가'] > last_sell_price:
                         return '매수추천'
                     else:
-                        return '' # 쿨다운 블락
+                        return '' 
                 return '매수추천'
             return ''
 
@@ -340,12 +341,10 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                         q_key = f"q_{key_prefix}_{ticker}"
                         amt_key = f"amt_{key_prefix}_{ticker}"
                         
-                        # 💡 [수정] 매수일 경우 매입금 입력 필드 추가 및 수량 자동 계산 로직 적용
                         if button_label == '매수':
                             input_price = st.number_input(f"{button_label}가", value=float(row['종가']), key=p_key, on_change=calc_buy_qty, args=(p_key, amt_key, q_key))
                             st.number_input("매입금", value=0.0, min_value=0.0, step=100000.0, key=amt_key, on_change=calc_buy_qty, args=(p_key, amt_key, q_key))
                             
-                            # Session State에 수량이 없는 경우(초기 상태) 기본값 부여
                             if q_key not in st.session_state:
                                 input_qty = st.number_input("수량", value=1.0, min_value=0.0, format="%.6f", key=q_key)
                             else:
@@ -371,13 +370,12 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                     c2.markdown("<div style='color:#999999; font-size:0.85em; margin-top:8px; text-align:right;'>과거일 매매불가</div>", unsafe_allow_html=True)
 
 # UI 실행 파트
-st.markdown("##### 📈 Momentum Dashboard v1.8.5")
+st.markdown("##### 📈 Momentum Dashboard v1.8.6")
 market_safe = get_market_regime()
 
 if 'trigger_scroll' not in st.session_state:
     st.session_state['trigger_scroll'] = False
 
-# DB에서 설정값 불러오기 (앱 구동 시 1회)
 if 'db_settings_loaded' not in st.session_state:
     try:
         res = supabase.table("strategy_settings").select("*").eq("id", 1).execute()
@@ -392,10 +390,9 @@ if 'db_settings_loaded' not in st.session_state:
             st.session_state['bear_trig'] = float(db_cfg.get('bear_trig', 5.0))
             st.session_state['bear_stop'] = float(db_cfg.get('bear_stop', -3.0))
     except Exception as e:
-        pass # 테이블이 없거나 에러 시 기본값 유지
+        pass 
     st.session_state['db_settings_loaded'] = True
 
-# 사이드바 매매 전략 조건 설정 구역
 with st.sidebar:
     st.markdown("### ⚙️ 전략 매매 조건 설정")
     market_type = st.radio("Market", ["KR", "US"], horizontal=True)
