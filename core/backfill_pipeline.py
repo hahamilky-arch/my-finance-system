@@ -6,6 +6,10 @@ from core.indicators import get_rs_score
 from supabase import create_client
 from dotenv import load_dotenv
 
+# 💡 미래 버전 변경에 따른 경고 방지 설정 추가
+pd.set_option('future.no_silent_downcasting', True)
+
+
 load_dotenv()
 supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
 
