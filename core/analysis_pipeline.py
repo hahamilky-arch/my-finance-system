@@ -33,12 +33,12 @@ def run_analysis_pipeline(market='KR', target_date=None):
     ticker_market_map = {t["ticker"]: t["market"] for t in target_tickers}
     ticker_list = list(ticker_market_map.keys())
     
-    # 2. 데이터 가져오기 (확장된 OHLCV, ATR, MA50, MA200 포함)
+    # 2. 데이터 가져오기 (stock_prices 테이블에 존재하는 OHLCV 컬럼만 조회)
     prices = []
     for ticker in ticker_list:
         try:
             response = supabase.table("stock_prices") \
-                .select("ticker, price_date, open_price, high_price, low_price, close_price, volume, atr, ma50, ma200") \
+                .select("ticker, price_date, open_price, high_price, low_price, close_price, volume") \
                 .eq("ticker", ticker) \
                 .order("price_date", desc=False) \
                 .limit(300) \
@@ -54,8 +54,13 @@ def run_analysis_pipeline(market='KR', target_date=None):
 
     df = pd.DataFrame(prices)
     df['price_date'] = pd.to_datetime(df['price_date']).dt.strftime('%Y-%m-%d')
+    df['close_price'] = pd.to_numeric(df['close_price'], errors='coerce')
+    df['high_price'] = pd.to_numeric(df['high_price'], errors='coerce')
+    df['low_price'] = pd.to_numeric(df['low_price'], errors='coerce')
+    df['open_price'] = pd.to_numeric(df['open_price'], errors='coerce')
+    df['volume'] = pd.to_numeric(df['volume'], errors='coerce').fillna(0)
     
-    # 3. 종가 데이터 피벗 (RS 및 모멘텀 계산용)
+    # 3. 데이터 피벗 (종가, 고가, 저가 등)
     pivot_df = df.pivot(index='price_date', columns='ticker', values='close_price') \
                  .sort_index() \
                  .ffill()
@@ -73,6 +78,8 @@ def run_analysis_pipeline(market='KR', target_date=None):
         
     ma10_series = pivot_df.rolling(window=10, min_periods=1).mean().iloc[-1]
     ma20_series = pivot_df.rolling(window=20, min_periods=1).mean().iloc[-1]
+    ma50_series = pivot_df.rolling(window=50, min_periods=1).mean().iloc[-1]
+    ma200_series = pivot_df.rolling(window=200, min_periods=1).mean().iloc[-1]
     
     # 90일 중장기 RS와 10일 단기 RS 계산
     rs_map_90 = get_rs_score(pivot_df, benchmark_ticker=benchmark_ticker, window=90)
@@ -90,9 +97,22 @@ def run_analysis_pipeline(market='KR', target_date=None):
     
     rank_map = weighted_momentum_series.rank(ascending=False)
     
-    # 분석일 기준 원본 데이터 맵 (OHLCV, ATR, MA50, MA200 추출용)
+    # 분석일 기준 원본 데이터 맵 (당일 OHLCV 추출용)
     df_analysis_day = df[df['price_date'] == analysis_date].set_index('ticker')
     
+    # 피벗 기반 ATR(14) 계산용 데이터프레임 준비
+    try:
+        high_pivot = df.pivot(index='price_date', columns='ticker', values='high_price').sort_index().ffiling() if 'high_price' in df.columns else pivot_df
+        low_pivot = df.pivot(index='price_date', columns='ticker', values='low_price').sort_index().ffill() if 'low_price' in df.columns else pivot_df
+        prev_close = pivot_df.shift(1)
+        tr1 = high_pivot - low_pivot
+        tr2 = (high_pivot - prev_close).abs()
+        tr3 = (low_pivot - prev_close).abs()
+        true_range = pd.concat([tr1, tr2, tr3], axis=1).max(level=1, axis=1) if hasattr(pd.concat([tr1, tr2, tr3], axis=1), 'max') else pd.maximum(tr1, pd.maximum(tr2, tr3))
+        atr_series = true_range.rolling(window=14, min_periods=1).mean().iloc[-1]
+    except Exception:
+        atr_series = pd.Series(0.0, index=pivot_df.columns)
+
     # 5. 결과 DB 적재 데이터 생성
     analysis_data = []
     for ticker in ticker_list:
@@ -110,11 +130,11 @@ def run_analysis_pipeline(market='KR', target_date=None):
             "high_price": safe_float(row_info.get('high_price', 0.0)),
             "low_price": safe_float(row_info.get('low_price', 0.0)),
             "volume": int(row_info.get('volume', 0)) if pd.notna(row_info.get('volume', 0)) else 0,
-            "atr": safe_float(row_info.get('atr', 0.0)),
+            "atr": safe_float(atr_series.get(ticker, 0.0)),
             "ma10": safe_float(ma10_series.get(ticker, 0.0)),
             "ma20": safe_float(ma20_series.get(ticker, 0.0)),
-            "ma50": safe_float(row_info.get('ma50', 0.0)),
-            "ma200": safe_float(row_info.get('ma200', 0.0)),
+            "ma50": safe_float(ma50_series.get(ticker, 0.0)),
+            "ma200": safe_float(ma200_series.get(ticker, 0.0)),
             "price_date": analysis_date,
             "market": ticker_market_map.get(ticker, market)
         })
