@@ -38,7 +38,7 @@ def sync_index(market, start_date=None, end_date=None):
         print(f"[{market}] 지수 데이터가 없습니다.")
         return
 
-    # 💡 타임존 제거 (yfinance 최신 버전 대응 및 타입 충돌 방지)
+    # 💡 [핵심 수정] yfinance 타임존 제거 (Invalid comparison 에러 방지)
     if df.index.tz is not None:
         df.index = df.index.tz_localize(None)
 
@@ -61,7 +61,7 @@ def sync_index(market, start_date=None, end_date=None):
         print(f"[{market}] 조건에 부합하는 신규 지수 데이터가 없습니다.")
         return
 
-    # 4. DB 적재 데이터 가공
+    # 4. DB 적재 데이터 가공 (OHLCV 및 기술적 지표 포함)
     records = []
     for date, row in df.iterrows():
         records.append({
