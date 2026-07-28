@@ -1,12 +1,12 @@
 import sys
+import pandas as pd
 import yfinance as yf
 from datetime import datetime, timedelta
 from database.client import supabase
 
-
 def sync_us_stocks_1year(target_ticker=None):
     """
-    미국 주식 및 벤치마크(^GSPC)의 최근 정확히 1년치 데이터를 수집하여 Supabase에 적재합니다.
+    미국 주식 및 벤치마크(^GSPC)의 최근 정확히 1년치 OHLCV 및 기술적 지표 데이터를 수집하여 Supabase에 적재합니다.
     """
     # 1. 대상 종목 조회 (US 시장 종목 + S&P 500 벤치마크 지수)
     query = supabase.table("stocks").select("ticker").or_("market.eq.US,ticker.eq.^GSPC")
@@ -23,28 +23,56 @@ def sync_us_stocks_1year(target_ticker=None):
     end_dt = datetime.now()
     start_dt = end_dt - timedelta(days=365)
     
-    start_str = start_dt.strftime('%Y-%m-%d')
-    end_str = (end_dt + timedelta(days=1)).strftime('%Y-%m-%d')
+    # 기술적 지표(MA200, ATR 등) 계산을 위한 여유 기간(300일) 확보
+    fetch_start_dt = start_dt - timedelta(days=300)
     
-    print(f"=== [전용] US 주식 최근 1년치 데이터 동기화 시작 (기간: {start_str} ~ {end_dt.strftime('%Y-%m-%d')}) ===")
+    fetch_start_str = fetch_start_dt.strftime('%Y-%m-%d')
+    fetch_end_str = (end_dt + timedelta(days=1)).strftime('%Y-%m-%d')
+    
+    print(f"=== [전용] US 주식 최근 1년치 데이터 동기화 시작 (목표 기간: {start_dt.strftime('%Y-%m-%d')} ~ {end_dt.strftime('%Y-%m-%d')}) ===")
     
     for stock in stocks:
         ticker = stock["ticker"]
         try:
-            # yfinance를 통해 최근 1년치 데이터 다운로드
-            df = yf.Ticker(ticker).history(start=start_str, end=end_str)
+            # yfinance를 통해 지표 계산용 여유 기간을 포함하여 데이터 다운로드
+            df = yf.Ticker(ticker).history(start=fetch_start_str, end=fetch_end_str)
             
             if df.empty:
                 print(f"[{ticker}] 수집된 데이터가 없습니다.")
                 continue
                 
+            # 3. 기술적 지표 계산 (ATR, MA50, MA200)
+            df['Previous Close'] = df['Close'].shift(1)
+            df['TR1'] = df['High'] - df['Low']
+            df['TR2'] = abs(df['High'] - df['Previous Close'])
+            df['TR3'] = abs(df['Low'] - df['Previous Close'])
+            df['True Range'] = df[['TR1', 'TR2', 'TR3']].max(axis=1)
+            df['atr'] = df['True Range'].rolling(window=14).mean()
+
+            df['ma50'] = df['Close'].rolling(window=50).mean()
+            df['ma200'] = df['Close'].rolling(window=200).mean()
+
+            # 실제 목표로 하는 1년치 시작일 범위로 필터링
+            target_start_ts = pd.Timestamp(start_dt.strftime('%Y-%m-%d'))
+            df = df[df.index >= target_start_ts]
+
+            if df.empty:
+                print(f"[{ticker}] 조건에 부합하는 필터링된 1년치 데이터가 없습니다.")
+                continue
+
             records = []
             for date, row in df.iterrows():
                 records.append({
                     "ticker": ticker,
                     "price_date": date.strftime('%Y-%m-%d'),
+                    "open_price": float(row['Open']) if pd.notna(row['Open']) else None,
+                    "high_price": float(row['High']) if pd.notna(row['High']) else None,
+                    "low_price": float(row['Low']) if pd.notna(row['Low']) else None,
                     "close_price": float(row['Close']),
-                    "volume": int(row['Volume'])
+                    "volume": int(row['Volume']) if pd.notna(row['Volume']) else 0,
+                    "atr": float(row['atr']) if pd.notna(row['atr']) else None,
+                    "ma50": float(row['ma50']) if pd.notna(row['ma50']) else None,
+                    "ma200": float(row['ma200']) if pd.notna(row['ma200']) else None
                 })
             
             if records:
@@ -53,7 +81,7 @@ def sync_us_stocks_1year(target_ticker=None):
                 for i in range(0, len(records), chunk_size):
                     chunk = records[i:i + chunk_size]
                     supabase.table("stock_prices").upsert(chunk, on_conflict="ticker,price_date").execute()
-                print(f"[{ticker}] 최근 1년치 데이터 총 {len(records)}건 적재 완료")
+                print(f"[{ticker}] 최근 1년치 OHLCV 및 기술적 지표 데이터 총 {len(records)}건 적재 완료")
                 
         except Exception as e:
             print(f"Error syncing {ticker}: {e}")
