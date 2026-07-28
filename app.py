@@ -42,6 +42,11 @@ st.markdown("""
         transition: all 0.3s ease;
         border: 1px solid rgba(255,255,255,0.2);
     }
+    .floating-btn-left:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+        background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+    }
     </style>
     <a href="#top-section" class="floating-btn-left" title="상단 표로 이동">
         <span>⬆️</span> <span>상단 표로 이동</span>
@@ -62,6 +67,13 @@ def scroll_to_chart():
     </script>
     """
     components.html(js, height=0)
+
+# 💡 [추가] 매입금 입력 시 수량을 자동 계산해주는 콜백 함수
+def calc_buy_qty(p_key, amt_key, q_key):
+    p = st.session_state.get(p_key, 0.0)
+    amt = st.session_state.get(amt_key, 0.0)
+    if p > 0:
+        st.session_state[q_key] = amt / p
 
 def apply_styles(df):
     df_styles = pd.DataFrame('', index=df.index, columns=df.columns)
@@ -323,17 +335,34 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                 if is_latest_date:
                     with c2.popover(button_label):
                         st.write(f"**{row['종목명']}**")
-                        input_price = st.number_input(f"{button_label}가", value=float(row['종가']), key=f"p_{key_prefix}_{ticker}")
                         
-                        default_qty = 1.0
-                        if button_label == '매도' and not holdings_df.empty:
-                            matched_h = holdings_df[holdings_df['ticker'] == ticker]
-                            if not matched_h.empty:
-                                val = matched_h.iloc[0].get('quantity', 1.0)
-                                default_qty = float(val) if pd.notna(val) else 1.0
-                        if default_qty <= 0: default_qty = 0.000001
-
-                        input_qty = st.number_input("수량", value=default_qty, min_value=0.0, format="%.6f", key=f"q_{key_prefix}_{ticker}")
+                        p_key = f"p_{key_prefix}_{ticker}"
+                        q_key = f"q_{key_prefix}_{ticker}"
+                        amt_key = f"amt_{key_prefix}_{ticker}"
+                        
+                        # 💡 [수정] 매수일 경우 매입금 입력 필드 추가 및 수량 자동 계산 로직 적용
+                        if button_label == '매수':
+                            input_price = st.number_input(f"{button_label}가", value=float(row['종가']), key=p_key, on_change=calc_buy_qty, args=(p_key, amt_key, q_key))
+                            st.number_input("매입금", value=0.0, min_value=0.0, step=100000.0, key=amt_key, on_change=calc_buy_qty, args=(p_key, amt_key, q_key))
+                            
+                            # Session State에 수량이 없는 경우(초기 상태) 기본값 부여
+                            if q_key not in st.session_state:
+                                input_qty = st.number_input("수량", value=1.0, min_value=0.0, format="%.6f", key=q_key)
+                            else:
+                                input_qty = st.number_input("수량", min_value=0.0, format="%.6f", key=q_key)
+                        
+                        else:
+                            input_price = st.number_input(f"{button_label}가", value=float(row['종가']), key=p_key)
+                            
+                            default_qty = 1.0
+                            if not holdings_df.empty:
+                                matched_h = holdings_df[holdings_df['ticker'] == ticker]
+                                if not matched_h.empty:
+                                    val = matched_h.iloc[0].get('quantity', 1.0)
+                                    default_qty = float(val) if pd.notna(val) else 1.0
+                            if default_qty <= 0: default_qty = 0.000001
+                            
+                            input_qty = st.number_input("수량", value=default_qty, min_value=0.0, format="%.6f", key=q_key)
 
                         if st.button("확인", key=f"btn_{key_prefix}_{ticker}"):
                             action_type = 'SELL' if '매도' in title else 'BUY'
@@ -342,7 +371,7 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                     c2.markdown("<div style='color:#999999; font-size:0.85em; margin-top:8px; text-align:right;'>과거일 매매불가</div>", unsafe_allow_html=True)
 
 # UI 실행 파트
-st.markdown("##### 📈 Momentum Dashboard v1.8.4")
+st.markdown("##### 📈 Momentum Dashboard v1.8.5")
 market_safe = get_market_regime()
 
 if 'trigger_scroll' not in st.session_state:
