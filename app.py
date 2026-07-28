@@ -113,6 +113,32 @@ def get_current_holdings(market_type):
     except Exception as e:
         return []
 
+# --- 쿨다운 처리를 위한 최근 매도 기록 조회 함수 ---
+def get_recently_sold_info(market_type, target_date, cooldown_days=3):
+    table_name = get_holdings_table(market_type)
+    try:
+        res = supabase.table(table_name).select("ticker, sell_date, sell_price").not_.is_("sell_date", "null").execute()
+        if not res.data:
+            return {}
+        
+        df_sold = pd.DataFrame(res.data)
+        df_sold['sell_date'] = pd.to_datetime(df_sold['sell_date'])
+        
+        target_dt = pd.to_datetime(target_date)
+        recent_limit = target_dt - pd.Timedelta(days=cooldown_days)
+        
+        # 선택한 날짜 기준 N일 이내의 매도 건만 필터링
+        recent_df = df_sold[(df_sold['sell_date'] >= recent_limit) & (df_sold['sell_date'] <= target_dt)]
+        
+        sold_dict = {}
+        for _, r in recent_df.sort_values('sell_date').iterrows():
+            sold_dict[r['ticker']] = float(r['sell_price']) if pd.notna(r['sell_price']) else 0.0
+            
+        return sold_dict
+    except Exception:
+        return {}
+# ---------------------------------------------------
+
 def update_holdings(ticker, action, price, trade_date, quantity, market_type):
     table_name = get_holdings_table(market_type)
     trade_date_str = trade_date.strftime('%Y-%m-%d')
@@ -239,15 +265,25 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg):
         df_final['종목명'] = df_final.apply(lambda r: f"[{r['ticker']}] {r['종목명']}", axis=1)
 
     my_holdings = get_current_holdings(market_type)
+    sold_info = get_recently_sold_info(market_type, target_date_str, cooldown_days=3)
 
     def classify_status(row):
-        is_in_holdings = row['ticker'] in my_holdings
+        ticker = row['ticker']
+        is_in_holdings = ticker in my_holdings
+        
         if is_in_holdings:
             if (row['MA20'] > 0 and row['종가'] < row['MA20']) or (row['순위'] > 30):
                 return '매도필요'
             return '보유중'
         else:
             if row['is_no6_opt']:
+                if ticker in sold_info:
+                    last_sell_price = sold_info[ticker]
+                    # 직전 매도가 돌파 시 쿨다운 즉시 해제
+                    if row['종가'] > last_sell_price:
+                        return '매수추천'
+                    else:
+                        return '' # 쿨다운 블락
                 return '매수추천'
             return ''
 
@@ -267,7 +303,7 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                 if '매도' in title:
                     reason_desc = f"20일 이동평균선 이탈 (`종가 < MA20`) 또는 순위 30위 밖으로 밀림 발생"
                 else:
-                    reason_desc = f"모멘텀 상위 30위 내, RS(90)>0 및 RS(10)>0, 20일선 정배열 충족 (설정 편입수 {top_n_cfg}개 내 진입)"
+                    reason_desc = f"모멘텀 상위 30위 내, RS(90)>0 및 RS(10)>0, 20일선 정배열 충족 (설정 편입수 {top_n_cfg}개 내 진입, 쿨다운 통과)"
 
                 c1.markdown(f"""
                 <div style="line-height: 1.6; margin-top: 4px;">
@@ -368,7 +404,6 @@ with st.sidebar:
         
         if st.button("현재 설정값 DB에 저장", use_container_width=True):
             if config_pwd == st.secrets.get("TRADE_PASSWORD", "1234"):
-                # 1. 세션 스테이트 갱신
                 if is_bull:
                     st.session_state['bull_top_n'] = top_n_cfg
                     st.session_state['bull_sl'] = sl_cfg
@@ -380,7 +415,6 @@ with st.sidebar:
                     st.session_state['bear_trig'] = trig_cfg
                     st.session_state['bear_stop'] = stop_cfg
                 
-                # 2. Supabase DB 갱신
                 settings_data = {
                     "id": 1,
                     "bull_top_n": int(st.session_state.get('bull_top_n', 3)),
@@ -509,7 +543,8 @@ if df_display is not None:
 
         st.info(f"""
         📌 **매수·매도 기준 안내**
-        * **매수 추천 기준**: 모멘텀 순위 상위 **30위 이내** 종목 중 RS(90) > 0, **RS(10) > 0**, 20일선 정배열(`종가 > MA20`)을 모두 만족하는 상위 **{top_n_cfg}개** 종목
+        * **매수 추천 기준**: 모멘텀 순위 상위 **30위 이내** 종목 중 RS(90) > 0, **RS(10) > 0**, 20일선 정배열(`종가 > MA20`)을 만족하는 상위 **{top_n_cfg}개** 종목
+        * **쿨다운 룰**: 매도 후 3일간 재매수 금지 (단, 종가가 직전 매도가를 돌파하면 쿨다운 즉시 해제)
         * **매도 필요 기준**: 보유 종목 중 20일 이동평균선 이탈(`종가 < MA20`) 또는 순위가 상위 **30위** 밖으로 밀려난 종목
         """)
 
