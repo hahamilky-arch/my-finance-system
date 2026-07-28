@@ -28,7 +28,7 @@ def sync_kr_stocks(start_date=None, end_date=None):
             if last_data:
                 start_dt = datetime.strptime(last_data[0]["price_date"], '%Y-%m-%d') + timedelta(days=1)
             else:
-                # 기술적 지표(MA200, ATR) 계산을 위해 최초 적재 시 넉넉하게 400일 전부터 가져옴
+                # 초기 적재 시 넉넉하게 400일 전부터 가져옴
                 start_dt = today - timedelta(days=400)
             end_dt = today
         
@@ -40,7 +40,7 @@ def sync_kr_stocks(start_date=None, end_date=None):
             start_str = fetch_start.strftime('%Y-%m-%d')
             end_str = fetch_end.strftime('%Y-%m-%d')
             
-            # 코스피(.KS)로 먼저 시도 후, 데이터가 없으면 코스닥(.KQ)으로 폴백(Fallback) 시도
+            # 코스피(.KS)로 먼저 시도 후, 데이터가 없으면 코스닥(.KQ)으로 폴백 시도
             yf_ticker_ks = f"{db_ticker}.KS"
             df = yf.Ticker(yf_ticker_ks).history(start=start_str, end=end_str)
             
@@ -51,16 +51,9 @@ def sync_kr_stocks(start_date=None, end_date=None):
             if df.empty:
                 continue
                 
-            # 4. 기술적 지표 계산 (ATR, MA50, MA200)
-            df['Previous Close'] = df['Close'].shift(1)
-            df['TR1'] = df['High'] - df['Low']
-            df['TR2'] = abs(df['High'] - df['Previous Close'])
-            df['TR3'] = abs(df['Low'] - df['Previous Close'])
-            df['True Range'] = df[['TR1', 'TR2', 'TR3']].max(axis=1)
-            df['atr'] = df['True Range'].rolling(window=14).mean()
-
-            df['ma50'] = df['Close'].rolling(window=50).mean()
-            df['ma200'] = df['Close'].rolling(window=200).mean()
+            # 💡 yfinance 타임존 제거 (Invalid comparison 에러 방지)
+            if df.index.tz is not None:
+                df.index = df.index.tz_localize(None)
 
             # 실제 수집 요청한 시작일 범위로 필터링
             target_start_ts = pd.Timestamp(start_dt.strftime('%Y-%m-%d'))
@@ -69,7 +62,7 @@ def sync_kr_stocks(start_date=None, end_date=None):
             if df.empty:
                 continue
 
-            # 5. DB 적재 데이터 가공
+            # 4. DB 적재 데이터 가공 (stock_prices 테이블 스키마에 맞춤: OHLCV)
             records = []
             for date, row in df.iterrows():
                 records.append({
@@ -79,15 +72,12 @@ def sync_kr_stocks(start_date=None, end_date=None):
                     "high_price": float(row['High']) if pd.notna(row['High']) else None,
                     "low_price": float(row['Low']) if pd.notna(row['Low']) else None,
                     "close_price": float(row['Close']),
-                    "volume": int(row['Volume']) if pd.notna(row['Volume']) else 0,
-                    "atr": float(row['atr']) if pd.notna(row['atr']) else None,
-                    "ma50": float(row['ma50']) if pd.notna(row['ma50']) else None,
-                    "ma200": float(row['ma200']) if pd.notna(row['ma200']) else None
+                    "volume": int(row['Volume']) if pd.notna(row['Volume']) else 0
                 })
             
             if records:
                 supabase.table("stock_prices").upsert(records, on_conflict="ticker,price_date").execute()
-                print(f"[{db_ticker}] OHLCV 및 기술적 지표 데이터 적재 완료")
+                print(f"[{db_ticker}] OHLCV 데이터 적재 완료")
                 
         except Exception as e:
             print(f"Error syncing {db_ticker}: {e}")
