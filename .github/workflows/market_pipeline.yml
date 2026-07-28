@@ -17,11 +17,11 @@ on:
           - KR
           - US
       start_date:
-        description: 'Start Date (YYYY-MM-DD, optional for backfill)'
+        description: 'Start Date (YYYY-MM-DD, optional)'
         required: false
         type: string
       end_date:
-        description: 'End Date (YYYY-MM-DD, optional for backfill)'
+        description: 'End Date (YYYY-MM-DD, optional for period)'
         required: false
         type: string
 
@@ -64,17 +64,17 @@ jobs:
           START_DATE="${{ github.event.inputs.start_date }}"
           END_DATE="${{ github.event.inputs.end_date }}"
           
-          # 2. 기간(Start ~ End)이 모두 입력된 경우 백필 파이프라인 실행
+          # 2. 기간(Start ~ End)이 모두 입력된 경우 run_pipeline에 기간 인자 전달
           if [ -n "$START_DATE" ] && [ -n "$END_DATE" ]; then
-            echo "=== Executing Backfill Pipeline for $MARKET ($START_DATE ~ $END_DATE) ==="
-            python run_backfill_pipeline.py --market "$MARKET" --start "$START_DATE" --end "$END_DATE"
+            echo "=== Executing Pipeline for $MARKET ($START_DATE ~ $END_DATE) ==="
+            python run_pipeline.py --market "$MARKET" --start_date "$START_DATE" --end_date "$END_DATE"
           
-          # 3. 단일 날짜만 입력된 경우 기존 파이프라인에 target_date 전달
+          # 3. 단일 날짜만 입력된 경우 target_date 전달
           elif [ -n "$START_DATE" ]; then
             echo "=== Executing Pipeline for $MARKET on target date $START_DATE ==="
             python run_pipeline.py --market "$MARKET" --target_date "$START_DATE"
           
-          # 4. 입력값이 없는 경우 (정기 스케줄 실행 등) 일반 일일 파이프라인 실행
+          # 4. 입력값이 없는 경우 (정기 스케줄 실행 등) 기본 일일 파이프라인 실행
           else
             echo "=== Executing Daily Pipeline for $MARKET ==="
             python run_pipeline.py --market "$MARKET"
