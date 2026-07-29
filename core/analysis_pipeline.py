@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 import sys
+import argparse
 from datetime import datetime
 from database.client import supabase
 from core.indicators import get_rs_score
@@ -88,11 +89,12 @@ def run_analysis_pipeline(market='KR', target_date=None):
     rs_map_90 = get_rs_score(pivot_df, benchmark_ticker=benchmark_ticker, window=90)
     rs_map_10 = get_rs_score(pivot_df, benchmark_ticker=benchmark_ticker, window=10)
     
-    r1 = pivot_df.pct_change(20).iloc[-1]
-    r2 = pivot_df.pct_change(40).iloc[-1]
-    r4 = pivot_df.pct_change(80).iloc[-1]
-    r6 = pivot_df.pct_change(120).iloc[-1]
-    r12 = pivot_df.pct_change(240).iloc[-1]
+    # 💡 [경고 수정] fill_method=None 지정하여 미래 FutureWarning 방지
+    r1 = pivot_df.pct_change(20, fill_method=None).iloc[-1]
+    r2 = pivot_df.pct_change(40, fill_method=None).iloc[-1]
+    r4 = pivot_df.pct_change(80, fill_method=None).iloc[-1]
+    r6 = pivot_df.pct_change(120, fill_method=None).iloc[-1]
+    r12 = pivot_df.pct_change(240, fill_method=None).iloc[-1]
     
     weighted_momentum_series = (r1.fillna(0) * 12) + (r2.fillna(0) * 6) + \
                                (r4.fillna(0) * 4) + (r6.fillna(0) * 2) + \
@@ -103,9 +105,8 @@ def run_analysis_pipeline(market='KR', target_date=None):
     # 분석일 기준 원본 데이터 맵 (당일 OHLCV 추출용)
     df_analysis_day = df[df['price_date'] == analysis_date].set_index('ticker')
     
-    # 💡 [핵심 수정 완료] 정확한 피벗 기반 ATR(14) 계산 로직
+    # 💡 정확한 피벗 기반 ATR(14) 계산 및 결측치 방어 로직
     try:
-        # 고가와 저가 피벗 인덱스를 종가(pivot_df)와 완벽히 동기화
         high_pivot = df.pivot(index='price_date', columns='ticker', values='high_price').sort_index().ffill().reindex(pivot_df.index)
         low_pivot = df.pivot(index='price_date', columns='ticker', values='low_price').sort_index().ffill().reindex(pivot_df.index)
         
@@ -115,11 +116,9 @@ def run_analysis_pipeline(market='KR', target_date=None):
         tr2 = (high_pivot - prev_close).abs()
         tr3 = (low_pivot - prev_close).abs()
         
-        # 첫 행 결측치 방어
         tr2 = tr2.fillna(tr1)
         tr3 = tr3.fillna(tr1)
         
-        # 3가지 True Range 중 최댓값 산출
         true_range = pd.DataFrame(
             np.maximum(tr1.values, np.maximum(tr2.values, tr3.values)), 
             index=pivot_df.index, 
@@ -168,8 +167,9 @@ def run_analysis_pipeline(market='KR', target_date=None):
         print("적재할 유효한 데이터가 없습니다.")
 
 if __name__ == "__main__":
-    target_date = None
-    if len(sys.argv) > 2 and sys.argv[1] == "--target_date":
-        target_date = sys.argv[2]
+    parser = argparse.ArgumentParser(description="Run Analysis Pipeline Directly")
+    parser.add_argument("--market", default="KR", help="Target market (KR or US)")
+    parser.add_argument("--target_date", help="Specific target date (YYYY-MM-DD)")
+    args = parser.parse_args()
     
-    run_analysis_pipeline('KR', target_date=target_date)
+    run_analysis_pipeline(market=args.market, target_date=args.target_date)
