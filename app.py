@@ -204,6 +204,7 @@ def update_holdings(ticker, action, price, trade_date, quantity, market_type):
     st.rerun()
 
 def get_market_regime():
+    # 간단한 20일선 자동감지용 (알파시그널 내부의 200일선 시장필터와 별개로 전체 시장 온기를 체크함)
     res = supabase.table("daily_analysis").select("close_price").eq("ticker", "^GSPC").order("price_date", desc=True).limit(20).execute()
     df_idx = pd.DataFrame(res.data)
     if df_idx.empty: return True
@@ -439,27 +440,34 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                     c2.markdown("<div style='color:#999999; font-size:0.85em; margin-top:8px; text-align:right;'>과거일 매매불가</div>", unsafe_allow_html=True)
 
 # UI 실행 파트
-st.markdown("##### 📈 Momentum Dashboard v2.0")
+st.markdown("##### 📈 Momentum Dashboard v2.1")
 market_safe = get_market_regime()
 
 if 'trigger_scroll' not in st.session_state:
     st.session_state['trigger_scroll'] = False
 
+# 💡 [초기 설정] 백테스트와 동일한 세팅을 기본값으로 강제 및 DB 로드
 if 'db_settings_loaded' not in st.session_state:
     try:
         res = supabase.table("strategy_settings").select("*").eq("id", 1).execute()
         if res.data:
             db_cfg = res.data[0]
+            # [상승장 세팅] - 백테스트와 동일
             st.session_state['bull_top_n'] = int(db_cfg.get('bull_top_n', 5))
-            st.session_state['bull_sl'] = float(db_cfg.get('bull_sl', -3.0))
-            st.session_state['bull_trig'] = float(db_cfg.get('bull_trig', 20.0))
-            st.session_state['bull_stop'] = float(db_cfg.get('bull_stop', -10.0))
-            st.session_state['bear_top_n'] = int(db_cfg.get('bear_top_n', 1))
-            st.session_state['bear_sl'] = float(db_cfg.get('bear_sl', -1.0))
-            st.session_state['bear_trig'] = float(db_cfg.get('bear_trig', 5.0))
-            st.session_state['bear_stop'] = float(db_cfg.get('bear_stop', -3.0))
+            st.session_state['bull_sl'] = float(db_cfg.get('bull_sl', -10.0))
+            st.session_state['bull_trig'] = float(db_cfg.get('bull_trig', 15.0))
+            st.session_state['bull_stop'] = float(db_cfg.get('bull_stop', -7.0))
+            
+            # [하락장 세팅] - 신규 매수는 없지만(Top N=0), 기존 보유종목 관리를 위해 매도 룰은 동일하게 유지
+            st.session_state['bear_top_n'] = int(db_cfg.get('bear_top_n', 0)) 
+            st.session_state['bear_sl'] = float(db_cfg.get('bear_sl', -10.0))
+            st.session_state['bear_trig'] = float(db_cfg.get('bear_trig', 15.0))
+            st.session_state['bear_stop'] = float(db_cfg.get('bear_stop', -7.0))
     except Exception as e:
-        pass 
+        # DB 로드 실패 시 적용될 최후의 기본값 (백테스트 기준)
+        st.session_state['bull_top_n'], st.session_state['bull_sl'], st.session_state['bull_trig'], st.session_state['bull_stop'] = 5, -10.0, 15.0, -7.0
+        st.session_state['bear_top_n'], st.session_state['bear_sl'], st.session_state['bear_trig'], st.session_state['bear_stop'] = 0, -10.0, 15.0, -7.0
+        
     st.session_state['db_settings_loaded'] = True
 
 with st.sidebar:
@@ -482,15 +490,16 @@ with st.sidebar:
     if is_bull:
         st.success("🟢 상승장 모드 (Bull Market)")
         top_n_cfg = st.number_input("편입 종목 수 (Top N)", value=st.session_state.get('bull_top_n', 5), min_value=1, max_value=10)
-        sl_cfg = st.number_input("손절 임계값 (%)", value=st.session_state.get('bull_sl', -3.0), step=0.5)
-        trig_cfg = st.number_input("트레일링 익절 트리거 (%)", value=st.session_state.get('bull_trig', 20.0), step=1.0)
-        stop_cfg = st.number_input("고점 대비 반락 익절폭 (%)", value=st.session_state.get('bull_stop', -10.0), step=1.0)
+        sl_cfg = st.number_input("손절 임계값 (%)", value=st.session_state.get('bull_sl', -10.0), step=0.5)
+        trig_cfg = st.number_input("트레일링 익절 트리거 (%)", value=st.session_state.get('bull_trig', 15.0), step=1.0)
+        stop_cfg = st.number_input("고점 대비 반락 익절폭 (%)", value=st.session_state.get('bull_stop', -7.0), step=1.0)
     else:
         st.error("🔴 하락장 모드 (Bear Market)")
-        top_n_cfg = st.number_input("편입 종목 수 (Top N)", value=st.session_state.get('bear_top_n', 1), min_value=1, max_value=5)
-        sl_cfg = st.number_input("손절 임계값 (%)", value=st.session_state.get('bear_sl', -1.0), step=0.1)
-        trig_cfg = st.number_input("트레일링 익절 트리거 (%)", value=st.session_state.get('bear_trig', 5.0), step=0.5)
-        stop_cfg = st.number_input("고점 대비 반락 익절폭 (%)", value=st.session_state.get('bear_stop', -3.0), step=0.5)
+        # 하락장은 매수 차단이므로 최소값을 0으로 설정
+        top_n_cfg = st.number_input("편입 종목 수 (Top N)", value=st.session_state.get('bear_top_n', 0), min_value=0, max_value=5)
+        sl_cfg = st.number_input("손절 임계값 (%)", value=st.session_state.get('bear_sl', -10.0), step=0.1)
+        trig_cfg = st.number_input("트레일링 익절 트리거 (%)", value=st.session_state.get('bear_trig', 15.0), step=0.5)
+        stop_cfg = st.number_input("고점 대비 반락 익절폭 (%)", value=st.session_state.get('bear_stop', -7.0), step=0.5)
 
     st.divider()
     
@@ -513,13 +522,13 @@ with st.sidebar:
                 settings_data = {
                     "id": 1,
                     "bull_top_n": int(st.session_state.get('bull_top_n', 5)),
-                    "bull_sl": float(st.session_state.get('bull_sl', -3.0)),
-                    "bull_trig": float(st.session_state.get('bull_trig', 20.0)),
-                    "bull_stop": float(st.session_state.get('bull_stop', -10.0)),
-                    "bear_top_n": int(st.session_state.get('bear_top_n', 1)),
-                    "bear_sl": float(st.session_state.get('bear_sl', -1.0)),
-                    "bear_trig": float(st.session_state.get('bear_trig', 5.0)),
-                    "bear_stop": float(st.session_state.get('bear_stop', -3.0))
+                    "bull_sl": float(st.session_state.get('bull_sl', -10.0)),
+                    "bull_trig": float(st.session_state.get('bull_trig', 15.0)),
+                    "bull_stop": float(st.session_state.get('bull_stop', -7.0)),
+                    "bear_top_n": int(st.session_state.get('bear_top_n', 0)),
+                    "bear_sl": float(st.session_state.get('bear_sl', -10.0)),
+                    "bear_trig": float(st.session_state.get('bear_trig', 15.0)),
+                    "bear_stop": float(st.session_state.get('bear_stop', -7.0))
                 }
                 
                 try:
@@ -654,7 +663,7 @@ if df_display is not None:
         * **시장 필터**: KOSPI/S&P500 종가 > 200일선 유지 시에만 신규 매수 스크리닝이 허용됩니다.
         * **매수 스크리닝**: 매주 **수요일** 1회 스크리닝을 진행합니다.
         * **매수 조건**: 모멘텀 순위 **30위 이하**, RS(90) > 0, RS(10) > 0, 종가 > MA20 정배열 
-        * **보유 종목 수**: 조건 충족 상위 **{top_n_cfg}개** 종목 
+        * **보유 종목 수**: 조건 충족 상위 **{top_n_cfg}개** 종목 (하락장 세팅 시 매수 차단)
         * **포지션 사이징**: ATR 기반 2% 룰 (`계좌총액 × 2% ÷ (2 × ATR)`) / 권장 손절가 = `매수가 - 2×ATR`
         * **매도 조건** (매일 체크하며, 하나라도 충족 시 익일 매도):
             1. 종가 < MA20 하향 이탈
