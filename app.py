@@ -68,12 +68,10 @@ def scroll_to_chart():
     """
     components.html(js, height=0)
 
-# 💡 [수정] 소수점 매수는 불가하므로 정수형(내림)으로 자동 계산
-def calc_buy_qty(p_key, amt_key, q_key):
-    p = st.session_state.get(p_key, 0.0)
-    amt = st.session_state.get(amt_key, 0.0)
-    if p > 0:
-        st.session_state[q_key] = float(int(amt / p))
+def calc_buy_qty_atr(ack, qk, atr_v):
+    acc = st.session_state.get(ack, 0.0)
+    if atr_v > 0:
+        st.session_state[qk] = float(int((acc * 0.02) / (2 * atr_v)))
 
 def apply_styles(df):
     df_styles = pd.DataFrame('', index=df.index, columns=df.columns)
@@ -152,7 +150,6 @@ def update_holdings(ticker, action, price, trade_date, quantity, market_type):
     table_name = get_holdings_table(market_type)
     trade_date_str = trade_date.strftime('%Y-%m-%d')
     
-    # 💡 [수정] DB의 integer 타입 에러 방지 (소수점이 없는 경우 강제로 int 변환하여 저장)
     qty_val = float(quantity)
     if qty_val.is_integer():
         qty_val = int(qty_val)
@@ -223,8 +220,9 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg):
     target_date_str = target_date_ts.strftime('%Y-%m-%d')
     if target_date_str not in all_dates: return None
 
+    # 전략 로직을 위해 atr, high_price, low_price, ma200 추가 조회
     res_curr = supabase.table("daily_analysis") \
-        .select("ticker, momentum_rank, weighted_momentum, rs_score, rs_score_10, close_price, ma10, ma20") \
+        .select("ticker, momentum_rank, weighted_momentum, rs_score, rs_score_10, close_price, ma10, ma20, atr, high_price, low_price, ma200") \
         .eq("price_date", target_date_str) \
         .eq("market", market_type) \
         .execute()
@@ -232,9 +230,11 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg):
     df_final = pd.DataFrame(res_curr.data)
     if df_final.empty: return None
     
-    df_final['close_price'] = pd.to_numeric(df_final['close_price'], errors='coerce').astype('float64')
-    df_final['ma10'] = pd.to_numeric(df_final['ma10'], errors='coerce').astype('float64')
-    df_final['ma20'] = pd.to_numeric(df_final['ma20'], errors='coerce').astype('float64')
+    num_cols = ['close_price', 'ma10', 'ma20', 'atr', 'high_price', 'low_price', 'ma200']
+    for col in num_cols:
+        if col in df_final.columns:
+            df_final[col] = pd.to_numeric(df_final[col], errors='coerce').astype('float64')
+            
     df_final['ticker'] = df_final['ticker'].astype(str).str.strip()
     
     target_idx = all_dates.index(target_date_str)
@@ -261,10 +261,26 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg):
     df_final['is_pullback'] = (df_final['순위'] <= 100) & (df_final['RS(90)'] > 0) & (df_final['변동'] > 0)
     df_final['MA20'] = df_final['MA20'].fillna(0)
     
+    # 💡 [전략] 시장 필터 검증 (KOSPI/GSPC 종가 > MA200)
+    idx_ticker = "^KS11" if market_type == "KR" else "^GSPC"
+    idx_res = supabase.table("daily_analysis").select("close_price, ma200").eq("ticker", idx_ticker).eq("price_date", target_date_str).execute()
+    market_passed = True
+    if idx_res.data:
+        idx_close = pd.to_numeric(idx_res.data[0].get('close_price', 0), errors='coerce')
+        idx_ma200 = pd.to_numeric(idx_res.data[0].get('ma200', 0), errors='coerce')
+        if pd.notna(idx_close) and pd.notna(idx_ma200) and idx_ma200 > 0:
+            market_passed = idx_close > idx_ma200
+
+    # 💡 [전략] 진입 방식: 매주 수요일 스크리닝
+    is_wednesday = target_date_ts.day_name() == 'Wednesday'
+    
+    # 💡 [전략] 매수 조건 검증 및 Top N 선정
     tech_cond = (df_final['순위'] <= 30) & (df_final['RS(90)'] > 0) & (df_final['RS(10)'] > 0) & (df_final['MA20'] > 0) & (df_final['종가'] > df_final['MA20'])
     df_final['is_no6_opt'] = False
+    
     valid_indices = df_final[tech_cond].nsmallest(int(top_n_cfg), '순위').index
-    df_final.loc[valid_indices, 'is_no6_opt'] = True
+    if is_wednesday and market_passed:
+        df_final.loc[valid_indices, 'is_no6_opt'] = True
     
     df_stocks = pd.DataFrame(supabase.table("stocks").select("ticker, name").execute().data)
     if not df_stocks.empty:
@@ -278,7 +294,28 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg):
     if market_type == "US":
         df_final['종목명'] = df_final.apply(lambda r: f"[{r['ticker']}] {r['종목명']}", axis=1)
 
-    my_holdings = get_current_holdings(market_type)
+    # 매매상태 분류를 위해 보유 종목 내역 및 고점(Trailing) 분석
+    table_name = get_holdings_table(market_type)
+    try:
+        h_res = supabase.table(table_name).select("*").is_("sell_date", "null").execute()
+        holdings_df = pd.DataFrame(h_res.data) if h_res.data else pd.DataFrame()
+    except Exception:
+        holdings_df = pd.DataFrame()
+
+    my_holdings = holdings_df['ticker'].tolist() if not holdings_df.empty else []
+    
+    peak_metrics = {}
+    if not holdings_df.empty:
+        for _, r in holdings_df.iterrows():
+            tk = r['ticker']
+            bd = r['buy_date']
+            p_res = supabase.table("daily_analysis").select("high_price").eq("ticker", tk).gte("price_date", bd).lte("price_date", target_date_str).execute()
+            if p_res.data:
+                highs = [pd.to_numeric(x['high_price'], errors='coerce') for x in p_res.data]
+                peak_metrics[tk] = max([h for h in highs if pd.notna(h)] + [0])
+            else:
+                peak_metrics[tk] = float(r['buy_price'])
+
     sold_info = get_recently_sold_info(market_type, target_date_str, cooldown_days=3)
 
     def classify_status(row):
@@ -286,11 +323,37 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg):
         is_in_holdings = ticker in my_holdings
         
         if is_in_holdings:
-            if (row['MA20'] > 0 and row['종가'] < row['MA20']) or (row['순위'] > 30):
+            c_price = row['종가']
+            ma20 = row['MA20']
+            mom_rank = row['순위']
+            atr = row.get('atr', 0)
+            low_price = row.get('low_price', c_price)
+            if pd.isna(low_price): low_price = c_price
+            if pd.isna(atr): atr = 0
+            
+            # 💡 [전략] 매도 조건 (1, 2)
+            if (ma20 > 0 and c_price < ma20) or (mom_rank > 30):
                 return '매도필요'
+            
+            h_row = holdings_df[holdings_df['ticker'] == ticker]
+            if not h_row.empty:
+                buy_price = float(h_row.iloc[0]['buy_price'])
+                
+                # 💡 [전략] 매도 조건 (3) 2x ATR 손절가 이탈
+                stop_loss = buy_price - 2 * atr
+                if low_price <= stop_loss:
+                    return '매도필요'
+                
+                # 💡 [전략] 매도 조건 (4) 트레일링 스탑 (+15% 상승 후 고점 대비 -7% 하락)
+                peak = peak_metrics.get(ticker, buy_price)
+                if peak >= buy_price * 1.15:
+                    if c_price <= peak * 0.93:
+                        return '매도필요'
+
             return '보유중'
         else:
             if row['is_no6_opt']:
+                # 💡 [전략] 재매수 쿨다운 규칙 
                 if ticker in sold_info:
                     last_sell_price = sold_info[ticker]
                     if row['종가'] > last_sell_price:
@@ -314,9 +377,9 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                 c1, c2 = st.columns([4, 1])
                 
                 if '매도' in title:
-                    reason_desc = f"20일 이동평균선 이탈 (`종가 < MA20`) 또는 순위 30위 밖으로 밀림 발생"
+                    reason_desc = f"MA20 이탈, 순위 30위 밖, 손절가(2×ATR) 이탈, 또는 트레일링 스탑(-7%) 충족"
                 else:
-                    reason_desc = f"모멘텀 상위 30위 내, RS(90)>0 및 RS(10)>0, 20일선 정배열 충족 (설정 편입수 {top_n_cfg}개 내 진입, 쿨다운 통과)"
+                    reason_desc = f"Top {top_n_cfg}, RS(90)>0, RS(10)>0, MA20 정배열 (수요일 스크리닝 및 쿨다운 통과)"
 
                 c1.markdown(f"""
                 <div style="line-height: 1.6; margin-top: 4px;">
@@ -339,17 +402,23 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                         
                         p_key = f"p_{key_prefix}_{ticker}"
                         q_key = f"q_{key_prefix}_{ticker}"
-                        amt_key = f"amt_{key_prefix}_{ticker}"
                         
                         if button_label == '매수':
-                            input_price = st.number_input(f"{button_label}가", value=float(row['종가']), key=p_key, on_change=calc_buy_qty, args=(p_key, amt_key, q_key))
-                            st.number_input("매입금", value=0.0, min_value=0.0, step=100000.0, key=amt_key, on_change=calc_buy_qty, args=(p_key, amt_key, q_key))
+                            input_price = st.number_input(f"{button_label}가", value=float(row['종가']), key=p_key)
+                            
+                            atr_val = row.get('atr', 0)
+                            if pd.isna(atr_val): atr_val = 0
+                            account_key = f"acc_{key_prefix}_{ticker}"
+                            
+                            # 💡 [전략] ATR 기반 2% 룰 수량 자동 계산 UI
+                            st.number_input("운용 계좌 총액", value=0.0, min_value=0.0, step=1000000.0, key=account_key, on_change=calc_buy_qty_atr, args=(account_key, q_key, atr_val))
                             
                             if q_key not in st.session_state:
-                                input_qty = st.number_input("수량", value=1.0, min_value=0.0, format="%.6f", key=q_key)
+                                input_qty = st.number_input("매수 수량 (ATR 자동계산)", value=1.0, min_value=0.0, format="%.6f", key=q_key)
                             else:
-                                input_qty = st.number_input("수량", min_value=0.0, format="%.6f", key=q_key)
-                        
+                                input_qty = st.number_input("매수 수량 (ATR 자동계산)", min_value=0.0, format="%.6f", key=q_key)
+                                
+                            st.caption(f"💡 현재 ATR: {atr_val:,.0f} | 권장 손절가: {input_price - 2*atr_val:,.0f}")
                         else:
                             input_price = st.number_input(f"{button_label}가", value=float(row['종가']), key=p_key)
                             
@@ -370,7 +439,7 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                     c2.markdown("<div style='color:#999999; font-size:0.85em; margin-top:8px; text-align:right;'>과거일 매매불가</div>", unsafe_allow_html=True)
 
 # UI 실행 파트
-st.markdown("##### 📈 Momentum Dashboard v1.8.6")
+st.markdown("##### 📈 Momentum Dashboard v2.0")
 market_safe = get_market_regime()
 
 if 'trigger_scroll' not in st.session_state:
@@ -381,7 +450,7 @@ if 'db_settings_loaded' not in st.session_state:
         res = supabase.table("strategy_settings").select("*").eq("id", 1).execute()
         if res.data:
             db_cfg = res.data[0]
-            st.session_state['bull_top_n'] = int(db_cfg.get('bull_top_n', 3))
+            st.session_state['bull_top_n'] = int(db_cfg.get('bull_top_n', 5))
             st.session_state['bull_sl'] = float(db_cfg.get('bull_sl', -3.0))
             st.session_state['bull_trig'] = float(db_cfg.get('bull_trig', 20.0))
             st.session_state['bull_stop'] = float(db_cfg.get('bull_stop', -10.0))
@@ -412,7 +481,7 @@ with st.sidebar:
 
     if is_bull:
         st.success("🟢 상승장 모드 (Bull Market)")
-        top_n_cfg = st.number_input("편입 종목 수 (Top N)", value=st.session_state.get('bull_top_n', 3), min_value=1, max_value=10)
+        top_n_cfg = st.number_input("편입 종목 수 (Top N)", value=st.session_state.get('bull_top_n', 5), min_value=1, max_value=10)
         sl_cfg = st.number_input("손절 임계값 (%)", value=st.session_state.get('bull_sl', -3.0), step=0.5)
         trig_cfg = st.number_input("트레일링 익절 트리거 (%)", value=st.session_state.get('bull_trig', 20.0), step=1.0)
         stop_cfg = st.number_input("고점 대비 반락 익절폭 (%)", value=st.session_state.get('bull_stop', -10.0), step=1.0)
@@ -443,7 +512,7 @@ with st.sidebar:
                 
                 settings_data = {
                     "id": 1,
-                    "bull_top_n": int(st.session_state.get('bull_top_n', 3)),
+                    "bull_top_n": int(st.session_state.get('bull_top_n', 5)),
                     "bull_sl": float(st.session_state.get('bull_sl', -3.0)),
                     "bull_trig": float(st.session_state.get('bull_trig', 20.0)),
                     "bull_stop": float(st.session_state.get('bull_stop', -10.0)),
@@ -498,6 +567,7 @@ if df_display is not None:
                 st.session_state['selected_ticker_from_table'] = clicked_ticker
                 st.session_state['trigger_scroll'] = True
 
+    # --- 4번 탭: 알파 시그널 구역 ---
     with tab4:
         st.markdown("##### 📋 시스템 매매 지시서 (알파 시그널)")
         
@@ -549,29 +619,49 @@ if df_display is not None:
                             display_name = f"{raw_name} ({ticker})"
                             
                         buy_price = float(h_row.get('buy_price', 0.0))
-                        qty = float(h_row.get('quantity', 1.0))
+                        buy_date = h_row.get('buy_date')
                         
                         curr_row = df_display[df_display['ticker'] == ticker]
                         curr_price = float(curr_row['종가'].values[0]) if not curr_row.empty else buy_price
-                        profit_rate = ((curr_price / buy_price) - 1) * 100 if buy_price > 0 else 0.0
+                        atr_val = float(curr_row['atr'].values[0]) if not curr_row.empty and 'atr' in curr_row.columns and not pd.isna(curr_row['atr'].values[0]) else 0
                         
+                        # 고가 트래킹 계산
+                        p_res = supabase.table("daily_analysis").select("high_price").eq("ticker", ticker).gte("price_date", buy_date).lte("price_date", selected_date_str).execute()
+                        peak = buy_price
+                        if p_res.data:
+                            highs = [pd.to_numeric(x['high_price'], errors='coerce') for x in p_res.data]
+                            peak = max([h for h in highs if pd.notna(h)] + [buy_price])
+                        
+                        profit_rate = ((curr_price / buy_price) - 1) * 100 if buy_price > 0 else 0.0
+                        stop_loss = buy_price - 2 * atr_val
                         warning_desc = ""
-                        if profit_rate <= sl_cfg:
-                            warning_desc = f" 🚨 [손절 경고: {sl_cfg}% 이탈 - 매도 권장]"
-                        elif profit_rate >= trig_cfg:
-                            warning_desc = f" 🎯 [트레일링 스탑: 고점 대비 {stop_cfg}% 반락 시 익절]"
+                        
+                        if curr_price <= stop_loss:
+                            warning_desc = f" 🚨 <span style='color:red;'>[손절가({stop_loss:,.0f}) 이탈 권고]</span>"
+                        elif peak >= buy_price * 1.15 and curr_price <= peak * 0.93:
+                            warning_desc = f" 🎯 <span style='color:#1f77b4;'>[트레일링 익절(-7%) 도달]</span>"
+                        elif peak >= buy_price * 1.15:
+                            warning_desc = f" ✨ <span style='color:#2ca02c;'>[트레일링 활성화 (최고점: {peak:,.0f})]</span>"
 
-                        st.markdown(f"**{display_name}** | Profit: {profit_rate:+.2f}%{warning_desc}")
+                        st.markdown(f"**{display_name}** | 수익률: {profit_rate:+.2f}% | 현재가: {curr_price:,.0f}{warning_desc}", unsafe_allow_html=True)
 
             df_rebal = df_display[df_display['매매상태'].isin(['매도필요', '매수추천'])]
             display_trade_list(df_rebal[df_rebal['매매상태'] == '매도필요'], "시스템 매도 필요 종목", "매도", "sys_s", selected_date, is_latest_date, market_type, holdings_db, top_n_cfg)
             display_trade_list(df_rebal[df_rebal['매매상태'] == '매수추천'], "시스템 매수 추천 종목", "매수", "sys_b", selected_date, is_latest_date, market_type, holdings_db, top_n_cfg)
 
         st.info(f"""
-        📌 **매수·매도 기준 안내**
-        * **매수 추천 기준**: 모멘텀 순위 상위 **30위 이내** 종목 중 RS(90) > 0, **RS(10) > 0**, 20일선 정배열(`종가 > MA20`)을 만족하는 상위 **{top_n_cfg}개** 종목
-        * **쿨다운 룰**: 매도 후 3일간 재매수 금지 (단, 종가가 직전 매도가를 돌파하면 쿨다운 즉시 해제)
-        * **매도 필요 기준**: 보유 종목 중 20일 이동평균선 이탈(`종가 < MA20`) 또는 순위가 상위 **30위** 밖으로 밀려난 종목
+        📌 **시스템 매매 지시서 가이드 (백테스트 전략 반영)**
+        * **시장 필터**: KOSPI/S&P500 종가 > 200일선 유지 시에만 신규 매수 스크리닝이 허용됩니다.
+        * **매수 스크리닝**: 매주 **수요일** 1회 스크리닝을 진행합니다.
+        * **매수 조건**: 모멘텀 순위 **30위 이하**, RS(90) > 0, RS(10) > 0, 종가 > MA20 정배열 
+        * **보유 종목 수**: 조건 충족 상위 **{top_n_cfg}개** 종목 
+        * **포지션 사이징**: ATR 기반 2% 룰 (`계좌총액 × 2% ÷ (2 × ATR)`) / 권장 손절가 = `매수가 - 2×ATR`
+        * **매도 조건** (매일 체크하며, 하나라도 충족 시 익일 매도):
+            1. 종가 < MA20 하향 이탈
+            2. 모멘텀 순위 30위 밖으로 밀림
+            3. 손절가 (2×ATR) 이탈 시
+            4. 트레일링 스탑: +15% 수익 도달 후, 최고점 대비 -7% 하락 시
+        * **쿨다운 룰**: 매도 후 3거래일 신규 편입 금지 (단, 종가가 직전 매도가를 재돌파하면 쿨다운 해제)
         """)
 
     # --- 5번 탭: 성과 분석 구역 ---
