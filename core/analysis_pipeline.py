@@ -103,21 +103,28 @@ def run_analysis_pipeline(market='KR', target_date=None):
     # 분석일 기준 원본 데이터 맵 (당일 OHLCV 추출용)
     df_analysis_day = df[df['price_date'] == analysis_date].set_index('ticker')
     
-    # 💡 [핵심 수정] 정확한 피벗 기반 ATR(14) 계산 로직 정립
+    # 💡 [핵심 수정 완료] 정확한 피벗 기반 ATR(14) 계산 로직
     try:
-        high_pivot = df.pivot(index='price_date', columns='ticker', values='high_price').sort_index().ffill()
-        low_pivot = df.pivot(index='price_date', columns='ticker', values='low_price').sort_index().ffill()
-        close_pivot = pivot_df
-        prev_close = close_pivot.shift(1)
+        # 고가와 저가 피벗 인덱스를 종가(pivot_df)와 완벽히 동기화
+        high_pivot = df.pivot(index='price_date', columns='ticker', values='high_price').sort_index().ffill().reindex(pivot_df.index)
+        low_pivot = df.pivot(index='price_date', columns='ticker', values='low_price').sort_index().ffill().reindex(pivot_df.index)
+        
+        prev_close = pivot_df.shift(1)
         
         tr1 = high_pivot - low_pivot
         tr2 = (high_pivot - prev_close).abs()
         tr3 = (low_pivot - prev_close).abs()
         
+        # 첫 행 결측치 방어
+        tr2 = tr2.fillna(tr1)
+        tr3 = tr3.fillna(tr1)
+        
         # 3가지 True Range 중 최댓값 산출
-        true_range = pd.DataFrame(np.maximum(tr1.values, np.maximum(tr2.values, tr3.values)), 
-                                  index=high_pivot.index, 
-                                  columns=high_pivot.columns)
+        true_range = pd.DataFrame(
+            np.maximum(tr1.values, np.maximum(tr2.values, tr3.values)), 
+            index=pivot_df.index, 
+            columns=pivot_df.columns
+        )
         
         atr_series = true_range.rolling(window=14, min_periods=1).mean().iloc[-1]
     except Exception as e:
