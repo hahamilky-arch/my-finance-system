@@ -271,11 +271,9 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_c
         if pd.notna(idx_close) and pd.notna(idx_ma200) and idx_ma200 > 0:
             market_passed = idx_close > idx_ma200
 
-    # 리밸런싱 주기에 따른 진입 조건
     is_wednesday = target_date_ts.day_name() == 'Wednesday'
     cycle_passed = True if rebalance_cycle == "상시 (빈자리 즉시 채우기)" else is_wednesday
     
-    # 최적화 매수 조건 (모멘텀 순위 <= 20, RS>0, 종가 > MA20)
     tech_cond = (df_final['순위'] <= 20) & (df_final['RS(90)'] > 0) & (df_final['RS(10)'] > 0) & (df_final['MA20'] > 0) & (df_final['종가'] > df_final['MA20'])
     df_final['is_no6_opt'] = False
     
@@ -327,7 +325,6 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_c
             ma20 = row['MA20']
             mom_rank = row['순위']
             
-            # 매도 조건 1: MA20 이탈 혹은 모멘텀 30위 밖 이탈
             if (ma20 > 0 and c_price < ma20) or (mom_rank > 30):
                 return '매도필요'
             
@@ -335,21 +332,19 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_c
             if not h_row.empty:
                 buy_price = float(h_row.iloc[0]['buy_price'])
                 
-                # 매도 조건 2: 고정 손절 임계값 이탈 (예: -6%)
                 stop_loss = buy_price * (1 + (sl_cfg / 100.0))
                 if c_price <= stop_loss:
                     return '매도필요'
                 
-                # 매도 조건 3: 트레일링 스탑 (+12% 상승 후 고점 대비 -5%/-7% 반락)
                 peak = peak_metrics.get(ticker, buy_price)
-                if peak >= buy_price * 1.12: # 트리거 +12%
+                if peak >= buy_price * 1.12:
                     if c_price <= peak * (1.0 - abs(stop_cfg) / 100.0):
                         return '매도필요'
 
             return '보유중'
         else:
-            if row['is_no6_opt']:
-                # 재매수 쿨다운 규칙 (3일 이내 매도한 종목은 직전 매도가 돌파 시에만 재매수 허용)
+            # 💡 [핵심 수정] 이미 보유 중인 종목은 매수 추천 대상에서 원천 차단 (ticker not in my_holdings)
+            if row['is_no6_opt'] and ticker not in my_holdings:
                 if ticker in sold_info:
                     last_sell_price = sold_info[ticker]
                     if row['종가'] > last_sell_price:
@@ -432,12 +427,11 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                     c2.markdown("<div style='color:#999999; font-size:0.85em; margin-top:8px; text-align:right;'>과거일 매매불가</div>", unsafe_allow_html=True)
 
 # UI 실행 파트
-st.markdown("##### 📈 Momentum Dashboard v2.2 (Alpha Optimizer)")
+st.markdown("##### 📈 Momentum Dashboard v2.3 (Alpha Optimizer)")
 
 if 'trigger_scroll' not in st.session_state:
     st.session_state['trigger_scroll'] = False
 
-# 백테스트 최고 성과 모델 기본 세팅 값 (Top 3, 손절 -6%, 트레일링 익절 +12% / 반락 -5%)
 if 'db_settings_loaded' not in st.session_state:
     try:
         res = supabase.table("strategy_settings").select("*").eq("id", 1).execute()
@@ -477,7 +471,6 @@ with st.sidebar:
     else:
         is_bull = market_safe
 
-    # 리밸런싱 주기 항목 추가 (상시, 주기 선택 가능)
     rebalance_cycle = st.selectbox("리밸런싱 주기", ["상시 (빈자리 즉시 채우기)", "주기 (매주 수요일)"], index=0)
 
     if is_bull:
