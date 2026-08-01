@@ -261,7 +261,7 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_c
     df_final['is_pullback'] = (df_final['순위'] <= 100) & (df_final['RS(90)'] > 0) & (df_final['변동'] > 0)
     df_final['MA20'] = df_final['MA20'].fillna(0)
     
-    # 시장 필터 검증 (지수 종가 > MA200)
+    # 시장 필터 검증
     idx_ticker = "^KS11" if market_type == "KR" else "^GSPC"
     idx_res = supabase.table("daily_analysis").select("close_price, ma200").eq("ticker", idx_ticker).eq("price_date", target_date_str).execute()
     market_passed = True
@@ -273,13 +273,6 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_c
 
     is_wednesday = target_date_ts.day_name() == 'Wednesday'
     cycle_passed = True if rebalance_cycle == "상시 (빈자리 즉시 채우기)" else is_wednesday
-    
-    tech_cond = (df_final['순위'] <= 20) & (df_final['RS(90)'] > 0) & (df_final['RS(10)'] > 0) & (df_final['MA20'] > 0) & (df_final['종가'] > df_final['MA20'])
-    df_final['is_no6_opt'] = False
-    
-    valid_indices = df_final[tech_cond].nsmallest(int(top_n_cfg), '순위').index
-    if cycle_passed and market_passed and top_n_cfg > 0:
-        df_final.loc[valid_indices, 'is_no6_opt'] = True
     
     df_stocks = pd.DataFrame(supabase.table("stocks").select("ticker, name").execute().data)
     if not df_stocks.empty:
@@ -317,46 +310,84 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_c
 
     sold_info = get_recently_sold_info(market_type, target_date_str, cooldown_days=3)
 
-    def classify_status(row):
-        ticker_raw = str(row['ticker']).strip()
-        ticker_upper = ticker_raw.upper()
-        is_in_holdings = ticker_upper in my_holdings_clean
-        
-        if is_in_holdings:
+    # ==========================================
+    # 💡 [핵심 수정] 빈자리(슬롯) 계산 및 매매 판독 로직
+    # ==========================================
+    sell_list = set()
+    
+    # 1. 기존 보유 종목들에 대해 매도 조건 먼저 확인
+    for _, row in df_final.iterrows():
+        ticker_upper = str(row['ticker']).strip().upper()
+        if ticker_upper in my_holdings_clean:
             c_price = row['종가']
             ma20 = row['MA20']
             mom_rank = row['순위']
             
+            # 매도 조건 1: MA20 이탈 혹은 모멘텀 30위 밖 이탈
             if (ma20 > 0 and c_price < ma20) or (mom_rank > 30):
-                return '매도필요'
-            
+                sell_list.add(ticker_upper)
+                continue
+                
             h_row = holdings_df[holdings_df['ticker'].astype(str).str.strip().str.upper() == ticker_upper]
             if not h_row.empty:
                 buy_price = float(h_row.iloc[0]['buy_price'])
                 
+                # 매도 조건 2: 고정 손절선 이탈
                 stop_loss = buy_price * (1 + (sl_cfg / 100.0))
                 if c_price <= stop_loss:
-                    return '매도필요'
+                    sell_list.add(ticker_upper)
+                    continue
                 
+                # 매도 조건 3: 트레일링 스탑
                 peak = peak_metrics.get(ticker_upper, buy_price)
-                if peak >= buy_price * 1.12:
+                if peak >= buy_price * (1 + trig_cfg / 100.0):
                     if c_price <= peak * (1.0 - abs(stop_cfg) / 100.0):
-                        return '매도필요'
+                        sell_list.add(ticker_upper)
+                        continue
 
+    # 2. 실질적인 빈자리(슬롯) 계산 (설정된 최대 갯수 - 매도 안 당하고 살아남은 현재 보유 갯수)
+    actual_keep_count = len([t for t in my_holdings_clean if t not in sell_list])
+    slots_available = int(top_n_cfg) - actual_keep_count
+    
+    buy_list = set()
+    df_final['is_no6_opt'] = False
+    
+    # 3. 빈자리가 1개 이상 있을 때만, 빈자리 갯수만큼만 추천 리스트 생성
+    if cycle_passed and market_passed and slots_available > 0:
+        tech_cond = (df_final['순위'] <= 20) & (df_final['RS(90)'] > 0) & (df_final['RS(10)'] > 0) & (df_final['MA20'] > 0) & (df_final['종가'] > df_final['MA20'])
+        candidates = df_final[tech_cond].sort_values('순위')
+        
+        for idx, row in candidates.iterrows():
+            if len(buy_list) >= slots_available:
+                break # 슬롯이 다 차면 탐색 즉시 중단
+                
+            ticker_upper = str(row['ticker']).strip().upper()
+            
+            # 이미 보유 중인 종목은 신규 매수 목록에서 원천 차단
+            if ticker_upper in my_holdings_clean:
+                continue
+                
+            # 쿨다운 통과 여부 확인
+            if ticker_upper in sold_info:
+                last_sell_price = sold_info[ticker_upper]
+                if row['종가'] <= last_sell_price:
+                    continue 
+                    
+            buy_list.add(ticker_upper)
+            df_final.at[idx, 'is_no6_opt'] = True
+
+    # 4. 판별된 상태를 데이터프레임에 적용
+    def assign_status(row):
+        t_upper = str(row['ticker']).strip().upper()
+        if t_upper in sell_list:
+            return '매도필요'
+        elif t_upper in my_holdings_clean:
             return '보유중'
-        else:
-            # 💡 [보유 중복 방지 및 정규화 적용] 이미 보유 중인 종목은 매수 추천에서 원천 차단
-            if row['is_no6_opt'] and ticker_upper not in my_holdings_clean:
-                if ticker_upper in sold_info:
-                    last_sell_price = sold_info[ticker_upper]
-                    if row['종가'] > last_sell_price:
-                        return '매수추천'
-                    else:
-                        return '' 
-                return '매수추천'
-            return ''
+        elif t_upper in buy_list:
+            return '매수추천'
+        return ''
 
-    df_final['매매상태'] = df_final.apply(classify_status, axis=1)
+    df_final['매매상태'] = df_final.apply(assign_status, axis=1)
     
     return df_final.sort_values('순위')
 
@@ -372,7 +403,7 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                 if '매도' in title:
                     reason_desc = f"MA20 이탈, 순위 30위 밖, 고정 손절 이탈, 또는 트레일링 스탑 충족"
                 else:
-                    reason_desc = f"Top {top_n_cfg} (순위<=20), RS(90)>0, RS(10)>0, MA20 정배열 (쿨다운 통과)"
+                    reason_desc = f"Top {top_n_cfg} 편입 (순위<=20), RS(90)>0, RS(10)>0, MA20 정배열 (쿨다운 통과)"
 
                 c1.markdown(f"""
                 <div style="line-height: 1.6; margin-top: 4px;">
@@ -429,7 +460,7 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                     c2.markdown("<div style='color:#999999; font-size:0.85em; margin-top:8px; text-align:right;'>과거일 매매불가</div>", unsafe_allow_html=True)
 
 # UI 실행 파트
-st.markdown("##### 📈 Momentum Dashboard v2.4 (Alpha Optimizer)")
+st.markdown("##### 📈 Momentum Dashboard v2.5 (Alpha Optimizer)")
 
 if 'trigger_scroll' not in st.session_state:
     st.session_state['trigger_scroll'] = False
