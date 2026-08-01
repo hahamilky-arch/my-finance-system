@@ -140,7 +140,7 @@ def get_recently_sold_info(market_type, target_date, cooldown_days=3):
         
         sold_dict = {}
         for _, r in recent_df.sort_values('sell_date').iterrows():
-            sold_dict[r['ticker']] = float(r['sell_price']) if pd.notna(r['sell_price']) else 0.0
+            sold_dict[str(r['ticker']).strip().upper()] = float(r['sell_price']) if pd.notna(r['sell_price']) else 0.0
             
         return sold_dict
     except Exception:
@@ -301,6 +301,7 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_c
         holdings_df = pd.DataFrame()
 
     my_holdings = holdings_df['ticker'].tolist() if not holdings_df.empty else []
+    my_holdings_clean = [str(t).strip().upper() for t in my_holdings]
     
     peak_metrics = {}
     if not holdings_df.empty:
@@ -310,15 +311,16 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_c
             p_res = supabase.table("daily_analysis").select("high_price").eq("ticker", tk).gte("price_date", bd).lte("price_date", target_date_str).execute()
             if p_res.data:
                 highs = [pd.to_numeric(x['high_price'], errors='coerce') for x in p_res.data]
-                peak_metrics[tk] = max([h for h in highs if pd.notna(h)] + [0])
+                peak_metrics[str(tk).strip().upper()] = max([h for h in highs if pd.notna(h)] + [0])
             else:
-                peak_metrics[tk] = float(r['buy_price'])
+                peak_metrics[str(tk).strip().upper()] = float(r['buy_price'])
 
     sold_info = get_recently_sold_info(market_type, target_date_str, cooldown_days=3)
 
     def classify_status(row):
-        ticker = row['ticker']
-        is_in_holdings = ticker in my_holdings
+        ticker_raw = str(row['ticker']).strip()
+        ticker_upper = ticker_raw.upper()
+        is_in_holdings = ticker_upper in my_holdings_clean
         
         if is_in_holdings:
             c_price = row['종가']
@@ -328,7 +330,7 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_c
             if (ma20 > 0 and c_price < ma20) or (mom_rank > 30):
                 return '매도필요'
             
-            h_row = holdings_df[holdings_df['ticker'] == ticker]
+            h_row = holdings_df[holdings_df['ticker'].astype(str).str.strip().str.upper() == ticker_upper]
             if not h_row.empty:
                 buy_price = float(h_row.iloc[0]['buy_price'])
                 
@@ -336,17 +338,17 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_c
                 if c_price <= stop_loss:
                     return '매도필요'
                 
-                peak = peak_metrics.get(ticker, buy_price)
+                peak = peak_metrics.get(ticker_upper, buy_price)
                 if peak >= buy_price * 1.12:
                     if c_price <= peak * (1.0 - abs(stop_cfg) / 100.0):
                         return '매도필요'
 
             return '보유중'
         else:
-            # 💡 [핵심 수정] 이미 보유 중인 종목은 매수 추천 대상에서 원천 차단 (ticker not in my_holdings)
-            if row['is_no6_opt'] and ticker not in my_holdings:
-                if ticker in sold_info:
-                    last_sell_price = sold_info[ticker]
+            # 💡 [보유 중복 방지 및 정규화 적용] 이미 보유 중인 종목은 매수 추천에서 원천 차단
+            if row['is_no6_opt'] and ticker_upper not in my_holdings_clean:
+                if ticker_upper in sold_info:
+                    last_sell_price = sold_info[ticker_upper]
                     if row['종가'] > last_sell_price:
                         return '매수추천'
                     else:
@@ -412,7 +414,7 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                             
                             default_qty = 1.0
                             if not holdings_df.empty:
-                                matched_h = holdings_df[holdings_df['ticker'] == ticker]
+                                matched_h = holdings_df[holdings_df['ticker'].astype(str).str.strip().str.upper() == str(ticker).strip().upper()]
                                 if not matched_h.empty:
                                     val = matched_h.iloc[0].get('quantity', 1.0)
                                     default_qty = float(val) if pd.notna(val) else 1.0
@@ -427,7 +429,7 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                     c2.markdown("<div style='color:#999999; font-size:0.85em; margin-top:8px; text-align:right;'>과거일 매매불가</div>", unsafe_allow_html=True)
 
 # UI 실행 파트
-st.markdown("##### 📈 Momentum Dashboard v2.3 (Alpha Optimizer)")
+st.markdown("##### 📈 Momentum Dashboard v2.4 (Alpha Optimizer)")
 
 if 'trigger_scroll' not in st.session_state:
     st.session_state['trigger_scroll'] = False
@@ -615,7 +617,7 @@ if df_display is not None:
                         buy_price = float(h_row.get('buy_price', 0.0))
                         buy_date = h_row.get('buy_date')
                         
-                        curr_row = df_display[df_display['ticker'] == ticker]
+                        curr_row = df_display[df_display['ticker'].astype(str).str.strip().str.upper() == str(ticker).strip().upper()]
                         curr_price = float(curr_row['종가'].values[0]) if not curr_row.empty else buy_price
                         
                         p_res = supabase.table("daily_analysis").select("high_price").eq("ticker", ticker).gte("price_date", buy_date).lte("price_date", selected_date_str).execute()
