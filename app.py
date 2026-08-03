@@ -310,9 +310,6 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_c
 
     sold_info = get_recently_sold_info(market_type, target_date_str, cooldown_days=3)
 
-    # ==========================================
-    # 💡 [핵심 수정] 빈자리(슬롯) 계산 및 매매 판독 로직
-    # ==========================================
     sell_list = set()
     
     # 1. 기존 보유 종목들에 대해 매도 조건 먼저 확인
@@ -673,6 +670,26 @@ if df_display is not None:
             df_rebal = df_display[df_display['매매상태'].isin(['매도필요', '매수추천'])]
             display_trade_list(df_rebal[df_rebal['매매상태'] == '매도필요'], "시스템 매도 필요 종목", "매도", "sys_s", selected_date, is_latest_date, market_type, holdings_db, top_n_cfg)
             display_trade_list(df_rebal[df_rebal['매매상태'] == '매수추천'], "시스템 매수 추천 종목", "매수", "sys_b", selected_date, is_latest_date, market_type, holdings_db, top_n_cfg)
+
+            # --- 수동 매수 기능 추가 섹션 ---
+            st.markdown("---")
+            st.markdown("###### ➕ 수동 종목 편입 (Manual Buy)")
+            with st.expander("시스템 추천 외 종목 수동 매수", expanded=False):
+                col_m1, col_m2, col_m3, col_m4 = st.columns(4)
+                with col_m1:
+                    m_ticker = st.text_input("종목코드 (Ticker)", key="m_ticker").strip().upper()
+                with col_m2:
+                    m_price = st.number_input("매수가", min_value=0.0, value=0.0, step=100.0, key="m_price")
+                with col_m3:
+                    m_qty = st.number_input("매수 수량", min_value=0.0, value=1.0, step=1.0, format="%.6f", key="m_qty")
+                with col_m4:
+                    m_date = st.date_input("매수일", value=selected_date, key="m_date")
+                
+                if st.button("수동 매수 실행", use_container_width=True, type="primary"):
+                    if m_ticker and m_price > 0 and m_qty > 0:
+                        update_holdings(m_ticker, 'BUY', m_price, m_date, m_qty, market_type)
+                    else:
+                        st.warning("종목코드, 매수가, 매수 수량을 올바르게 입력해주세요.")
 
         st.info(f"""
         📌 **알파 매매 전략 시스템 가이드 (백테스트 최적화 적용)**
