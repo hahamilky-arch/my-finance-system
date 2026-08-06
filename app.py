@@ -351,7 +351,18 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_c
     
     # 3. 빈자리가 1개 이상 있을 때만, 빈자리 갯수만큼만 추천 리스트 생성
     if cycle_passed and market_passed and slots_available > 0:
-        tech_cond = (df_final['순위'] <= 20) & (df_final['RS(90)'] > 0) & (df_final['RS(10)'] > 0) & (df_final['MA20'] > 0) & (df_final['종가'] > df_final['MA20'])
+        # 💡 [알파 최적화] 1번(이격도) + 2번(눌림목) 필터 결합
+        max_disparity = 1.08  # MA20 대비 +8% 이내에서만 매수 (과열 종목 제외)
+        
+        tech_cond = (
+            (df_final['순위'] <= 20) & 
+            (df_final['RS(90)'] > 0) & 
+            (df_final['RS(10)'] > 0) & 
+            (df_final['MA20'] > 0) & 
+            (df_final['종가'] > df_final['MA20']) & 
+            (df_final['종가'] <= df_final['MA20'] * max_disparity) & # ① 이격도 필터: 20일선과 너무 멀어지지 않은 종목
+            (df_final['종가'] < df_final['종가_prev'])                 # ② 눌림목 필터: 전일 대비 조정을 받고 있는 종목
+        )
         candidates = df_final[tech_cond].sort_values('순위')
         
         for idx, row in candidates.iterrows():
@@ -400,7 +411,7 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                 if '매도' in title:
                     reason_desc = f"MA20 이탈, 순위 30위 밖, 고정 손절 이탈, 또는 트레일링 스탑 충족"
                 else:
-                    reason_desc = f"Top {top_n_cfg} 편입 (순위<=20), RS(90)>0, RS(10)>0, MA20 정배열 (쿨다운 통과)"
+                    reason_desc = f"Top {top_n_cfg} 편입 (순위<=20), MA20 이격 8% 이내, 전일 대비 하락(눌림목)"
 
                 c1.markdown(f"""
                 <div style="line-height: 1.6; margin-top: 4px;">
@@ -695,7 +706,7 @@ if df_display is not None:
         📌 **알파 매매 전략 시스템 가이드 (백테스트 최적화 적용)**
         * **시장 필터**: 지수 종가 > 200일선 유지 시에만 신규 매수 스크리닝 허용
         * **리밸런싱 주기**: `{rebalance_cycle}`
-        * **매수 조건**: 모멘텀 순위 **20위 이하**, RS(90) > 0, RS(10) > 0, 종가 > MA20 정배열
+        * **매수 조건**: 모멘텀 순위 **20위 이하**, RS(90) > 0, RS(10) > 0, 종가 > MA20, **20일선 이격도 8% 이내**, **전일 대비 하락(눌림목)**
         * **보유 종목 수**: 조건 충족 상위 **{top_n_cfg}개** (하락장 세팅 시 매수 차단)
         * **포지션 사이징**: 종목당 자산의 균등 비중 배분 (Top {top_n_cfg} 집중 투자)
         * **매도 조건** (하나라도 충족 시 익일 매도):
@@ -787,17 +798,27 @@ if df_display is not None:
                     
                     profit_factor = (avg_win_amt / avg_loss_amt) if avg_loss_amt > 0 else (999.0 if avg_win_amt > 0 else 0.0)
                     
+                    # 💡 [핵심 업데이트] 통화 단위 및 포맷 분기 처리
+                    if market_type == "US":
+                        profit_fmt = lambda x: f"${x:,.2f}"
+                        price_fmt = "{:,.2f}"
+                        zero_str = "$0.00"
+                    else:
+                        profit_fmt = lambda x: f"{x:,.0f} 원"
+                        price_fmt = "{:,.0f}"
+                        zero_str = "0 원"
+                    
                     m1, m2, m3, m4 = st.columns(4)
-                    m1.metric("총 실현 손익", f"{total_profit:,.0f} 원")
+                    m1.metric("총 실현 손익", profit_fmt(total_profit))
                     m2.metric("총 매매 건수", f"{total_trades} 건 (성공 {win_trades} / 실패 {loss_trades})")
                     m3.metric("성공률 / 실패율", f"{win_rate:.1f}% / {loss_rate:.1f}%")
                     m4.metric("손익비 (Profit Factor)", f"{profit_factor:.2f}" if profit_factor < 999 else "무제한")
                     
                     m5, m6, m7, m8 = st.columns(4)
-                    m5.metric("평균 익절 금액", f"{avg_win_amt:,.0f} 원")
-                    m6.metric("평균 손절 금액", f"{avg_loss_amt:,.0f} 원")
+                    m5.metric("평균 익절 금액", profit_fmt(avg_win_amt))
+                    m6.metric("평균 손절 금액", profit_fmt(avg_loss_amt))
                     m7.metric("평균 수익률", f"{df_hist['profit_rate'].mean():+.2f} %")
-                    m8.metric("최대 단일 수익금", f"{df_hist['profit_amount'].max():,.0f} 원" if total_trades > 0 else "0 원")
+                    m8.metric("최대 단일 수익금", profit_fmt(df_hist['profit_amount'].max()) if total_trades > 0 else zero_str)
                     
                     st.write("")
                     st.markdown("###### 📅 월별 성과 종합")
@@ -809,7 +830,7 @@ if df_display is not None:
                     ).reset_index().sort_values('sell_month', ascending=False)
                     
                     st.dataframe(
-                        df_monthly.style.format({'월간손익': '{:,.0f}', '평균수익률': '{:+.2f}%'}),
+                        df_monthly.style.format({'월간손익': profit_fmt, '평균수익률': '{:+.2f}%'}),
                         hide_index=True, use_container_width=True
                     )
                     
@@ -820,8 +841,8 @@ if df_display is not None:
                     
                     st.dataframe(
                         df_hist_sorted[display_hist_cols].style.format({
-                            'buy_price': '{:,.0f}', 'sell_price': '{:,.0f}', 'quantity': '{:,.6f}',
-                            'profit_amount': '{:,.0f}', 'profit_rate': '{:+.2f}%'
+                            'buy_price': price_fmt, 'sell_price': price_fmt, 'quantity': '{:,.6f}',
+                            'profit_amount': profit_fmt, 'profit_rate': '{:+.2f}%'
                         }),
                         hide_index=True, use_container_width=True
                     )
