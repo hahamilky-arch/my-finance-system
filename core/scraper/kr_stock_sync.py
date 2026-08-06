@@ -1,5 +1,5 @@
 import pandas as pd
-import yfinance as yf
+import FinanceDataReader as fdr # yfinance 대신 fdr 사용
 from datetime import datetime, timedelta
 from database.client import supabase
 
@@ -40,20 +40,14 @@ def sync_kr_stocks(start_date=None, end_date=None):
             start_str = fetch_start.strftime('%Y-%m-%d')
             end_str = fetch_end.strftime('%Y-%m-%d')
             
-            # 코스피(.KS)로 먼저 시도 후, 데이터가 없으면 코스닥(.KQ)으로 폴백 시도
-            yf_ticker_ks = f"{db_ticker}.KS"
-            df = yf.Ticker(yf_ticker_ks).history(start=start_str, end=end_str)
+            # 💡 수정된 부분: fdr.DataReader 사용 (.KS, .KQ 구분 불필요)
+            df = fdr.DataReader(db_ticker, start_str, end_str)
             
             if df.empty:
-                yf_ticker_kq = f"{db_ticker}.KQ"
-                df = yf.Ticker(yf_ticker_kq).history(start=start_str, end=end_str)
-            
-            if df.empty:
+                print(f"[{db_ticker}] 데이터가 존재하지 않습니다. (상장폐지 또는 거래정지 가능성)")
                 continue
                 
-            # 💡 yfinance 타임존 제거 (Invalid comparison 에러 방지)
-            if df.index.tz is not None:
-                df.index = df.index.tz_localize(None)
+            # FinanceDataReader는 기본적으로 tz-naive 인덱스를 반환하므로 timezone 제거 로직 불필요
 
             # 실제 수집 요청한 시작일 범위로 필터링
             target_start_ts = pd.Timestamp(start_dt.strftime('%Y-%m-%d'))
