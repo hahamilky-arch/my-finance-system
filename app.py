@@ -360,8 +360,8 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_c
             (df_final['RS(10)'] > 0) & 
             (df_final['MA20'] > 0) & 
             (df_final['종가'] > df_final['MA20']) & 
-            (df_final['종가'] <= df_final['MA20'] * max_disparity) & # ① 이격도 필터: 20일선과 너무 멀어지지 않은 종목
-            (df_final['종가'] < df_final['종가_prev'])                 # ② 눌림목 필터: 전일 대비 조정을 받고 있는 종목
+            (df_final['종가'] <= df_final['MA20'] * max_disparity) #& # ① 이격도 필터: 20일선과 너무 멀어지지 않은 종목
+            #(df_final['종가'] < df_final['종가_prev'])                 # ② 눌림목 필터: 전일 대비 조정을 받고 있는 종목
         )
         candidates = df_final[tech_cond].sort_values('순위')
         
