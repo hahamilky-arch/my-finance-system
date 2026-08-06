@@ -48,7 +48,7 @@ jobs:
           key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
 
       - name: Install dependencies
-        run: pip install yfinance supabase pandas python-dotenv scipy
+        run: pip install yfinance supabase pandas python-dotenv scipy finance-datareader
       
       - name: Execute Pipeline
         run: |
