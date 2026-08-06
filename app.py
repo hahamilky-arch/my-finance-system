@@ -240,8 +240,8 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_c
     target_idx = all_dates.index(target_date_str)
     prev_date = all_dates[min(target_idx + 1, len(all_dates)-1)]
     
-    res_prev = supabase.table("daily_analysis").select("ticker, momentum_rank, close_price").eq("price_date", prev_date).execute()
-    df_prev = pd.DataFrame(res_prev.data).rename(columns={'momentum_rank': '순위_prev', 'close_price': '종가_prev'})
+    res_prev = supabase.table("daily_analysis").select("ticker, momentum_rank, close_price, ma20").eq("price_date", prev_date).execute()
+    df_prev = pd.DataFrame(res_prev.data).rename(columns={'momentum_rank': '순위_prev', 'close_price': '종가_prev', 'ma20': 'MA20_prev'})
     
     df_final = pd.merge(df_final, df_prev, on="ticker", how='left')
     df_final = df_final.rename(columns={
@@ -255,6 +255,7 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_c
     })
     
     df_final['종가_prev'] = pd.to_numeric(df_final['종가_prev'], errors='coerce')
+    df_final['MA20_prev'] = pd.to_numeric(df_final['MA20_prev'], errors='coerce')
     df_final['상승금액'] = df_final['종가'] - df_final['종가_prev']
     df_final['변동'] = df_final['순위_prev'].fillna(999) - df_final['순위']
     df_final['is_new_top30'] = (df_final['순위'] <= 30) & (df_final['순위_prev'] > 30)
@@ -320,8 +321,14 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_c
             ma20 = row['MA20']
             mom_rank = row['순위']
             
-            # 매도 조건 1: MA20 이탈 혹은 모멘텀 30위 밖 이탈
-            if (ma20 > 0 and c_price < ma20) or (mom_rank > 30):
+            # 매도 조건 1: MA20 이탈(2거래일 연속 확인) 혹은 모멘텀 30위 밖 이탈
+            today_breach = (ma20 > 0) and (c_price < ma20)
+            prev_ma20 = row.get('MA20_prev')
+            prev_close = row.get('종가_prev')
+            prev_breach = pd.notna(prev_ma20) and prev_ma20 > 0 and pd.notna(prev_close) and prev_close < prev_ma20
+            ma20_confirmed_exit = today_breach and prev_breach
+
+            if ma20_confirmed_exit or (mom_rank > 30):
                 sell_list.add(ticker_upper)
                 continue
                 
@@ -409,7 +416,7 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                 c1, c2 = st.columns([4, 1])
                 
                 if '매도' in title:
-                    reason_desc = f"MA20 이탈, 순위 30위 밖, 고정 손절 이탈, 또는 트레일링 스탑 충족"
+                    reason_desc = f"MA20 2일 연속 이탈, 순위 30위 밖, 고정 손절 이탈, 또는 트레일링 스탑 충족"
                 else:
                     reason_desc = f"Top {top_n_cfg} 편입 (순위<=20), MA20 이격 8% 이내, 전일 대비 하락(눌림목)"
 
@@ -710,7 +717,7 @@ if df_display is not None:
         * **보유 종목 수**: 조건 충족 상위 **{top_n_cfg}개** (하락장 세팅 시 매수 차단)
         * **포지션 사이징**: 종목당 자산의 균등 비중 배분 (Top {top_n_cfg} 집중 투자)
         * **매도 조건** (하나라도 충족 시 익일 매도):
-            1. 종가 < MA20 하향 이탈 또는 순위 30위 밖 이탈
+            1. 종가 < MA20 하향 이탈이 **2거래일 연속** 확인되거나, 순위 30위 밖 이탈
             2. 고정 손절선 이탈 (`{sl_cfg}%`)
             3. 트레일링 스탑: `{trig_cfg}%` 수익 도달 후, 최고점 대비 `{stop_cfg}%` 반락 시
         * **쿨다운 룰**: 매도 후 3거래일 신규 편입 금지 (단, 종가가 직전 매도가를 재돌파하면 쿨다운 해제)
