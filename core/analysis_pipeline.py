@@ -41,10 +41,11 @@ def run_analysis_pipeline(market='KR', target_date=None):
     prices = []
     for ticker in ticker_list:
         try:
+            # 💡 주의: 최신순(desc=True)으로 가져오고 있으므로, 뒤에서 반드시 과거순 오름차순으로 재정렬 필요
             response = supabase.table("stock_prices") \
                 .select("ticker, price_date, open_price, high_price, low_price, close_price, volume") \
                 .eq("ticker", ticker) \
-                .order("price_date", desc=False) \
+                .order("price_date", desc=True) \
                 .limit(300) \
                 .execute()
             if response.data:
@@ -57,23 +58,34 @@ def run_analysis_pipeline(market='KR', target_date=None):
         return
 
     df = pd.DataFrame(prices)
-    df['price_date'] = pd.to_datetime(df['price_date']).dt.strftime('%Y-%m-%d')
+    
+    # 💡 [핵심 수정 1] 문자열이 아닌 진정한 Datetime 객체로 변환하여 시계열 정렬 보장
+    df['price_date'] = pd.to_datetime(df['price_date']).dt.normalize()
+    
+    # 💡 [핵심 수정 2] 내림차순(desc)으로 가져온 데이터를 과거->현재(오름차순) 순으로 완벽 정렬
+    df = df.sort_values(by=['ticker', 'price_date']) 
+    
     df['close_price'] = pd.to_numeric(df['close_price'], errors='coerce')
     df['high_price'] = pd.to_numeric(df['high_price'], errors='coerce')
     df['low_price'] = pd.to_numeric(df['low_price'], errors='coerce')
     df['open_price'] = pd.to_numeric(df['open_price'], errors='coerce')
     df['volume'] = pd.to_numeric(df['volume'], errors='coerce').fillna(0)
     
-    # 3. 데이터 피벗 (종가 기준)
+    # 분석 기준일을 Timestamp 객체로 변환
+    target_dt = pd.to_datetime(analysis_date).normalize()
+
+    # 3. 데이터 피벗 (DatetimeIndex 기반)
     pivot_df = df.pivot(index='price_date', columns='ticker', values='close_price') \
                  .sort_index() \
                  .ffill()
 
-    if analysis_date in pivot_df.index:
-        pivot_df = pivot_df.loc[:analysis_date]
+    # 타겟 날짜까지 슬라이싱
+    if target_dt in pivot_df.index:
+        pivot_df = pivot_df.loc[:target_dt]
     else:
-        print(f"경고: {analysis_date} 데이터가 없습니다. 마지막 가용 데이터를 사용합니다.")
-        analysis_date = pivot_df.index[-1] if not pivot_df.empty else analysis_date
+        print(f"경고: {analysis_date} 데이터가 없습니다. 가장 최근 데이터를 사용합니다.")
+        target_dt = pivot_df.index[-1]
+        analysis_date = target_dt.strftime('%Y-%m-%d')
 
     # 4. 각종 기술적 지표 및 퀀트 지표 계산
     if benchmark_ticker not in pivot_df.columns:
@@ -89,7 +101,7 @@ def run_analysis_pipeline(market='KR', target_date=None):
     rs_map_90 = get_rs_score(pivot_df, benchmark_ticker=benchmark_ticker, window=90)
     rs_map_10 = get_rs_score(pivot_df, benchmark_ticker=benchmark_ticker, window=10)
     
-    # 💡 [경고 수정] fill_method=None 지정하여 미래 FutureWarning 방지
+    # 💡 [경고 방지] fill_method=None 지정
     r1 = pivot_df.pct_change(20, fill_method=None).iloc[-1]
     r2 = pivot_df.pct_change(40, fill_method=None).iloc[-1]
     r4 = pivot_df.pct_change(80, fill_method=None).iloc[-1]
@@ -102,10 +114,10 @@ def run_analysis_pipeline(market='KR', target_date=None):
     
     rank_map = weighted_momentum_series.rank(ascending=False)
     
-    # 분석일 기준 원본 데이터 맵 (당일 OHLCV 추출용)
-    df_analysis_day = df[df['price_date'] == analysis_date].set_index('ticker')
+    # 💡 [핵심 수정 3] 당일 데이터 추출 시 Timestamp를 사용하여 안전하게 필터링
+    df_analysis_day = df[df['price_date'] == target_dt].set_index('ticker')
     
-    # 💡 정확한 피벗 기반 ATR(14) 계산 및 결측치 방어 로직
+    # 정확한 피벗 기반 ATR(14) 계산
     try:
         high_pivot = df.pivot(index='price_date', columns='ticker', values='high_price').sort_index().ffill().reindex(pivot_df.index)
         low_pivot = df.pivot(index='price_date', columns='ticker', values='low_price').sort_index().ffill().reindex(pivot_df.index)
@@ -133,7 +145,8 @@ def run_analysis_pipeline(market='KR', target_date=None):
     # 5. 결과 DB 적재 데이터 생성
     analysis_data = []
     for ticker in ticker_list:
-        current_close = pivot_df.loc[analysis_date, ticker] if ticker in pivot_df.columns and analysis_date in pivot_df.index else 0.0
+        # 안전한 데이터 조회를 위해 target_dt 사용
+        current_close = pivot_df.loc[target_dt, ticker] if ticker in pivot_df.columns and target_dt in pivot_df.index else 0.0
         row_info = df_analysis_day.loc[ticker] if ticker in df_analysis_day.index else {}
         
         analysis_data.append({
