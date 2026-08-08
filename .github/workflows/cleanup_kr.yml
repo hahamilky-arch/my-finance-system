@@ -38,7 +38,7 @@ jobs:
 
       - name: Run Cleanup Script
         run: |
-          python cleanup_kr_market.py
+          python core/cleanup_kr_market.py
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
