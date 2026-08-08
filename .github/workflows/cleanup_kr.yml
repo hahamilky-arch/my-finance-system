@@ -1,0 +1,44 @@
+name: Cleanup KR Market Holidays
+
+on:
+  workflow_dispatch:
+    inputs:
+      start_date:
+        description: 'Start Date (YYYY-MM-DD)'
+        required: true
+        default: '2025-01-01'
+        type: string
+      end_date:
+        description: 'End Date (YYYY-MM-DD)'
+        required: true
+        default: '2026-12-31'
+        type: string
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with: 
+          python-version: '3.9'
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+
+      - name: Install dependencies
+        run: pip install supabase pandas python-dotenv finance-datareader
+
+      - name: Run Cleanup Script
+        run: |
+          python cleanup_kr_market.py
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
