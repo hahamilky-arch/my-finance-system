@@ -216,7 +216,7 @@ def get_available_dates():
     response = supabase.rpc("get_all_dates").execute()
     return [item['price_date'] for item in response.data] if response.data else []
 
-def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_cycle, stop_cfg):
+def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_cycle, stop_cfg, trig_cfg):
     target_date_ts = pd.Timestamp(target_date).normalize()
     target_date_str = target_date_ts.strftime('%Y-%m-%d')
     if target_date_str not in all_dates: return None
@@ -262,7 +262,7 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_c
     df_final['is_pullback'] = (df_final['순위'] <= 100) & (df_final['RS(90)'] > 0) & (df_final['변동'] > 0)
     df_final['MA20'] = df_final['MA20'].fillna(0)
     
-    # 시장 필터 검증
+    # 시장 필터 검증 (KOSPI > MA200)
     idx_ticker = "^KS11" if market_type == "KR" else "^GSPC"
     idx_res = supabase.table("daily_analysis").select("close_price, ma200").eq("ticker", idx_ticker).eq("price_date", target_date_str).execute()
     market_passed = True
@@ -313,7 +313,7 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_c
 
     sell_list = set()
     
-    # 1. 기존 보유 종목들에 대해 매도 조건 먼저 확인
+    # 1. 보유 종목 매도 조건 점검
     for _, row in df_final.iterrows():
         ticker_upper = str(row['ticker']).strip().upper()
         if ticker_upper in my_holdings_clean:
@@ -321,7 +321,7 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_c
             ma20 = row['MA20']
             mom_rank = row['순위']
             
-            # 매도 조건 1: MA20 이탈(2거래일 연속 확인) 혹은 모멘텀 30위 밖 이탈
+            # 매도 조건 1: MA20 2일 연속 이탈 또는 모멘텀 30위 밖
             today_breach = (ma20 > 0) and (c_price < ma20)
             prev_ma20 = row.get('MA20_prev')
             prev_close = row.get('종가_prev')
@@ -336,29 +336,28 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_c
             if not h_row.empty:
                 buy_price = float(h_row.iloc[0]['buy_price'])
                 
-                # 매도 조건 2: 고정 손절선 이탈
+                # 매도 조건 2: 고정 손절선 (-6%)
                 stop_loss = buy_price * (1 + (sl_cfg / 100.0))
                 if c_price <= stop_loss:
                     sell_list.add(ticker_upper)
                     continue
                 
-                # 매도 조건 3: 트레일링 스탑
+                # 매도 조건 3: 트레일링 스탑 (+12% 달성 후 -5% 반락)
                 peak = peak_metrics.get(ticker_upper, buy_price)
                 if peak >= buy_price * (1 + trig_cfg / 100.0):
                     if c_price <= peak * (1.0 - abs(stop_cfg) / 100.0):
                         sell_list.add(ticker_upper)
                         continue
 
-    # 2. 실질적인 빈자리(슬롯) 계산 (설정된 최대 갯수 - 매도 안 당하고 살아남은 현재 보유 갯수)
+    # 2. 슬롯 계산
     actual_keep_count = len([t for t in my_holdings_clean if t not in sell_list])
     slots_available = int(top_n_cfg) - actual_keep_count
     
     buy_list = set()
     df_final['is_no6_opt'] = False
     
-    # 3. 빈자리가 1개 이상 있을 때만, 빈자리 갯수만큼만 추천 리스트 생성
+    # 3. 매수 추천 스크리닝 (백테스트 최적화 적용)
     if cycle_passed and market_passed and slots_available > 0:
-        # 💡 [알파 최적화] 1번(이격도) + 2번(눌림목) 필터 결합
         max_disparity = 1.08  # MA20 대비 +8% 이내에서만 매수 (과열 종목 제외)
         
         tech_cond = (
@@ -367,22 +366,20 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_c
             (df_final['RS(10)'] > 0) & 
             (df_final['MA20'] > 0) & 
             (df_final['종가'] > df_final['MA20']) & 
-            (df_final['종가'] <= df_final['MA20'] * max_disparity) #& # ① 이격도 필터: 20일선과 너무 멀어지지 않은 종목
-            #(df_final['종가'] < df_final['종가_prev'])                 # ② 눌림목 필터: 전일 대비 조정을 받고 있는 종목
+            (df_final['종가'] <= df_final['MA20'] * max_disparity)
         )
         candidates = df_final[tech_cond].sort_values('순위')
         
         for idx, row in candidates.iterrows():
             if len(buy_list) >= slots_available:
-                break # 슬롯이 다 차면 탐색 즉시 중단
+                break
                 
             ticker_upper = str(row['ticker']).strip().upper()
             
-            # 이미 보유 중인 종목은 신규 매수 목록에서 원천 차단
             if ticker_upper in my_holdings_clean:
                 continue
                 
-            # 쿨다운 통과 여부 확인
+            # 쿨다운 통과 여부
             if ticker_upper in sold_info:
                 last_sell_price = sold_info[ticker_upper]
                 if row['종가'] <= last_sell_price:
@@ -391,7 +388,7 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_c
             buy_list.add(ticker_upper)
             df_final.at[idx, 'is_no6_opt'] = True
 
-    # 4. 판별된 상태를 데이터프레임에 적용
+    # 4. 상태 적용
     def assign_status(row):
         t_upper = str(row['ticker']).strip().upper()
         if t_upper in sell_list:
@@ -418,7 +415,7 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                 if '매도' in title:
                     reason_desc = f"MA20 2일 연속 이탈, 순위 30위 밖, 고정 손절 이탈, 또는 트레일링 스탑 충족"
                 else:
-                    reason_desc = f"Top {top_n_cfg} 편입 (순위<=20), MA20 이격 8% 이내, 전일 대비 하락(눌림목)"
+                    reason_desc = f"Top {top_n_cfg} 편입 (순위<=20), RS>0, MA20 정배열, 이격도 8% 이내"
 
                 c1.markdown(f"""
                 <div style="line-height: 1.6; margin-top: 4px;">
@@ -582,7 +579,7 @@ if all_dates and selected_date:
     if selected_date_str == latest_date_str:
         is_latest_date = True
 
-df_display = get_data(selected_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_cycle, stop_cfg)
+df_display = get_data(selected_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_cycle, stop_cfg, trig_cfg)
 
 if df_display is not None:
     tab1, tab2, tab3, tab4, tab5 = st.tabs(["Overview", "New Entries", "🎯 Pullback", "🚀 알파 시그널", "📊 성과 분석"])
@@ -689,7 +686,7 @@ if df_display is not None:
             display_trade_list(df_rebal[df_rebal['매매상태'] == '매도필요'], "시스템 매도 필요 종목", "매도", "sys_s", selected_date, is_latest_date, market_type, holdings_db, top_n_cfg)
             display_trade_list(df_rebal[df_rebal['매매상태'] == '매수추천'], "시스템 매수 추천 종목", "매수", "sys_b", selected_date, is_latest_date, market_type, holdings_db, top_n_cfg)
 
-            # --- 수동 매수 기능 추가 섹션 ---
+            # --- 수동 매수 기능 섹션 ---
             st.markdown("---")
             st.markdown("###### ➕ 수동 종목 편입 (Manual Buy)")
             with st.expander("시스템 추천 외 종목 수동 매수", expanded=False):
@@ -805,7 +802,6 @@ if df_display is not None:
                     
                     profit_factor = (avg_win_amt / avg_loss_amt) if avg_loss_amt > 0 else (999.0 if avg_win_amt > 0 else 0.0)
                     
-                    # 💡 [핵심 업데이트] 통화 단위 및 포맷 분기 처리
                     if market_type == "US":
                         profit_fmt = lambda x: f"${x:,.2f}"
                         price_fmt = "{:,.2f}"
@@ -854,7 +850,7 @@ if df_display is not None:
                         hide_index=True, use_container_width=True
                     )
 
-    # --- 📉 하단 주가 및 모멘텀 순위 시계열 차트 구역 ---
+    # --- 📉 시계열 차트 구역 ---
     st.divider()
     st.markdown("<div id='chart-section'></div>", unsafe_allow_html=True)
     st.markdown("##### 📉 종목별 최근 주가 및 시장 흐름 통합 추이")
