@@ -403,19 +403,31 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_c
     
     return df_final.sort_values('순위')
 
-def display_trade_list(data, title, button_label, key_prefix, target_date, is_latest_date, market_type, holdings_df, top_n_cfg):
+def display_trade_list(data, title, button_label, key_prefix, target_date, is_latest_date, market_type, holdings_df, top_n_cfg, account_total=0.0):
     with st.expander(f"🚨 {title} ({len(data)}개)", expanded=True):
         if data.empty:
             st.write(f"해당되는 {button_label} 종목이 없습니다.")
         else:
+            # 포지션 사이징 비중 계산 (Top N 기반)
+            target_pct = (100.0 / top_n_cfg) if top_n_cfg > 0 else 0.0
+            target_amount = (account_total * (target_pct / 100.0)) if account_total > 0 else 0.0
+            
+            currency_unit = "$" if market_type == "US" else "원"
+            fmt_str = f"${target_amount:,.2f}" if market_type == "US" else f"{target_amount:,.0f}원"
+
             for _, row in data.iterrows():
                 ticker = row['ticker']
                 c1, c2 = st.columns([4, 1])
                 
                 if '매도' in title:
                     reason_desc = f"MA20 2일 연속 이탈, 순위 30위 밖, 고정 손절 이탈, 또는 트레일링 스탑 충족"
+                    position_info = ""
                 else:
                     reason_desc = f"Top {top_n_cfg} 편입 (순위<=20), RS>0, MA20 정배열, 이격도 8% 이내"
+                    if account_total > 0:
+                        position_info = f"<br><span style='font-size: 0.85em; color: #1b5e20; font-weight: bold;'>📊 목표 비중: {target_pct:.1f}% | 추천 매수 금액: {fmt_str}</span>"
+                    else:
+                        position_info = f"<br><span style='font-size: 0.85em; color: #1b5e20; font-weight: bold;'>📊 목표 비중: 종목당 {target_pct:.1f}% (계좌 총액 입력 시 금액 자동계산)</span>"
 
                 c1.markdown(f"""
                 <div style="line-height: 1.6; margin-top: 4px;">
@@ -425,6 +437,7 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                     <span style="font-size: 0.85em; color: #d62728; font-weight: bold;">
                         📌 사유: {reason_desc}
                     </span>
+                    {position_info}
                     <br>
                     <span style="font-size: 0.85em; color: #444444;">
                         MOT: {row['MOT']:.2f} | RS(90): {row['RS(90)']:.2f} | RS(10): {row['RS(10)']:.2f}
@@ -530,6 +543,11 @@ with st.sidebar:
         sl_cfg = st.number_input("손절 임계값 (%)", value=st.session_state.get('bear_sl', -6.0), step=0.5)
         trig_cfg = st.number_input("트레일링 익절 트리거 (%)", value=st.session_state.get('bear_trig', 12.0), step=0.5)
         stop_cfg = st.number_input("고점 대비 반락 익절폭 (%)", value=st.session_state.get('bear_stop', -5.0), step=0.5)
+
+    st.divider()
+    
+    # 계좌 총 운용자산 설정 (비중 및 금액 산출용)
+    account_total_input = st.number_input("💰 운용 계좌 전체 자산 (비중/금액 계산용)", min_value=0.0, value=15000000.0, step=1000000.0, key="global_account_total")
 
     st.divider()
     
@@ -684,23 +702,38 @@ if df_display is not None:
                         holdings_merged = holdings_db
                         holdings_merged['name'] = holdings_merged['ticker']
                     
+                    # 보유 종목 총 평가금액 산출 (비중 계산용)
+                    total_holdings_val = 0.0
+                    holdings_info_list = []
+                    
                     for _, h_row in holdings_merged.iterrows():
                         ticker = h_row['ticker']
                         raw_name = h_row.get('name', ticker)
                         if pd.isna(raw_name): raw_name = ticker
-                        
-                        if market_type == "US":
-                            display_name = f"[{ticker}] {raw_name}"
-                        else:
-                            display_name = f"{raw_name} ({ticker})"
-                            
                         buy_price = float(h_row.get('buy_price', 0.0))
                         buy_date = h_row.get('buy_date')
+                        qty = float(h_row.get('quantity', 1.0))
                         
                         curr_row = df_display[df_display['ticker'].astype(str).str.strip().str.upper() == str(ticker).strip().upper()]
                         curr_price = float(curr_row['종가'].values[0]) if not curr_row.empty else buy_price
+                        eval_val = curr_price * qty
+                        total_holdings_val += eval_val
                         
-                        p_res = supabase.table("daily_analysis").select("high_price").eq("ticker", ticker).gte("price_date", buy_date).lte("price_date", selected_date_str).execute()
+                        holdings_info_list.append({
+                            'ticker': ticker, 'raw_name': raw_name, 'buy_price': buy_price, 'buy_date': buy_date,
+                            'qty': qty, 'curr_price': curr_price, 'eval_val': eval_val
+                        })
+                    
+                    calc_base_total = account_total_input if account_total_input > 0 else total_holdings_val
+
+                    for item in holdings_info_list:
+                        ticker = item['ticker']
+                        display_name = f"[{ticker}] {item['raw_name']}" if market_type == "US" else f"{item['raw_name']} ({ticker})"
+                        
+                        curr_price = item['curr_price']
+                        buy_price = item['buy_price']
+                        
+                        p_res = supabase.table("daily_analysis").select("high_price").eq("ticker", ticker).gte("price_date", item['buy_date']).lte("price_date", selected_date_str).execute()
                         peak = buy_price
                         if p_res.data:
                             highs = [pd.to_numeric(x['high_price'], errors='coerce') for x in p_res.data]
@@ -717,11 +750,14 @@ if df_display is not None:
                         elif peak >= buy_price * (1 + trig_cfg/100.0):
                             warning_desc = f" ✨ <span style='color:#2ca02c;'>[트레일링 활성화 (최고점: {peak:,.0f})]</span>"
 
-                        st.markdown(f"**{display_name}** | 수익률: {profit_rate:+.2f}% | 현재가: {curr_price:,.0f}{warning_desc}", unsafe_allow_html=True)
+                        holding_weight = (item['eval_val'] / calc_base_total * 100.0) if calc_base_total > 0 else 0.0
+                        amt_str = f"${item['eval_val']:,.2f}" if market_type == "US" else f"{item['eval_val']:,.0f}원"
+
+                        st.markdown(f"**{display_name}** | 비중: **{holding_weight:.1f}%** ({amt_str}) | 수익률: {profit_rate:+.2f}% | 현재가: {curr_price:,.0f}{warning_desc}", unsafe_allow_html=True)
 
             df_rebal = df_display[df_display['매매상태'].isin(['매도필요', '매수추천'])]
-            display_trade_list(df_rebal[df_rebal['매매상태'] == '매도필요'], "시스템 매도 필요 종목", "매도", "sys_s", selected_date, is_latest_date, market_type, holdings_db, top_n_cfg)
-            display_trade_list(df_rebal[df_rebal['매매상태'] == '매수추천'], "시스템 매수 추천 종목", "매수", "sys_b", selected_date, is_latest_date, market_type, holdings_db, top_n_cfg)
+            display_trade_list(df_rebal[df_rebal['매매상태'] == '매도필요'], "시스템 매도 필요 종목", "매도", "sys_s", selected_date, is_latest_date, market_type, holdings_db, top_n_cfg, account_total_input)
+            display_trade_list(df_rebal[df_rebal['매매상태'] == '매수추천'], "시스템 매수 추천 종목", "매수", "sys_b", selected_date, is_latest_date, market_type, holdings_db, top_n_cfg, account_total_input)
 
             # --- 수동 매수 기능 섹션 ---
             st.markdown("---")
