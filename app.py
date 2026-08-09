@@ -487,13 +487,13 @@ if 'db_settings_loaded' not in st.session_state:
             st.session_state['bull_trig'] = float(db_cfg.get('bull_trig', 12.0))
             st.session_state['bull_stop'] = float(db_cfg.get('bull_stop', -5.0))
             
-            st.session_state['bear_top_n'] = int(db_cfg.get('bear_top_n', 0)) 
+            st.session_state['bear_top_n'] = int(db_cfg.get('bear_top_n', 2)) 
             st.session_state['bear_sl'] = float(db_cfg.get('bear_sl', -6.0))
             st.session_state['bear_trig'] = float(db_cfg.get('bear_trig', 12.0))
             st.session_state['bear_stop'] = float(db_cfg.get('bear_stop', -5.0))
     except Exception as e:
         st.session_state['bull_top_n'], st.session_state['bull_sl'], st.session_state['bull_trig'], st.session_state['bull_stop'] = 3, -6.0, 12.0, -5.0
-        st.session_state['bear_top_n'], st.session_state['bear_sl'], st.session_state['bear_trig'], st.session_state['bear_stop'] = 0, -6.0, 12.0, -5.0
+        st.session_state['bear_top_n'], st.session_state['bear_sl'], st.session_state['bear_trig'], st.session_state['bear_stop'] = 2, -6.0, 12.0, -5.0
         
     st.session_state['db_settings_loaded'] = True
 
@@ -526,48 +526,85 @@ with st.sidebar:
         stop_cfg = st.number_input("고점 대비 반락 익절폭 (%)", value=st.session_state.get('bull_stop', -5.0), step=1.0)
     else:
         st.error("🔴 하락장 모드 (Bear Market)")
-        top_n_cfg = st.number_input("편입 종목 수 (Top N)", value=st.session_state.get('bear_top_n', 0), min_value=0, max_value=5)
+        top_n_cfg = st.number_input("편입 종목 수 (Top N)", value=st.session_state.get('bear_top_n', 2), min_value=0, max_value=5)
         sl_cfg = st.number_input("손절 임계값 (%)", value=st.session_state.get('bear_sl', -6.0), step=0.5)
         trig_cfg = st.number_input("트레일링 익절 트리거 (%)", value=st.session_state.get('bear_trig', 12.0), step=0.5)
         stop_cfg = st.number_input("고점 대비 반락 익절폭 (%)", value=st.session_state.get('bear_stop', -5.0), step=0.5)
 
     st.divider()
     
-    with st.expander("💾 설정값 DB 저장 (비밀번호 필요)", expanded=False):
+    with st.expander("💾 설정값 DB 저장 / 초기화", expanded=False):
         config_pwd = st.text_input("매매 비밀번호 입력", type="password", key="pwd_config")
         
-        if st.button("현재 설정값 DB에 저장", use_container_width=True):
-            if config_pwd == st.secrets.get("TRADE_PASSWORD", "1234"):
-                if is_bull:
-                    st.session_state['bull_top_n'] = top_n_cfg
-                    st.session_state['bull_sl'] = sl_cfg
-                    st.session_state['bull_trig'] = trig_cfg
-                    st.session_state['bull_stop'] = stop_cfg
+        col_btn1, col_btn2 = st.columns(2)
+        with col_btn1:
+            if st.button("설정 저장", use_container_width=True):
+                if config_pwd == st.secrets.get("TRADE_PASSWORD", "1234"):
+                    if is_bull:
+                        st.session_state['bull_top_n'] = top_n_cfg
+                        st.session_state['bull_sl'] = sl_cfg
+                        st.session_state['bull_trig'] = trig_cfg
+                        st.session_state['bull_stop'] = stop_cfg
+                    else:
+                        st.session_state['bear_top_n'] = top_n_cfg
+                        st.session_state['bear_sl'] = sl_cfg
+                        st.session_state['bear_trig'] = trig_cfg
+                        st.session_state['bear_stop'] = stop_cfg
+                    
+                    settings_data = {
+                        "id": 1,
+                        "bull_top_n": int(st.session_state.get('bull_top_n', 3)),
+                        "bull_sl": float(st.session_state.get('bull_sl', -6.0)),
+                        "bull_trig": float(st.session_state.get('bull_trig', 12.0)),
+                        "bull_stop": float(st.session_state.get('bull_stop', -5.0)),
+                        "bear_top_n": int(st.session_state.get('bear_top_n', 2)),
+                        "bear_sl": float(st.session_state.get('bear_sl', -6.0)),
+                        "bear_trig": float(st.session_state.get('bear_trig', 12.0)),
+                        "bear_stop": float(st.session_state.get('bear_stop', -5.0))
+                    }
+                    
+                    try:
+                        supabase.table("strategy_settings").upsert(settings_data).execute()
+                        st.success("✅ 현재 설정값이 Supabase DB에 저장되었습니다.")
+                    except Exception as e:
+                        st.error(f"❌ DB 저장 실패: {e}")
                 else:
-                    st.session_state['bear_top_n'] = top_n_cfg
-                    st.session_state['bear_sl'] = sl_cfg
-                    st.session_state['bear_trig'] = trig_cfg
-                    st.session_state['bear_stop'] = stop_cfg
-                
-                settings_data = {
-                    "id": 1,
-                    "bull_top_n": int(st.session_state.get('bull_top_n', 3)),
-                    "bull_sl": float(st.session_state.get('bull_sl', -6.0)),
-                    "bull_trig": float(st.session_state.get('bull_trig', 12.0)),
-                    "bull_stop": float(st.session_state.get('bull_stop', -5.0)),
-                    "bear_top_n": int(st.session_state.get('bear_top_n', 0)),
-                    "bear_sl": float(st.session_state.get('bear_sl', -6.0)),
-                    "bear_trig": float(st.session_state.get('bear_trig', 12.0)),
-                    "bear_stop": float(st.session_state.get('bear_stop', -5.0))
-                }
-                
-                try:
-                    supabase.table("strategy_settings").upsert(settings_data).execute()
-                    st.success("✅ 현재 설정값이 Supabase DB에 성공적으로 저장되었습니다.")
-                except Exception as e:
-                    st.error(f"❌ DB 저장 중 오류가 발생했습니다: {e}")
-            else:
-                st.error("❌ 비밀번호가 일치하지 않습니다.")
+                    st.error("❌ 비밀번호 불일치")
+                    
+        with col_btn2:
+            if st.button("🔄 기본값 초기화", use_container_width=True):
+                if config_pwd == st.secrets.get("TRADE_PASSWORD", "1234"):
+                    # 백테스트 기반 최적 기본값 세팅
+                    default_settings = {
+                        "id": 1,
+                        "bull_top_n": 3,
+                        "bull_sl": -6.0,
+                        "bull_trig": 12.0,
+                        "bull_stop": -5.0,
+                        "bear_top_n": 2,
+                        "bear_sl": -6.0,
+                        "bear_trig": 12.0,
+                        "bear_stop": -5.0
+                    }
+                    try:
+                        supabase.table("strategy_settings").upsert(default_settings).execute()
+                        
+                        st.session_state['bull_top_n'] = 3
+                        st.session_state['bull_sl'] = -6.0
+                        st.session_state['bull_trig'] = 12.0
+                        st.session_state['bull_stop'] = -5.0
+                        
+                        st.session_state['bear_top_n'] = 2
+                        st.session_state['bear_sl'] = -6.0
+                        st.session_state['bear_trig'] = 12.0
+                        st.session_state['bear_stop'] = -5.0
+                        
+                        st.success("✅ 전략 설정이 기본값으로 초기화되었습니다.")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"❌ 초기화 중 오류 발생: {e}")
+                else:
+                    st.error("❌ 비밀번호 불일치")
 
     if st.button("Refresh", use_container_width=True): 
         st.rerun()
@@ -711,7 +748,7 @@ if df_display is not None:
         * **시장 필터**: 지수 종가 > 200일선 유지 시에만 신규 매수 스크리닝 허용
         * **리밸런싱 주기**: `{rebalance_cycle}`
         * **매수 조건**: 모멘텀 순위 **20위 이하**, RS(90) > 0, RS(10) > 0, 종가 > MA20, **20일선 이격도 8% 이내**
-        * **보유 종목 수**: 조건 충족 상위 **{top_n_cfg}개** (하락장 세팅 시 매수 차단)
+        * **보유 종목 수**: 조건 충족 상위 **{top_n_cfg}개** (하락장 세팅 시 2개 매수)
         * **포지션 사이징**: 종목당 자산의 균등 비중 배분 (Top {top_n_cfg} 집중 투자)
         * **매도 조건** (하나라도 충족 시 익일 매도):
             1. 종가 < MA20 하향 이탈이 **2거래일 연속** 확인되거나, 순위 30위 밖 이탈
