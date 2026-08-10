@@ -262,7 +262,18 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_c
     df_final['is_pullback'] = (df_final['순위'] <= 100) & (df_final['RS(90)'] > 0) & (df_final['변동'] > 0)
     df_final['MA20'] = df_final['MA20'].fillna(0)
     
-    # 시장 필터 검증 (KOSPI > MA200)
+    # 이격도(ma20_dev) 및 한국장 전용 4-Factor 결합 스코어 산출
+    df_final['ma20_dev'] = df_final.apply(
+        lambda r: ((r['종가'] - r['MA20']) / r['MA20'] * 100.0) if r['MA20'] > 0 else 0.0, axis=1
+    )
+    df_final['combined_score'] = (
+        df_final['RS(90)'].fillna(0) * 0.4 +
+        (100 - df_final['순위'].fillna(100)) * 0.3 +
+        df_final['ma20_dev'].fillna(0) * 0.2 +
+        df_final['RS(10)'].fillna(0) * 0.1
+    )
+    
+    # 시장 필터 검증 (지수 > MA200)
     idx_ticker = "^KS11" if market_type == "KR" else "^GSPC"
     idx_res = supabase.table("daily_analysis").select("close_price, ma200").eq("ticker", idx_ticker).eq("price_date", target_date_str).execute()
     market_passed = True
@@ -356,19 +367,29 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_c
     buy_list = set()
     df_final['is_no6_opt'] = False
     
-    # 3. 매수 추천 스크리닝 (백테스트 최적화 적용)
+    # 3. 매수 추천 스크리닝 (한국장/미국장 이원화 적용)
     if cycle_passed and market_passed and slots_available > 0:
-        max_disparity = 1.08  # MA20 대비 +8% 이내에서만 매수 (과열 종목 제외)
-        
-        tech_cond = (
-            (df_final['순위'] <= 20) & 
-            (df_final['RS(90)'] > 0) & 
-            (df_final['RS(10)'] > 0) & 
-            (df_final['MA20'] > 0) & 
-            (df_final['종가'] > df_final['MA20']) & 
-            (df_final['종가'] <= df_final['MA20'] * max_disparity)
-        )
-        candidates = df_final[tech_cond].sort_values('순위')
+        if market_type == "KR":
+            # [한국장] 4-Factor 결합 스코어 + 이격도 제한 해제
+            tech_cond = (
+                (df_final['RS(90)'] > 0) & 
+                (df_final['RS(10)'] > 0) & 
+                (df_final['MA20'] > 0) & 
+                (df_final['종가'] > df_final['MA20'])
+            )
+            candidates = df_final[tech_cond].sort_values('combined_score', ascending=False)
+        else:
+            # [미국장] 기존 Rank 정렬 + 이격도 +8% 캡 유지
+            max_disparity = 1.08
+            tech_cond = (
+                (df_final['순위'] <= 20) & 
+                (df_final['RS(90)'] > 0) & 
+                (df_final['RS(10)'] > 0) & 
+                (df_final['MA20'] > 0) & 
+                (df_final['종가'] > df_final['MA20']) & 
+                (df_final['종가'] <= df_final['MA20'] * max_disparity)
+            )
+            candidates = df_final[tech_cond].sort_values('순위')
         
         for idx, row in candidates.iterrows():
             if len(buy_list) >= slots_available:
@@ -423,7 +444,11 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                     reason_desc = f"MA20 2일 연속 이탈, 순위 30위 밖, 고정 손절 이탈, 또는 트레일링 스탑 충족"
                     position_info = ""
                 else:
-                    reason_desc = f"Top {top_n_cfg} 편입 (순위<=20), RS>0, MA20 정배열, 이격도 8% 이내"
+                    if market_type == "KR":
+                        reason_desc = f"4-Factor 스코어 최상위, RS>0, MA20 정배열 (이격도 제한 해제)"
+                    else:
+                        reason_desc = f"Top {top_n_cfg} 편입 (순위<=20), RS>0, MA20 정배열, 이격도 8% 이내"
+                        
                     if account_total > 0:
                         position_info = f"<br><span style='font-size: 0.85em; color: #1b5e20; font-weight: bold;'>📊 목표 비중: {target_pct:.1f}% | 추천 매수 금액: {fmt_str}</span>"
                     else:
@@ -440,7 +465,7 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                     {position_info}
                     <br>
                     <span style="font-size: 0.85em; color: #444444;">
-                        MOT: {row['MOT']:.2f} | RS(90): {row['RS(90)']:.2f} | RS(10): {row['RS(10)']:.2f}
+                        MOT: {row['MOT']:.2f} | RS(90): {row['RS(90)']:.2f} | RS(10): {row['RS(10)']:.2f} | 4-Factor 스코어: {row.get('combined_score', 0):.2f}
                     </span>
                 </div>
                 """, unsafe_allow_html=True)
@@ -779,11 +804,20 @@ if df_display is not None:
                     else:
                         st.warning("종목코드, 매수가, 매수 수량을 올바르게 입력해주세요.")
 
+        if market_type == "KR":
+            market_guide = """
+            * **매수 조건**: **4-Factor 결합 스코어(RS90 40% + Rank 30% + Dev20 20% + RS10 10%) 최상위**, RS(90) > 0, RS(10) > 0, 종가 > MA20 (**이격도 8% 상한 제한 해제**)
+            """
+        else:
+            market_guide = """
+            * **매수 조건**: 모멘텀 순위 **20위 이하**, RS(90) > 0, RS(10) > 0, 종가 > MA20, **20일선 이격도 8% 이내**
+            """
+
         st.info(f"""
         📌 **알파 매매 전략 시스템 가이드 (백테스트 최적화 적용)**
         * **시장 필터**: 지수 종가 > 200일선 유지 시에만 신규 매수 스크리닝 허용
         * **리밸런싱 주기**: `{rebalance_cycle}`
-        * **매수 조건**: 모멘텀 순위 **20위 이하**, RS(90) > 0, RS(10) > 0, 종가 > MA20, **20일선 이격도 8% 이내**
+        {market_guide.strip()}
         * **보유 종목 수**: 조건 충족 상위 **{top_n_cfg}개** (하락장 세팅 시 2개 매수)
         * **포지션 사이징**: 종목당 자산의 균등 비중 배분 (Top {top_n_cfg} 집중 투자)
         * **매도 조건** (하나라도 충족 시 익일 매도):
