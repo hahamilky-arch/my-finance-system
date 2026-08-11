@@ -803,6 +803,25 @@ if df_display is not None:
                     else:
                         st.warning("종목코드, 매수가, 매수 수량을 올바르게 입력해주세요.")
 
+            # 수동 매도(청산) 기능 섹션
+            st.markdown("###### 🗑️ 수동 종목 청산 (Manual Sell)")
+            with st.expander("보유 종목 수동 매도 처리", expanded=False):
+                col_ms1, col_ms2, col_ms3, col_ms4 = st.columns(4)
+                with col_ms1:
+                    ms_ticker = st.text_input("종목코드 (Ticker)", key="ms_ticker").strip().upper()
+                with col_ms2:
+                    ms_price = st.number_input("매도가", min_value=0.0, value=0.0, step=100.0, key="ms_price")
+                with col_ms3:
+                    ms_qty = st.number_input("매도 수량", min_value=0.0, value=1.0, step=1.0, format="%.6f", key="ms_qty")
+                with col_ms4:
+                    ms_date = st.date_input("매도일", value=selected_date, key="ms_date")
+                
+                if st.button("수동 매도 실행", use_container_width=True, type="secondary"):
+                    if ms_ticker and ms_price > 0 and ms_qty > 0:
+                        update_holdings(ms_ticker, 'SELL', ms_price, ms_date, ms_qty, market_type)
+                    else:
+                        st.warning("종목코드, 매도가, 매도 수량을 올바르게 입력해주세요.")
+
         st.info(f"""
         📌 **알파 매매 전략 시스템 가이드 (백테스트 최적화 적용)**
         * **시장 필터**: 지수 종가 > 200일선 유지 시에만 신규 매수 스크리닝 허용
