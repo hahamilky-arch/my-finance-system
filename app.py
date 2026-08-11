@@ -1042,42 +1042,52 @@ if df_display is not None:
                 x=alt.X('price_date_str:N', title=None, axis=alt.Axis(labelAngle=-45))
             ).properties(height=380)
 
-            # 1. 주가 차트 (Y축 상하 여백 여유값 padding 설정 및 스케일 자동 확장)
-            line_stock = base_top.mark_line(color='#1f77b4', strokeWidth=2.5).encode(
+            # --- 시계열 차트 구역 (축 스케일 및 레이아웃 수정) ---
+            
+            # 1. 주가 차트 (좌측 Y축)
+            line_stock = alt.Chart(df_merged).mark_line(color='#1f77b4', strokeWidth=2.5).encode(
+                x=alt.X('price_date_str:N', title=None, axis=alt.Axis(labelAngle=-45)),
                 y=alt.Y('close_price:Q', 
                       title='주가', 
-                      scale=alt.Scale(zero=False, padding=20)),
+                      scale=alt.Scale(zero=False, padding=15)),
                 tooltip=[alt.Tooltip('price_date_str:N', title='날짜'), alt.Tooltip('close_price:Q', title='종가', format=',.0f')]
             )
 
             # 2. MA20 이동평균선 차트
-            line_ma20 = base_top.mark_line(color='#ff4b4b', strokeDash=[4, 4]).encode(
-                y=alt.Y('ma20:Q', title=None, scale=alt.Scale(zero=False, padding=20)) 
+            line_ma20 = alt.Chart(df_merged).mark_line(color='#ff4b4b', strokeDash=[4, 4]).encode(
+                x=alt.X('price_date_str:N', title=None),
+                y=alt.Y('ma20:Q', title=None, scale=alt.Scale(zero=False, padding=15)) 
             )
 
-            # 3. 모멘텀 순위 차트 (우측 Y축, 순위 반전 및 가변)
-            line_rank = base_top.mark_line(color='#ff7f0e', point=True).encode(
+            # 3. 모멘텀 순위 차트 (우측 Y축: 1~100위 고정 및 Y축 라벨 우측 여백 확보)
+            line_rank = alt.Chart(df_merged).mark_line(color='#ff7f0e', point=True).encode(
+                x=alt.X('price_date_str:N', title=None),
                 y=alt.Y('momentum_rank:Q', 
-                      title='모멘텀 순위', 
-                      scale=alt.Scale(domain=[100, 1], zero=False)),
+                      title='순위', 
+                      scale=alt.Scale(domain=[100, 1], clamp=True),
+                      axis=alt.Axis(orient='right', titlePadding=10)),
                 tooltip=[alt.Tooltip('momentum_rank:Q', title='모멘텀 순위')]
             )
 
-            chart_price_layer = alt.layer(line_stock, line_ma20)
-            
-            # 주가 레이어와 순위 레이어의 독립적인 Y축 스케일 결합
-            chart_top = alt.layer(chart_price_layer, line_rank).resolve_scale(
+            # 주가 + MA20 결합
+            chart_price = alt.layer(line_stock, line_ma20)
+
+            # 주가 레이어와 순위 레이어 독립 Y축 결합 및 레이아웃 최적화
+            chart_top = alt.layer(chart_price, line_rank).resolve_scale(
                 y='independent'
+            ).properties(
+                height=350,
+                padding={'left': 10, 'right': 30, 'top': 10, 'bottom': 10}
             )
 
-            # 하단 지수 차트 베이스 설정
-            base_bottom = alt.Chart(df_merged).encode(
-                x=alt.X('price_date_str:N', title=None, axis=alt.Axis(labelAngle=-45))
-            ).properties(height=150)
-
-            chart_bottom = base_bottom.mark_line(color='#2ca02c', strokeWidth=2).encode(
+            # 하단 KOSPI / S&P500 지수 차트
+            chart_bottom = alt.Chart(df_merged).mark_line(color='#2ca02c', strokeWidth=2).encode(
+                x=alt.X('price_date_str:N', title=None, axis=alt.Axis(labelAngle=-45)),
                 y=alt.Y('index_price:Q', title=f'{idx_name} 지수', scale=alt.Scale(zero=False, padding=10)),
                 tooltip=[alt.Tooltip('price_date_str:N', title='날짜'), alt.Tooltip('index_price:Q', title='지수', format=',.2f')]
+            ).properties(
+                height=140,
+                padding={'left': 10, 'right': 30, 'top': 10, 'bottom': 10}
             )
 
             st.markdown(f"""
@@ -1097,5 +1107,6 @@ if df_display is not None:
             """, unsafe_allow_html=True)
             
             st.altair_chart(chart_bottom, use_container_width=True)
+
 else:
     st.warning("데이터를 불러오는 중입니다.")
