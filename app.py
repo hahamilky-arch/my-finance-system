@@ -1037,33 +1037,46 @@ if df_display is not None:
             idx_name = "KOSPI" if market_type == "KR" else "S&P 500"
             stock_name = ticker_name_map.get(selected_chart_ticker, selected_chart_ticker)
 
+            # 상단 차트 베이스 설정
             base_top = alt.Chart(df_merged).encode(
                 x=alt.X('price_date_str:N', title=None, axis=alt.Axis(labelAngle=-45))
-            ).properties(height=350)
+            ).properties(height=380)
 
+            # 1. 주가 차트 (Y축 상하 여백 여유값 padding 설정 및 스케일 자동 확장)
             line_stock = base_top.mark_line(color='#1f77b4', strokeWidth=2.5).encode(
-                y=alt.Y('close_price:Q', title='주가', scale=alt.Scale(zero=False)),
+                y=alt.Y('close_price:Q', 
+                      title='주가', 
+                      scale=alt.Scale(zero=False, padding=20)),
                 tooltip=[alt.Tooltip('price_date_str:N', title='날짜'), alt.Tooltip('close_price:Q', title='종가', format=',.0f')]
             )
 
+            # 2. MA20 이동평균선 차트
             line_ma20 = base_top.mark_line(color='#ff4b4b', strokeDash=[4, 4]).encode(
-                y=alt.Y('ma20:Q', title=None, scale=alt.Scale(zero=False)) 
+                y=alt.Y('ma20:Q', title=None, scale=alt.Scale(zero=False, padding=20)) 
             )
 
+            # 3. 모멘텀 순위 차트 (우측 Y축, 순위 반전 및 가변)
             line_rank = base_top.mark_line(color='#ff7f0e', point=True).encode(
-                y=alt.Y('momentum_rank:Q', title='모멘텀 순위 (1~100)', scale=alt.Scale(domain=[100, 0])),
+                y=alt.Y('momentum_rank:Q', 
+                      title='모멘텀 순위', 
+                      scale=alt.Scale(domain=[100, 1], zero=False)),
                 tooltip=[alt.Tooltip('momentum_rank:Q', title='모멘텀 순위')]
             )
 
             chart_price_layer = alt.layer(line_stock, line_ma20)
-            chart_top = alt.layer(chart_price_layer, line_rank).resolve_scale(y='independent')
+            
+            # 주가 레이어와 순위 레이어의 독립적인 Y축 스케일 결합
+            chart_top = alt.layer(chart_price_layer, line_rank).resolve_scale(
+                y='independent'
+            )
 
+            # 하단 지수 차트 베이스 설정
             base_bottom = alt.Chart(df_merged).encode(
                 x=alt.X('price_date_str:N', title=None, axis=alt.Axis(labelAngle=-45))
             ).properties(height=150)
 
             chart_bottom = base_bottom.mark_line(color='#2ca02c', strokeWidth=2).encode(
-                y=alt.Y('index_price:Q', title=f'{idx_name} 지수', scale=alt.Scale(zero=False)),
+                y=alt.Y('index_price:Q', title=f'{idx_name} 지수', scale=alt.Scale(zero=False, padding=10)),
                 tooltip=[alt.Tooltip('price_date_str:N', title='날짜'), alt.Tooltip('index_price:Q', title='지수', format=',.2f')]
             )
 
