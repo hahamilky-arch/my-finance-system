@@ -202,17 +202,14 @@ def get_market_regime(market_type):
 
 def get_available_dates():
     try:
-        # DB(daily_analysis)에 실제로 데이터가 존재하는 날짜들만 중복 없이 최신순으로 가져옴
         res = supabase.table("daily_analysis").select("price_date").order("price_date", desc=True).execute()
         if res.data:
             unique_dates = sorted(list(set(item['price_date'] for item in res.data)), reverse=True)
             return unique_dates
         return []
     except Exception:
-        # fallback (RPC 실패 시 기존 방식 유지)
         response = supabase.rpc("get_all_dates").execute()
         return [item['price_date'] for item in response.data] if response.data else []
-
 
 def get_recently_sold_info(market_type, target_date, cooldown_days=3):
     table_name = get_holdings_table(market_type)
@@ -242,6 +239,7 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_c
     target_date_str = target_date_ts.strftime('%Y-%m-%d')
     if target_date_str not in all_dates: return None
 
+    # 1. 당일 데이터 조회
     res_curr = supabase.table("daily_analysis") \
         .select("ticker, momentum_rank, weighted_momentum, rs_score, rs_score_10, close_price, ma10, ma20, atr, high_price, low_price, ma200") \
         .eq("price_date", target_date_str) \
@@ -259,10 +257,12 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_c
             
     df_final['ticker'] = df_final['ticker'].astype(str).str.strip()
     
+    # 2. 직전 실제 영업일(Trading Day) 정확 탐색
     sorted_dates = sorted(all_dates)
     past_dates = [d for d in sorted_dates if d < target_date_str]
     prev_date = past_dates[-1] if past_dates else None
     
+    # 3. 직전 영업일 데이터 조회 및 병합 (💡 market 필터 및 limit 추가 수정 완료)
     if prev_date:
         res_prev = supabase.table("daily_analysis") \
             .select("ticker, momentum_rank, close_price, ma20") \
@@ -306,7 +306,7 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_c
         lambda r: (r['순위_prev'] - r['순위']) if (pd.notna(r['순위_prev']) and pd.notna(r['순위'])) else 0.0, axis=1
     )
     
-    # 💡 상위 30위 종목 대상 20MA 이격도(%) 계산 추가
+    # 상위 30위 종목 대상 20MA 이격도(%) 계산
     df_final['이격도'] = df_final.apply(
         lambda r: ((r['종가'] / r['MA20']) - 1) * 100 if (r['순위'] <= 30 and pd.notna(r['MA20']) and r['MA20'] > 0) else 0.0, axis=1
     )
@@ -699,7 +699,6 @@ df_display = get_data(selected_date, all_dates, market_type, top_n_cfg, sl_cfg, 
 if df_display is not None:
     tab1, tab2, tab3, tab4, tab5 = st.tabs(["Overview", "New Entries", "🎯 Pullback", "🚀 알파 시그널", "📊 성과 분석"])
     
-    # 💡 컬럼 순서에 '이격도' 추가 (상위 30위 이내에만 값이 표시되며 31위 이후는 '-' 혹은 빈값 처리)
     col_order = ['순위', '변동', '매매상태', '종목명', '이격도', 'MOT', 'RS(90)', 'RS(10)', 'MA20', '종가', '상승금액', 'ticker'] 
     tab_dfs = [df_display.head(100), df_display[df_display['is_new_top30']], df_display[df_display['is_pullback']], df_display[df_display['is_no6_opt']]]
 
