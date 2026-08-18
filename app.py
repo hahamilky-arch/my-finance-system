@@ -232,7 +232,6 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_c
     target_date_str = target_date_ts.strftime('%Y-%m-%d')
     if target_date_str not in all_dates: return None
 
-    # 1. 당일 데이터 조회 (Supabase 1000건 제한 우회를 위해 limit 설정)
     res_curr = supabase.table("daily_analysis") \
         .select("ticker, momentum_rank, weighted_momentum, rs_score, rs_score_10, close_price, ma10, ma20, atr, high_price, low_price, ma200") \
         .eq("price_date", target_date_str) \
@@ -250,12 +249,10 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_c
             
     df_final['ticker'] = df_final['ticker'].astype(str).str.strip()
     
-    # 2. 직전 영업일(Trading Day) 정확 탐색
     sorted_dates = sorted(all_dates)
     past_dates = [d for d in sorted_dates if d < target_date_str]
     prev_date = past_dates[-1] if past_dates else None
     
-    # 3. 직전 영업일 데이터 조회 및 병합 (market 필터 및 limit 추가 필수)
     if prev_date:
         res_prev = supabase.table("daily_analysis") \
             .select("ticker, momentum_rank, close_price, ma20") \
@@ -292,7 +289,6 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_c
     df_final['종가_prev'] = pd.to_numeric(df_final['종가_prev'], errors='coerce')
     df_final['MA20_prev'] = pd.to_numeric(df_final['MA20_prev'], errors='coerce')
     
-    # 상승금액 및 순위 변동 계산
     df_final['상승금액'] = df_final.apply(
         lambda r: r['종가'] - r['종가_prev'] if pd.notna(r['종가_prev']) else 0.0, axis=1
     )
@@ -300,6 +296,11 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_c
         lambda r: (r['순위_prev'] - r['순위']) if (pd.notna(r['순위_prev']) and pd.notna(r['순위'])) else 0.0, axis=1
     )
     
+    # 💡 상위 30위 종목 대상 20MA 이격도(%) 계산 추가
+    df_final['이격도'] = df_final.apply(
+        lambda r: ((r['종가'] / r['MA20']) - 1) * 100 if (r['순위'] <= 30 and pd.notna(r['MA20']) and r['MA20'] > 0) else 0.0, axis=1
+    )
+
     df_final['is_new_top30'] = df_final.apply(
         lambda r: (r['순위'] <= 30) and (pd.notna(r['순위_prev']) and r['순위_prev'] > 30), axis=1
     )
@@ -688,7 +689,8 @@ df_display = get_data(selected_date, all_dates, market_type, top_n_cfg, sl_cfg, 
 if df_display is not None:
     tab1, tab2, tab3, tab4, tab5 = st.tabs(["Overview", "New Entries", "🎯 Pullback", "🚀 알파 시그널", "📊 성과 분석"])
     
-    col_order = ['순위', '변동', '매매상태', '종목명', 'MOT', 'RS(90)', 'RS(10)', 'MA20', '종가', '상승금액', 'ticker'] 
+    # 💡 컬럼 순서에 '이격도' 추가 (상위 30위 이내에만 값이 표시되며 31위 이후는 '-' 혹은 빈값 처리)
+    col_order = ['순위', '변동', '매매상태', '종목명', '이격도', 'MOT', 'RS(90)', 'RS(10)', 'MA20', '종가', '상승금액', 'ticker'] 
     tab_dfs = [df_display.head(100), df_display[df_display['is_new_top30']], df_display[df_display['is_pullback']], df_display[df_display['is_no6_opt']]]
 
     for i, tab in enumerate([tab1, tab2, tab3]):
@@ -696,7 +698,9 @@ if df_display is not None:
             df_target = tab_dfs[i][col_order].copy()
             event = st.dataframe(
                 df_target.style.apply(apply_styles, axis=None).format({
-                    'MOT': '{:.2f}', 'RS(90)': '{:.2f}', 'RS(10)': '{:.2f}', '종가': '{:,.0f}', '상승금액': '{:+,.0f}', 'MA20': '{:,.0f}', '변동': '{:+.0f}'
+                    'MOT': '{:.2f}', 'RS(90)': '{:.2f}', 'RS(10)': '{:.2f}', 
+                    '이격도': lambda x: f"{x:+.1f}%" if x != 0 else "-", 
+                    '종가': '{:,.0f}', '상승금액': '{:+,.0f}', 'MA20': '{:,.0f}', '변동': '{:+.0f}'
                 }, na_rep='-'), 
                 hide_index=True, use_container_width=True,
                 on_select="rerun",
@@ -840,7 +844,7 @@ if df_display is not None:
                     if ms_ticker and ms_price > 0 and ms_qty > 0:
                         update_holdings(ms_ticker, 'SELL', ms_price, ms_date, ms_qty, market_type)
                     else:
-                        st.warning("종목코드, 매도가, 매도 수량을 올바르게 입력해주세요.")
+                        st.warning("종목코드, 매도가, 매수 수량을 올바르게 입력해주세요.")
 
         st.info(f"""
         📌 **알파 매매 전략 시스템 가이드 (백테스트 최적화 적용)**
