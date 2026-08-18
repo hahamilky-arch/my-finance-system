@@ -116,7 +116,6 @@ def get_holdings_table(market_type):
     return "current_holdings_us" if market_type == "US" else "current_holdings"
 
 def update_capital_after_sell(market_type, profit_amount):
-    """매도 실현 손익 발생 시 DB의 운용 자금에 반영"""
     col_name = "us_capital" if market_type == "US" else "kr_capital"
     session_key = f"{market_type.lower()}_capital"
     
@@ -184,7 +183,6 @@ def update_holdings(ticker, action, price, trade_date, quantity, market_type):
                 }).execute()
                 st.error(f"🗑️ [{ticker}] 매도 기록 생성 완료!")
                 
-            # 매도 실현 손익 자금 DB 업데이트 실행
             update_capital_after_sell(market_type, profit_amount)
             
         except Exception as e:
@@ -234,11 +232,12 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_c
     target_date_str = target_date_ts.strftime('%Y-%m-%d')
     if target_date_str not in all_dates: return None
 
-    # 1. 당일 데이터 조회
+    # 1. 당일 데이터 조회 (Supabase 1000건 제한 우회를 위해 limit 설정)
     res_curr = supabase.table("daily_analysis") \
         .select("ticker, momentum_rank, weighted_momentum, rs_score, rs_score_10, close_price, ma10, ma20, atr, high_price, low_price, ma200") \
         .eq("price_date", target_date_str) \
         .eq("market", market_type) \
+        .limit(5000) \
         .execute()
     
     df_final = pd.DataFrame(res_curr.data)
@@ -251,17 +250,20 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_c
             
     df_final['ticker'] = df_final['ticker'].astype(str).str.strip()
     
-    # 2. 직전 실제 영업일(Trading Day) 정확 탐색
+    # 2. 직전 영업일(Trading Day) 정확 탐색
     sorted_dates = sorted(all_dates)
     past_dates = [d for d in sorted_dates if d < target_date_str]
     prev_date = past_dates[-1] if past_dates else None
     
-    # 3. 직전 영업일 데이터 조회 및 병합
+    # 3. 직전 영업일 데이터 조회 및 병합 (market 필터 및 limit 추가 필수)
     if prev_date:
         res_prev = supabase.table("daily_analysis") \
             .select("ticker, momentum_rank, close_price, ma20") \
             .eq("price_date", prev_date) \
+            .eq("market", market_type) \
+            .limit(5000) \
             .execute()
+        
         df_prev = pd.DataFrame(res_prev.data).rename(
             columns={'momentum_rank': '순위_prev', 'close_price': '종가_prev', 'ma20': 'MA20_prev'}
         )
@@ -290,7 +292,7 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_c
     df_final['종가_prev'] = pd.to_numeric(df_final['종가_prev'], errors='coerce')
     df_final['MA20_prev'] = pd.to_numeric(df_final['MA20_prev'], errors='coerce')
     
-    # 상승금액 및 순위 변동 계산 (직전 영업일 데이터 없는 경우 0 처리)
+    # 상승금액 및 순위 변동 계산
     df_final['상승금액'] = df_final.apply(
         lambda r: r['종가'] - r['종가_prev'] if pd.notna(r['종가_prev']) else 0.0, axis=1
     )
@@ -304,7 +306,6 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_c
     df_final['is_pullback'] = (df_final['순위'] <= 100) & (df_final['RS(90)'] > 0) & (df_final['변동'] > 0)
     df_final['MA20'] = df_final['MA20'].fillna(0)
     
-    # 지수 200일선 필터링
     idx_ticker = "^KS11" if market_type == "KR" else "^GSPC"
     idx_res = supabase.table("daily_analysis").select("close_price, ma200").eq("ticker", idx_ticker).eq("price_date", target_date_str).execute()
     market_passed = True
@@ -354,7 +355,6 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_c
     sold_info = get_recently_sold_info(market_type, target_date_str, cooldown_days=3)
     sell_list = set()
     
-    # 보유 종목 매도 조건 점검
     for _, row in df_final.iterrows():
         ticker_upper = str(row['ticker']).strip().upper()
         if ticker_upper in my_holdings_clean:
@@ -393,7 +393,6 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_c
     buy_list = set()
     df_final['is_no6_opt'] = False
     
-    # 매수 스크리닝
     if cycle_passed and market_passed and slots_available > 0:
         max_disparity = 1.08
         
@@ -516,13 +515,11 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                 else:
                     c2.markdown("<div style='color:#999999; font-size:0.85em; margin-top:8px; text-align:right;'>과거일 매매불가</div>", unsafe_allow_html=True)
 
-# UI 실행 파트
 st.markdown("##### 📈 Momentum Dashboard v2.5 (Alpha Optimizer)")
 
 if 'trigger_scroll' not in st.session_state:
     st.session_state['trigger_scroll'] = False
 
-# DB에서 매매 전략 및 초기 자금 설정 불러오기
 if 'db_settings_loaded' not in st.session_state:
     try:
         res = supabase.table("strategy_settings").select("*").eq("id", 1).execute()
@@ -713,7 +710,6 @@ if df_display is not None:
                 st.session_state['selected_ticker_from_table'] = clicked_ticker
                 st.session_state['trigger_scroll'] = True
 
-    # --- 4번 탭: 알파 시그널 구역 ---
     with tab4:
         st.markdown("##### 📋 알파 시스템 매매 지시서")
         
@@ -809,7 +805,6 @@ if df_display is not None:
             display_trade_list(df_rebal[df_rebal['매매상태'] == '매도필요'], "시스템 매도 필요 종목", "매도", "sys_s", selected_date, is_latest_date, market_type, holdings_db, top_n_cfg, account_total_input, is_bull)
             display_trade_list(df_rebal[df_rebal['매매상태'] == '매수추천'], "시스템 매수 추천 종목", "매수", "sys_b", selected_date, is_latest_date, market_type, holdings_db, top_n_cfg, account_total_input, is_bull)
 
-            # 수동 매수 기능 섹션
             st.markdown("---")
             st.markdown("###### ➕ 수동 종목 편입 (Manual Buy)")
             with st.expander("시스템 추천 외 종목 수동 매수", expanded=False):
@@ -829,7 +824,6 @@ if df_display is not None:
                     else:
                         st.warning("종목코드, 매수가, 매수 수량을 올바르게 입력해주세요.")
 
-            # 수동 매도(청산) 기능 섹션
             st.markdown("###### 🗑️ 수동 종목 청산 (Manual Sell)")
             with st.expander("보유 종목 수동 매도 처리", expanded=False):
                 col_ms1, col_ms2, col_ms3, col_ms4 = st.columns(4)
@@ -862,7 +856,6 @@ if df_display is not None:
         * **쿨다운 룰**: 매도 후 3거래일 신규 편입 금지 (단, 종가가 직전 매도가를 재돌파하면 쿨다운 해제)
         """)
 
-    # --- 5번 탭: 성과 분석 구역 ---
     with tab5:
         st.markdown(f"##### 📊 {market_type} 시장 매매 성과 분석")
         
@@ -992,7 +985,6 @@ if df_display is not None:
                         hide_index=True, use_container_width=True
                     )
 
-    # --- 📉 시계열 차트 구역 ---
     st.divider()
     st.markdown("<div id='chart-section'></div>", unsafe_allow_html=True)
     st.markdown("##### 📉 종목별 최근 주가 및 시장 흐름 통합 추이")
@@ -1063,7 +1055,6 @@ if df_display is not None:
             idx_name = "KOSPI" if market_type == "KR" else "S&P 500"
             stock_name = ticker_name_map.get(selected_chart_ticker, selected_chart_ticker)
 
-            # 1. 주가 차트 (좌측 Y축)
             line_stock = alt.Chart(df_merged).mark_line(color='#1f77b4', strokeWidth=2.5).encode(
                 x=alt.X('price_date_str:N', title=None, axis=alt.Axis(labelAngle=-45)),
                 y=alt.Y('close_price:Q', 
@@ -1072,13 +1063,11 @@ if df_display is not None:
                 tooltip=[alt.Tooltip('price_date_str:N', title='날짜'), alt.Tooltip('close_price:Q', title='종가', format=',.0f')]
             )
 
-            # 2. MA20 이동평균선 차트
             line_ma20 = alt.Chart(df_merged).mark_line(color='#ff4b4b', strokeDash=[4, 4]).encode(
                 x=alt.X('price_date_str:N', title=None),
                 y=alt.Y('ma20:Q', title=None, scale=alt.Scale(zero=False, padding=15)) 
             )
 
-            # 3. 모멘텀 순위 차트 (우측 Y축: 1~100위 고정 및 Y축 라벨 우측 여백 확보)
             line_rank = alt.Chart(df_merged).mark_line(color='#ff7f0e', point=True).encode(
                 x=alt.X('price_date_str:N', title=None),
                 y=alt.Y('momentum_rank:Q', 
@@ -1088,10 +1077,8 @@ if df_display is not None:
                 tooltip=[alt.Tooltip('momentum_rank:Q', title='모멘텀 순위')]
             )
 
-            # 주가 + MA20 결합
             chart_price = alt.layer(line_stock, line_ma20)
 
-            # 주가 레이어와 순위 레이어 독립 Y축 결합 및 레이아웃 최적화
             chart_top = alt.layer(chart_price, line_rank).resolve_scale(
                 y='independent'
             ).properties(
@@ -1099,7 +1086,6 @@ if df_display is not None:
                 padding={'left': 10, 'right': 30, 'top': 10, 'bottom': 10}
             )
 
-            # 하단 KOSPI / S&P500 지수 차트
             chart_bottom = alt.Chart(df_merged).mark_line(color='#2ca02c', strokeWidth=2).encode(
                 x=alt.X('price_date_str:N', title=None, axis=alt.Axis(labelAngle=-45)),
                 y=alt.Y('index_price:Q', title=f'{idx_name} 지수', scale=alt.Scale(zero=False, padding=10)),
