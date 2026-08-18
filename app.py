@@ -132,7 +132,7 @@ def update_capital_after_sell(market_type, profit_amount):
 
 def update_holdings(ticker, action, price, trade_date, quantity, market_type):
     table_name = get_holdings_table(market_type)
-    trade_date_str = trade_date.strftime('%Y-%m-%d')
+    trade_date_str = pd.to_datetime(trade_date).strftime('%Y-%m-%d')
     
     qty_val = float(quantity)
     if qty_val.is_integer():
@@ -204,12 +204,19 @@ def get_available_dates():
     try:
         res = supabase.table("daily_analysis").select("price_date").order("price_date", desc=True).execute()
         if res.data:
-            unique_dates = sorted(list(set(item['price_date'] for item in res.data)), reverse=True)
+            # 날짜 형식을 'YYYY-MM-DD' 문자열로 확실하게 정규화
+            parsed_dates = []
+            for item in res.data:
+                pd_val = item['price_date']
+                if pd_val:
+                    parsed_str = pd.to_datetime(pd_val).strftime('%Y-%m-%d')
+                    parsed_dates.append(parsed_str)
+            unique_dates = sorted(list(set(parsed_dates)), reverse=True)
             return unique_dates
         return []
     except Exception:
         response = supabase.rpc("get_all_dates").execute()
-        return [item['price_date'] for item in response.data] if response.data else []
+        return [pd.to_datetime(item['price_date']).strftime('%Y-%m-%d') for item in response.data] if response.data else []
 
 def get_recently_sold_info(market_type, target_date, cooldown_days=3):
     table_name = get_holdings_table(market_type)
@@ -235,11 +242,10 @@ def get_recently_sold_info(market_type, target_date, cooldown_days=3):
         return {}
 
 def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_cycle, stop_cfg, trig_cfg, is_bull_mode):
-    target_date_ts = pd.Timestamp(target_date).normalize()
-    target_date_str = target_date_ts.strftime('%Y-%m-%d')
+    target_date_str = pd.to_datetime(target_date).strftime('%Y-%m-%d')
     if target_date_str not in all_dates: return None
 
-    # 1. 당일 데이터 조회
+    # 1. 당일 데이터 조회 (날짜 형식을 문자열로 정확히 매칭)
     res_curr = supabase.table("daily_analysis") \
         .select("ticker, momentum_rank, weighted_momentum, rs_score, rs_score_10, close_price, ma10, ma20, atr, high_price, low_price, ma200") \
         .eq("price_date", target_date_str) \
@@ -257,12 +263,12 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_c
             
     df_final['ticker'] = df_final['ticker'].astype(str).str.strip()
     
-    # 2. 직전 실제 영업일(Trading Day) 정확 탐색
+    # 2. 직전 실제 영업일(Trading Day) 정확 탐색 (문자열 비교 정렬)
     sorted_dates = sorted(all_dates)
     past_dates = [d for d in sorted_dates if d < target_date_str]
     prev_date = past_dates[-1] if past_dates else None
     
-    # 3. 직전 영업일 데이터 조회 및 병합 (💡 market 필터 및 limit 추가 수정 완료)
+    # 3. 직전 영업일 데이터 조회 및 병합
     if prev_date:
         res_prev = supabase.table("daily_analysis") \
             .select("ticker, momentum_rank, close_price, ma20") \
@@ -296,6 +302,7 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_c
         'ma20': 'MA20'
     })
     
+    df_final['순위_prev'] = pd.to_numeric(df_final['순위_prev'], errors='coerce')
     df_final['종가_prev'] = pd.to_numeric(df_final['종가_prev'], errors='coerce')
     df_final['MA20_prev'] = pd.to_numeric(df_final['MA20_prev'], errors='coerce')
     
@@ -326,7 +333,7 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_c
         if pd.notna(idx_close) and pd.notna(idx_ma200) and idx_ma200 > 0:
             market_passed = idx_close > idx_ma200
 
-    is_wednesday = target_date_ts.day_name() == 'Wednesday'
+    is_wednesday = pd.Timestamp(target_date).day_name() == 'Wednesday'
     cycle_passed = True if rebalance_cycle == "상시 (빈자리 즉시 채우기)" else is_wednesday
     
     df_stocks = pd.DataFrame(supabase.table("stocks").select("ticker, name").execute().data)
@@ -690,7 +697,7 @@ with st.sidebar:
 is_latest_date = False
 if all_dates and selected_date:
     latest_date_str = max(all_dates)
-    selected_date_str = selected_date.strftime('%Y-%m-%d')
+    selected_date_str = pd.to_datetime(selected_date).strftime('%Y-%m-%d')
     if selected_date_str == latest_date_str:
         is_latest_date = True
 
