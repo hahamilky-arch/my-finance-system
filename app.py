@@ -234,6 +234,7 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_c
     target_date_str = target_date_ts.strftime('%Y-%m-%d')
     if target_date_str not in all_dates: return None
 
+    # 1. 당일 데이터 조회
     res_curr = supabase.table("daily_analysis") \
         .select("ticker, momentum_rank, weighted_momentum, rs_score, rs_score_10, close_price, ma10, ma20, atr, high_price, low_price, ma200") \
         .eq("price_date", target_date_str) \
@@ -250,13 +251,32 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_c
             
     df_final['ticker'] = df_final['ticker'].astype(str).str.strip()
     
-    target_idx = all_dates.index(target_date_str)
-    prev_date = all_dates[min(target_idx + 1, len(all_dates)-1)]
+    # 2. 직전 실제 영업일(Trading Day) 정확 탐색
+    sorted_dates = sorted(all_dates)
+    past_dates = [d for d in sorted_dates if d < target_date_str]
+    prev_date = past_dates[-1] if past_dates else None
     
-    res_prev = supabase.table("daily_analysis").select("ticker, momentum_rank, close_price, ma20").eq("price_date", prev_date).execute()
-    df_prev = pd.DataFrame(res_prev.data).rename(columns={'momentum_rank': '순위_prev', 'close_price': '종가_prev', 'ma20': 'MA20_prev'})
-    
-    df_final = pd.merge(df_final, df_prev, on="ticker", how='left')
+    # 3. 직전 영업일 데이터 조회 및 병합
+    if prev_date:
+        res_prev = supabase.table("daily_analysis") \
+            .select("ticker, momentum_rank, close_price, ma20") \
+            .eq("price_date", prev_date) \
+            .execute()
+        df_prev = pd.DataFrame(res_prev.data).rename(
+            columns={'momentum_rank': '순위_prev', 'close_price': '종가_prev', 'ma20': 'MA20_prev'}
+        )
+        if not df_prev.empty:
+            df_prev['ticker'] = df_prev['ticker'].astype(str).str.strip()
+            df_final = pd.merge(df_final, df_prev, on="ticker", how='left')
+        else:
+            df_final['순위_prev'] = None
+            df_final['종가_prev'] = None
+            df_final['MA20_prev'] = None
+    else:
+        df_final['순위_prev'] = None
+        df_final['종가_prev'] = None
+        df_final['MA20_prev'] = None
+
     df_final = df_final.rename(columns={
         'momentum_rank': '순위', 
         'weighted_momentum': 'MOT', 
@@ -269,9 +289,18 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_c
     
     df_final['종가_prev'] = pd.to_numeric(df_final['종가_prev'], errors='coerce')
     df_final['MA20_prev'] = pd.to_numeric(df_final['MA20_prev'], errors='coerce')
-    df_final['상승금액'] = df_final['종가'] - df_final['종가_prev']
-    df_final['변동'] = df_final['순위_prev'].fillna(999) - df_final['순위']
-    df_final['is_new_top30'] = (df_final['순위'] <= 30) & (df_final['순위_prev'] > 30)
+    
+    # 상승금액 및 순위 변동 계산 (직전 영업일 데이터 없는 경우 0 처리)
+    df_final['상승금액'] = df_final.apply(
+        lambda r: r['종가'] - r['종가_prev'] if pd.notna(r['종가_prev']) else 0.0, axis=1
+    )
+    df_final['변동'] = df_final.apply(
+        lambda r: (r['순위_prev'] - r['순위']) if (pd.notna(r['순위_prev']) and pd.notna(r['순위'])) else 0.0, axis=1
+    )
+    
+    df_final['is_new_top30'] = df_final.apply(
+        lambda r: (r['순위'] <= 30) and (pd.notna(r['순위_prev']) and r['순위_prev'] > 30), axis=1
+    )
     df_final['is_pullback'] = (df_final['순위'] <= 100) & (df_final['RS(90)'] > 0) & (df_final['변동'] > 0)
     df_final['MA20'] = df_final['MA20'].fillna(0)
     
@@ -412,12 +441,11 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
         if data.empty:
             st.write(f"해당되는 {button_label} 종목이 없습니다.")
         else:
-            # 시장 및 국면별 포지션 비중/금액 계산
             if market_type == "US" and not is_bull_mode:
                 target_pct = 0.0
                 target_amount = 0.0
             elif market_type == "KR" and not is_bull_mode:
-                target_pct = 15.0  # 총 30% 한도 중 종목당 15%
+                target_pct = 15.0
                 target_amount = account_total * 0.15
             else:
                 target_pct = (100.0 / top_n_cfg) if top_n_cfg > 0 else 0.0
@@ -510,7 +538,6 @@ if 'db_settings_loaded' not in st.session_state:
             st.session_state['bear_trig'] = float(db_cfg.get('bear_trig', 12.0))
             st.session_state['bear_stop'] = float(db_cfg.get('bear_stop', -5.0))
             
-            # DB 저장된 자금 초기 세팅 (KR: 2,000만 원 / US: 600만 원)
             st.session_state['kr_capital'] = float(db_cfg.get('kr_capital', 20000000.0))
             st.session_state['us_capital'] = float(db_cfg.get('us_capital', 6000000.0))
     except Exception as e:
@@ -557,7 +584,6 @@ with st.sidebar:
 
     st.divider()
     
-    # DB 연동 자금 설정 UI
     cap_key = "us_capital" if market_type == "US" else "kr_capital"
     default_cap_val = 6000000.0 if market_type == "US" else 20000000.0
     current_cap_val = st.session_state.get(cap_key, default_cap_val)
@@ -1037,13 +1063,6 @@ if df_display is not None:
             idx_name = "KOSPI" if market_type == "KR" else "S&P 500"
             stock_name = ticker_name_map.get(selected_chart_ticker, selected_chart_ticker)
 
-            # 상단 차트 베이스 설정
-            base_top = alt.Chart(df_merged).encode(
-                x=alt.X('price_date_str:N', title=None, axis=alt.Axis(labelAngle=-45))
-            ).properties(height=380)
-
-            # --- 시계열 차트 구역 (축 스케일 및 레이아웃 수정) ---
-            
             # 1. 주가 차트 (좌측 Y축)
             line_stock = alt.Chart(df_merged).mark_line(color='#1f77b4', strokeWidth=2.5).encode(
                 x=alt.X('price_date_str:N', title=None, axis=alt.Axis(labelAngle=-45)),
