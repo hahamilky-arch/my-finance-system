@@ -201,8 +201,18 @@ def get_market_regime(market_type):
     return current_price >= ma20
 
 def get_available_dates():
-    response = supabase.rpc("get_all_dates").execute()
-    return [item['price_date'] for item in response.data] if response.data else []
+    try:
+        # DB(daily_analysis)에 실제로 데이터가 존재하는 날짜들만 중복 없이 최신순으로 가져옴
+        res = supabase.table("daily_analysis").select("price_date").order("price_date", desc=True).execute()
+        if res.data:
+            unique_dates = sorted(list(set(item['price_date'] for item in res.data)), reverse=True)
+            return unique_dates
+        return []
+    except Exception:
+        # fallback (RPC 실패 시 기존 방식 유지)
+        response = supabase.rpc("get_all_dates").execute()
+        return [item['price_date'] for item in response.data] if response.data else []
+
 
 def get_recently_sold_info(market_type, target_date, cooldown_days=3):
     table_name = get_holdings_table(market_type)
