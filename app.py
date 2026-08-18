@@ -204,7 +204,6 @@ def get_available_dates():
     try:
         res = supabase.table("daily_analysis").select("price_date").order("price_date", desc=True).execute()
         if res.data:
-            # 날짜 형식을 'YYYY-MM-DD' 문자열로 확실하게 정규화
             parsed_dates = []
             for item in res.data:
                 pd_val = item['price_date']
@@ -245,7 +244,6 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_c
     target_date_str = pd.to_datetime(target_date).strftime('%Y-%m-%d')
     if target_date_str not in all_dates: return None
 
-    # 1. 당일 데이터 조회 (날짜 형식을 문자열로 정확히 매칭)
     res_curr = supabase.table("daily_analysis") \
         .select("ticker, momentum_rank, weighted_momentum, rs_score, rs_score_10, close_price, ma10, ma20, atr, high_price, low_price, ma200") \
         .eq("price_date", target_date_str) \
@@ -261,32 +259,30 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_c
         if col in df_final.columns:
             df_final[col] = pd.to_numeric(df_final[col], errors='coerce').astype('float64')
             
-    df_final['ticker'] = df_final['ticker'].astype(str).str.strip()
+    df_final['ticker'] = df_final['ticker'].astype(str).str.strip().str.upper()
     
-    # 2. 직전 실제 영업일(Trading Day) 정확 탐색 (문자열 비교 정렬)
-    sorted_dates = sorted(all_dates)
-    past_dates = [d for d in sorted_dates if d < target_date_str]
-    prev_date = past_dates[-1] if past_dates else None
+    sorted_dates = sorted([d for d in all_dates if d < target_date_str])
+    df_prev = pd.DataFrame()
     
-    # 3. 직전 영업일 데이터 조회 및 병합
-    if prev_date:
+    for d in reversed(sorted_dates):
         res_prev = supabase.table("daily_analysis") \
             .select("ticker, momentum_rank, close_price, ma20") \
-            .eq("price_date", prev_date) \
+            .eq("price_date", d) \
             .eq("market", market_type) \
             .limit(5000) \
             .execute()
-        
-        df_prev = pd.DataFrame(res_prev.data).rename(
+        if res_prev.data:
+            temp_prev = pd.DataFrame(res_prev.data)
+            if not temp_prev.empty:
+                df_prev = temp_prev
+                break
+
+    if not df_prev.empty:
+        df_prev = df_prev.rename(
             columns={'momentum_rank': '순위_prev', 'close_price': '종가_prev', 'ma20': 'MA20_prev'}
         )
-        if not df_prev.empty:
-            df_prev['ticker'] = df_prev['ticker'].astype(str).str.strip()
-            df_final = pd.merge(df_final, df_prev, on="ticker", how='left')
-        else:
-            df_final['순위_prev'] = None
-            df_final['종가_prev'] = None
-            df_final['MA20_prev'] = None
+        df_prev['ticker'] = df_prev['ticker'].astype(str).str.strip().str.upper()
+        df_final = pd.merge(df_final, df_prev[['ticker', '순위_prev', '종가_prev', 'MA20_prev']], on="ticker", how='left')
     else:
         df_final['순위_prev'] = None
         df_final['종가_prev'] = None
@@ -310,10 +306,9 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_c
         lambda r: r['종가'] - r['종가_prev'] if pd.notna(r['종가_prev']) else 0.0, axis=1
     )
     df_final['변동'] = df_final.apply(
-        lambda r: (r['순위_prev'] - r['순위']) if (pd.notna(r['순위_prev']) and pd.notna(r['순위'])) else 0.0, axis=1
+        lambda r: int(r['순위_prev'] - r['순위']) if (pd.notna(r['순위_prev']) and pd.notna(r['순위'])) else 0.0, axis=1
     )
     
-    # 상위 30위 종목 대상 20MA 이격도(%) 계산
     df_final['이격도'] = df_final.apply(
         lambda r: ((r['종가'] / r['MA20']) - 1) * 100 if (r['순위'] <= 30 and pd.notna(r['MA20']) and r['MA20'] > 0) else 0.0, axis=1
     )
@@ -338,7 +333,7 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_c
     
     df_stocks = pd.DataFrame(supabase.table("stocks").select("ticker, name").execute().data)
     if not df_stocks.empty:
-        df_stocks['ticker'] = df_stocks['ticker'].astype(str).str.strip()
+        df_stocks['ticker'] = df_stocks['ticker'].astype(str).str.strip().str.upper()
     else:
         df_stocks = pd.DataFrame(columns=['ticker', 'name'])
 
@@ -361,14 +356,14 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_c
     peak_metrics = {}
     if not holdings_df.empty:
         for _, r in holdings_df.iterrows():
-            tk = r['ticker']
+            tk = str(r['ticker']).strip().upper()
             bd = r['buy_date']
             p_res = supabase.table("daily_analysis").select("high_price").eq("ticker", tk).gte("price_date", bd).lte("price_date", target_date_str).execute()
             if p_res.data:
                 highs = [pd.to_numeric(x['high_price'], errors='coerce') for x in p_res.data]
-                peak_metrics[str(tk).strip().upper()] = max([h for h in highs if pd.notna(h)] + [0])
+                peak_metrics[tk] = max([h for h in highs if pd.notna(h)] + [0])
             else:
-                peak_metrics[str(tk).strip().upper()] = float(r['buy_price'])
+                peak_metrics[tk] = float(r['buy_price'])
 
     sold_info = get_recently_sold_info(market_type, target_date_str, cooldown_days=3)
     sell_list = set()
