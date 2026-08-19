@@ -82,6 +82,9 @@ def apply_styles(df):
     if '상승금액' in df.columns:
         df_styles.loc[df['상승금액'] > 0, '상승금액'] += 'color: red;'
         df_styles.loc[df['상승금액'] < 0, '상승금액'] += 'color: blue;'
+    if '상승률' in df.columns:
+        df_styles.loc[df['상승률'] > 0, '상승률'] += 'color: red;'
+        df_styles.loc[df['상승률'] < 0, '상승률'] += 'color: blue;'
     
     if '매매상태' in df.columns:
         df_styles.loc[df['매매상태'] == '매수추천', '매매상태'] += 'color: #d62728; font-weight: bold;'
@@ -261,13 +264,15 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_c
             
     df_final['ticker'] = df_final['ticker'].astype(str).str.strip().str.upper()
     
-    sorted_dates = sorted([d for d in all_dates if d < target_date_str])
+    target_dt = pd.to_datetime(target_date_str)
+    sorted_dates = sorted([d for d in all_dates if pd.to_datetime(d) < target_dt])
     df_prev = pd.DataFrame()
     
     for d in reversed(sorted_dates):
+        d_str = pd.to_datetime(d).strftime('%Y-%m-%d')
         res_prev = supabase.table("daily_analysis") \
             .select("ticker, momentum_rank, close_price, ma20") \
-            .eq("price_date", d) \
+            .eq("price_date", d_str) \
             .eq("market", market_type) \
             .limit(5000) \
             .execute()
@@ -305,6 +310,11 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_c
     df_final['상승금액'] = df_final.apply(
         lambda r: r['종가'] - r['종가_prev'] if pd.notna(r['종가_prev']) else 0.0, axis=1
     )
+    # 일일 상승률 계산 추가
+    df_final['상승률'] = df_final.apply(
+        lambda r: (r['상승금액'] / r['종가_prev'] * 100) if pd.notna(r['종가_prev']) and r['종가_prev'] > 0 else 0.0, axis=1
+    )
+    
     df_final['변동'] = df_final.apply(
         lambda r: int(r['순위_prev'] - r['순위']) if (pd.notna(r['순위_prev']) and pd.notna(r['순위'])) else 0.0, axis=1
     )
@@ -701,7 +711,8 @@ df_display = get_data(selected_date, all_dates, market_type, top_n_cfg, sl_cfg, 
 if df_display is not None:
     tab1, tab2, tab3, tab4, tab5 = st.tabs(["Overview", "New Entries", "🎯 Pullback", "🚀 알파 시그널", "📊 성과 분석"])
     
-    col_order = ['순위', '변동', '매매상태', '종목명', '이격도', 'MOT', 'RS(90)', 'RS(10)', 'MA20', '종가', '상승금액', 'ticker'] 
+    # 컬럼 순서에 '상승률' 추가
+    col_order = ['순위', '변동', '매매상태', '종목명', '이격도', 'MOT', 'RS(90)', 'RS(10)', 'MA20', '종가', '상승금액', '상승률', 'ticker'] 
     tab_dfs = [df_display.head(100), df_display[df_display['is_new_top30']], df_display[df_display['is_pullback']], df_display[df_display['is_no6_opt']]]
 
     for i, tab in enumerate([tab1, tab2, tab3]):
@@ -711,7 +722,7 @@ if df_display is not None:
                 df_target.style.apply(apply_styles, axis=None).format({
                     'MOT': '{:.2f}', 'RS(90)': '{:.2f}', 'RS(10)': '{:.2f}', 
                     '이격도': lambda x: f"{x:+.1f}%" if x != 0 else "-", 
-                    '종가': '{:,.0f}', '상승금액': '{:+,.0f}', 'MA20': '{:,.0f}', '변동': '{:+.0f}'
+                    '종가': '{:,.0f}', '상승금액': '{:+,.0f}', '상승률': '{:+.2f}%', 'MA20': '{:,.0f}', '변동': '{:+.0f}'
                 }, na_rep='-'), 
                 hide_index=True, use_container_width=True,
                 on_select="rerun",
