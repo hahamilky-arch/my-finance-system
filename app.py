@@ -205,7 +205,16 @@ def get_market_regime(market_type):
 
 def get_available_dates():
     try:
-        res = supabase.table("daily_analysis").select("price_date").order("price_date", desc=True).execute()
+        # RPC 호출 시도 (설정된 경우)
+        response = supabase.rpc("get_all_dates").execute()
+        if response.data:
+            return [pd.to_datetime(item['price_date']).strftime('%Y-%m-%d') for item in response.data]
+    except Exception:
+        pass
+        
+    try:
+        # RPC 실패 시, limit을 10000으로 늘려 충분한 과거 날짜 목록을 확보
+        res = supabase.table("daily_analysis").select("price_date").order("price_date", desc=True).limit(10000).execute()
         if res.data:
             parsed_dates = []
             for item in res.data:
@@ -217,8 +226,7 @@ def get_available_dates():
             return unique_dates
         return []
     except Exception:
-        response = supabase.rpc("get_all_dates").execute()
-        return [pd.to_datetime(item['price_date']).strftime('%Y-%m-%d') for item in response.data] if response.data else []
+        return []
 
 def get_recently_sold_info(market_type, target_date, cooldown_days=3):
     table_name = get_holdings_table(market_type)
@@ -245,8 +253,7 @@ def get_recently_sold_info(market_type, target_date, cooldown_days=3):
 
 def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_cycle, stop_cfg, trig_cfg, is_bull_mode):
     target_date_str = pd.to_datetime(target_date).strftime('%Y-%m-%d')
-    if target_date_str not in all_dates: return None
-
+    # 선택한 날짜에 데이터가 있는지 확인
     res_curr = supabase.table("daily_analysis") \
         .select("ticker, momentum_rank, weighted_momentum, rs_score, rs_score_10, close_price, ma10, ma20, atr, high_price, low_price, ma200") \
         .eq("price_date", target_date_str) \
@@ -264,23 +271,28 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_c
             
     df_final['ticker'] = df_final['ticker'].astype(str).str.strip().str.upper()
     
-    target_dt = pd.to_datetime(target_date_str)
-    sorted_dates = sorted([d for d in all_dates if pd.to_datetime(d) < target_dt])
+    # 💡 직전일 데이터 조회 방식 완전 교체 (Supabase Limit 1000 제약 우회)
+    # 파이썬에서 날짜 목록을 찾는 대신, DB에 직접 "18일보다 작은 가장 최근 영업일"을 요청
+    prev_date_res = supabase.table("daily_analysis") \
+        .select("price_date") \
+        .eq("market", market_type) \
+        .lt("price_date", target_date_str) \
+        .order("price_date", desc=True) \
+        .limit(1) \
+        .execute()
+        
     df_prev = pd.DataFrame()
-    
-    for d in reversed(sorted_dates):
-        d_str = pd.to_datetime(d).strftime('%Y-%m-%d')
+    if prev_date_res.data:
+        # 찾은 과거 날짜(예: 14일)로 해당 날짜의 데이터를 통째로 호출
+        prev_date_str = prev_date_res.data[0]['price_date']
         res_prev = supabase.table("daily_analysis") \
             .select("ticker, momentum_rank, close_price, ma20") \
-            .eq("price_date", d_str) \
+            .eq("price_date", prev_date_str) \
             .eq("market", market_type) \
             .limit(5000) \
             .execute()
         if res_prev.data:
-            temp_prev = pd.DataFrame(res_prev.data)
-            if not temp_prev.empty:
-                df_prev = temp_prev
-                break
+            df_prev = pd.DataFrame(res_prev.data)
 
     if not df_prev.empty:
         df_prev = df_prev.rename(
@@ -310,7 +322,6 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_c
     df_final['상승금액'] = df_final.apply(
         lambda r: r['종가'] - r['종가_prev'] if pd.notna(r['종가_prev']) else 0.0, axis=1
     )
-    # 일일 상승률 계산 추가
     df_final['상승률'] = df_final.apply(
         lambda r: (r['상승금액'] / r['종가_prev'] * 100) if pd.notna(r['종가_prev']) and r['종가_prev'] > 0 else 0.0, axis=1
     )
@@ -711,7 +722,6 @@ df_display = get_data(selected_date, all_dates, market_type, top_n_cfg, sl_cfg, 
 if df_display is not None:
     tab1, tab2, tab3, tab4, tab5 = st.tabs(["Overview", "New Entries", "🎯 Pullback", "🚀 알파 시그널", "📊 성과 분석"])
     
-    # 컬럼 순서에 '상승률' 추가
     col_order = ['순위', '변동', '매매상태', '종목명', '이격도', 'MOT', 'RS(90)', 'RS(10)', 'MA20', '종가', '상승금액', '상승률', 'ticker'] 
     tab_dfs = [df_display.head(100), df_display[df_display['is_new_top30']], df_display[df_display['is_pullback']], df_display[df_display['is_no6_opt']]]
 
