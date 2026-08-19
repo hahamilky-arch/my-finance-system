@@ -205,7 +205,6 @@ def get_market_regime(market_type):
 
 def get_available_dates():
     try:
-        # RPC 호출 시도 (설정된 경우)
         response = supabase.rpc("get_all_dates").execute()
         if response.data:
             return [pd.to_datetime(item['price_date']).strftime('%Y-%m-%d') for item in response.data]
@@ -213,7 +212,6 @@ def get_available_dates():
         pass
         
     try:
-        # RPC 실패 시, limit을 10000으로 늘려 충분한 과거 날짜 목록을 확보
         res = supabase.table("daily_analysis").select("price_date").order("price_date", desc=True).limit(10000).execute()
         if res.data:
             parsed_dates = []
@@ -251,9 +249,8 @@ def get_recently_sold_info(market_type, target_date, cooldown_days=3):
     except Exception:
         return {}
 
-def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_cycle, stop_cfg, trig_cfg, is_bull_mode):
+def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_cycle, stop_cfg, trig_cfg, is_bull_mode, disp_cfg):
     target_date_str = pd.to_datetime(target_date).strftime('%Y-%m-%d')
-    # 선택한 날짜에 데이터가 있는지 확인
     res_curr = supabase.table("daily_analysis") \
         .select("ticker, momentum_rank, weighted_momentum, rs_score, rs_score_10, close_price, ma10, ma20, atr, high_price, low_price, ma200") \
         .eq("price_date", target_date_str) \
@@ -271,8 +268,6 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_c
             
     df_final['ticker'] = df_final['ticker'].astype(str).str.strip().str.upper()
     
-    # 💡 직전일 데이터 조회 방식 완전 교체 (Supabase Limit 1000 제약 우회)
-    # 파이썬에서 날짜 목록을 찾는 대신, DB에 직접 "18일보다 작은 가장 최근 영업일"을 요청
     prev_date_res = supabase.table("daily_analysis") \
         .select("price_date") \
         .eq("market", market_type) \
@@ -283,7 +278,6 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_c
         
     df_prev = pd.DataFrame()
     if prev_date_res.data:
-        # 찾은 과거 날짜(예: 14일)로 해당 날짜의 데이터를 통째로 호출
         prev_date_str = prev_date_res.data[0]['price_date']
         res_prev = supabase.table("daily_analysis") \
             .select("ticker, momentum_rank, close_price, ma20") \
@@ -428,7 +422,8 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_c
     df_final['is_no6_opt'] = False
     
     if cycle_passed and market_passed and slots_available > 0:
-        max_disparity = 1.08
+        # 이격도 설정을 동적으로 반영
+        max_disparity = 1.0 + (disp_cfg / 100.0)
         
         tech_cond = (
             (df_final['순위'] <= 20) & 
@@ -469,7 +464,7 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_c
     df_final['매매상태'] = df_final.apply(assign_status, axis=1)
     return df_final.sort_values('순위')
 
-def display_trade_list(data, title, button_label, key_prefix, target_date, is_latest_date, market_type, holdings_df, top_n_cfg, account_total=0.0, is_bull_mode=True):
+def display_trade_list(data, title, button_label, key_prefix, target_date, is_latest_date, market_type, holdings_df, top_n_cfg, account_total=0.0, is_bull_mode=True, disp_cfg=8.0):
     with st.expander(f"🚨 {title} ({len(data)}개)", expanded=True):
         if data.empty:
             st.write(f"해당되는 {button_label} 종목이 없습니다.")
@@ -494,7 +489,7 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                     reason_desc = f"MA20 2일 연속 이탈, 순위 30위 밖, 고정 손절 이탈, 또는 트레일링 스탑 충족"
                     position_info = ""
                 else:
-                    reason_desc = f"Top {top_n_cfg} 편입 (순위<=20), RS>0, MA20 정배열, 이격도 8% 이내"
+                    reason_desc = f"Top {top_n_cfg} 편입 (순위<=20), RS>0, MA20 정배열, 이격도 {disp_cfg}% 이내"
                     position_info = f"<br><span style='font-size: 0.85em; color: #1b5e20; font-weight: bold;'>📊 목표 비중: {target_pct:.1f}% | 추천 매수 금액: {fmt_str}</span>"
 
                 c1.markdown(f"""
@@ -527,8 +522,17 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                             
                             st.number_input("운용 계좌 총액", value=account_total, min_value=0.0, step=1000000.0, key=account_key, on_change=calc_buy_qty_atr, args=(account_key, q_key, atr_val))
                             
+                            # 추천 매수 수량 자동 계산
+                            calculated_qty = 1.0
+                            if input_price > 0:
+                                calculated_qty = target_amount / input_price
+                                if market_type == "KR": # 한국 주식은 정수 단위로 내림 처리
+                                    calculated_qty = float(int(calculated_qty))
+                            if calculated_qty <= 0:
+                                calculated_qty = 1.0
+
                             if q_key not in st.session_state:
-                                input_qty = st.number_input("매수 수량", value=1.0, min_value=0.0, format="%.6f", key=q_key)
+                                input_qty = st.number_input("매수 수량", value=calculated_qty, min_value=0.0, format="%.6f", key=q_key)
                             else:
                                 input_qty = st.number_input("매수 수량", min_value=0.0, format="%.6f", key=q_key)
                         else:
@@ -563,17 +567,19 @@ if 'db_settings_loaded' not in st.session_state:
             st.session_state['bull_sl'] = float(db_cfg.get('bull_sl', -6.0))
             st.session_state['bull_trig'] = float(db_cfg.get('bull_trig', 12.0))
             st.session_state['bull_stop'] = float(db_cfg.get('bull_stop', -5.0))
+            st.session_state['bull_disp'] = float(db_cfg.get('bull_disp', 8.0))
             
             st.session_state['bear_top_n'] = int(db_cfg.get('bear_top_n', 2)) 
             st.session_state['bear_sl'] = float(db_cfg.get('bear_sl', -6.0))
             st.session_state['bear_trig'] = float(db_cfg.get('bear_trig', 12.0))
             st.session_state['bear_stop'] = float(db_cfg.get('bear_stop', -5.0))
+            st.session_state['bear_disp'] = float(db_cfg.get('bear_disp', 8.0))
             
             st.session_state['kr_capital'] = float(db_cfg.get('kr_capital', 20000000.0))
             st.session_state['us_capital'] = float(db_cfg.get('us_capital', 6000000.0))
     except Exception as e:
-        st.session_state['bull_top_n'], st.session_state['bull_sl'], st.session_state['bull_trig'], st.session_state['bull_stop'] = 3, -6.0, 12.0, -5.0
-        st.session_state['bear_top_n'], st.session_state['bear_sl'], st.session_state['bear_trig'], st.session_state['bear_stop'] = 2, -6.0, 12.0, -5.0
+        st.session_state['bull_top_n'], st.session_state['bull_sl'], st.session_state['bull_trig'], st.session_state['bull_stop'], st.session_state['bull_disp'] = 3, -6.0, 12.0, -5.0, 8.0
+        st.session_state['bear_top_n'], st.session_state['bear_sl'], st.session_state['bear_trig'], st.session_state['bear_stop'], st.session_state['bear_disp'] = 2, -6.0, 12.0, -5.0, 8.0
         st.session_state['kr_capital'] = 20000000.0
         st.session_state['us_capital'] = 6000000.0
         
@@ -606,12 +612,14 @@ with st.sidebar:
         sl_cfg = st.number_input("손절 임계값 (%)", value=st.session_state.get('bull_sl', -6.0), step=0.5)
         trig_cfg = st.number_input("트레일링 익절 트리거 (%)", value=st.session_state.get('bull_trig', 12.0), step=1.0)
         stop_cfg = st.number_input("고점 대비 반락 익절폭 (%)", value=st.session_state.get('bull_stop', -5.0), step=1.0)
+        disp_cfg = st.number_input("이격도 제한 (%)", value=st.session_state.get('bull_disp', 8.0), step=1.0)
     else:
         st.error("🔴 하락장 모드 (Bear Market)")
         top_n_cfg = st.number_input("편입 종목 수 (Top N)", value=st.session_state.get('bear_top_n', 0 if market_type == "US" else 2), min_value=0, max_value=5)
         sl_cfg = st.number_input("손절 임계값 (%)", value=st.session_state.get('bear_sl', -6.0), step=0.5)
         trig_cfg = st.number_input("트레일링 익절 트리거 (%)", value=st.session_state.get('bear_trig', 12.0), step=0.5)
         stop_cfg = st.number_input("고점 대비 반락 익절폭 (%)", value=st.session_state.get('bear_stop', -5.0), step=0.5)
+        disp_cfg = st.number_input("이격도 제한 (%)", value=st.session_state.get('bear_disp', 8.0), step=1.0)
 
     st.divider()
     
@@ -642,11 +650,13 @@ with st.sidebar:
                         st.session_state['bull_sl'] = sl_cfg
                         st.session_state['bull_trig'] = trig_cfg
                         st.session_state['bull_stop'] = stop_cfg
+                        st.session_state['bull_disp'] = disp_cfg
                     else:
                         st.session_state['bear_top_n'] = top_n_cfg
                         st.session_state['bear_sl'] = sl_cfg
                         st.session_state['bear_trig'] = trig_cfg
                         st.session_state['bear_stop'] = stop_cfg
+                        st.session_state['bear_disp'] = disp_cfg
                     
                     settings_data = {
                         "id": 1,
@@ -654,10 +664,12 @@ with st.sidebar:
                         "bull_sl": float(st.session_state.get('bull_sl', -6.0)),
                         "bull_trig": float(st.session_state.get('bull_trig', 12.0)),
                         "bull_stop": float(st.session_state.get('bull_stop', -5.0)),
+                        "bull_disp": float(st.session_state.get('bull_disp', 8.0)),
                         "bear_top_n": int(st.session_state.get('bear_top_n', 0 if market_type == "US" else 2)),
                         "bear_sl": float(st.session_state.get('bear_sl', -6.0)),
                         "bear_trig": float(st.session_state.get('bear_trig', 12.0)),
                         "bear_stop": float(st.session_state.get('bear_stop', -5.0)),
+                        "bear_disp": float(st.session_state.get('bear_disp', 8.0)),
                         "kr_capital": float(st.session_state.get('kr_capital', 20000000.0)),
                         "us_capital": float(st.session_state.get('us_capital', 6000000.0))
                     }
@@ -679,10 +691,12 @@ with st.sidebar:
                         "bull_sl": -6.0,
                         "bull_trig": 12.0,
                         "bull_stop": -5.0,
+                        "bull_disp": 8.0,
                         "bear_top_n": 2,
                         "bear_sl": -6.0,
                         "bear_trig": 12.0,
                         "bear_stop": -5.0,
+                        "bear_disp": 8.0,
                         "kr_capital": 20000000.0,
                         "us_capital": 6000000.0
                     }
@@ -693,10 +707,12 @@ with st.sidebar:
                         st.session_state['bull_sl'] = -6.0
                         st.session_state['bull_trig'] = 12.0
                         st.session_state['bull_stop'] = -5.0
+                        st.session_state['bull_disp'] = 8.0
                         st.session_state['bear_top_n'] = 2
                         st.session_state['bear_sl'] = -6.0
                         st.session_state['bear_trig'] = 12.0
                         st.session_state['bear_stop'] = -5.0
+                        st.session_state['bear_disp'] = 8.0
                         st.session_state['kr_capital'] = 20000000.0
                         st.session_state['us_capital'] = 6000000.0
                         
@@ -717,7 +733,7 @@ if all_dates and selected_date:
     if selected_date_str == latest_date_str:
         is_latest_date = True
 
-df_display = get_data(selected_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_cycle, stop_cfg, trig_cfg, is_bull)
+df_display = get_data(selected_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_cycle, stop_cfg, trig_cfg, is_bull, disp_cfg)
 
 if df_display is not None:
     tab1, tab2, tab3, tab4, tab5 = st.tabs(["Overview", "New Entries", "🎯 Pullback", "🚀 알파 시그널", "📊 성과 분석"])
@@ -838,8 +854,8 @@ if df_display is not None:
                         st.markdown(f"**{display_name}** | 비중: **{holding_weight:.1f}%** ({amt_str}) | 수익률: {profit_rate:+.2f}% | 현재가: {curr_price:,.0f}{warning_desc}", unsafe_allow_html=True)
 
             df_rebal = df_display[df_display['매매상태'].isin(['매도필요', '매수추천'])]
-            display_trade_list(df_rebal[df_rebal['매매상태'] == '매도필요'], "시스템 매도 필요 종목", "매도", "sys_s", selected_date, is_latest_date, market_type, holdings_db, top_n_cfg, account_total_input, is_bull)
-            display_trade_list(df_rebal[df_rebal['매매상태'] == '매수추천'], "시스템 매수 추천 종목", "매수", "sys_b", selected_date, is_latest_date, market_type, holdings_db, top_n_cfg, account_total_input, is_bull)
+            display_trade_list(df_rebal[df_rebal['매매상태'] == '매도필요'], "시스템 매도 필요 종목", "매도", "sys_s", selected_date, is_latest_date, market_type, holdings_db, top_n_cfg, account_total_input, is_bull, disp_cfg)
+            display_trade_list(df_rebal[df_rebal['매매상태'] == '매수추천'], "시스템 매수 추천 종목", "매수", "sys_b", selected_date, is_latest_date, market_type, holdings_db, top_n_cfg, account_total_input, is_bull, disp_cfg)
 
             st.markdown("---")
             st.markdown("###### ➕ 수동 종목 편입 (Manual Buy)")
@@ -882,7 +898,7 @@ if df_display is not None:
         📌 **알파 매매 전략 시스템 가이드 (백테스트 최적화 적용)**
         * **시장 필터**: 지수 종가 > 200일선 유지 시에만 신규 매수 스크리닝 허용
         * **리밸런싱 주기**: `{rebalance_cycle}`
-        * **매수 조건**: 모멘텀 순위 **20위 이하**, RS(90) > 0, RS(10) > 0, 종가 > MA20, **20일선 이격도 8% 이내**
+        * **매수 조건**: 모멘텀 순위 **20위 이하**, RS(90) > 0, RS(10) > 0, 종가 > MA20, **20일선 이격도 {disp_cfg}% 이내**
         * **보유 종목 수**: 조건 충족 상위 **{top_n_cfg}개** (하락장: 미장 0개, 국장 2개)
         * **포지션 사이징**: 종목당 자산의 균등 비중 배분 (상승장 Top 3 집중 투자)
         * **매도 조건** (하나라도 충족 시 익일 매도):
