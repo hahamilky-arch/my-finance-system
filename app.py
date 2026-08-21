@@ -246,7 +246,7 @@ def get_available_dates():
 def get_recently_sold_info(market_type, target_date, cooldown_days=3):
     table_name = get_holdings_table(market_type)
     try:
-        res = supabase.table(table_name).select("ticker, sell_date, sell_price").not_.is_("sell_date", "null").execute()
+        res = supabase.table(table_name).select("ticker, sell_date, sell_price").neq("sell_date", "null").execute()
         if not res.data:
             return {}
         
@@ -813,12 +813,12 @@ if df_display is not None:
 
             current_table_name = get_holdings_table(market_type)
             try:
-                history_res = supabase.table(current_table_name).select("*").not_.is_("sell_date", "null").execute()
+                history_res = supabase.table(current_table_name).select("*").neq("sell_date", "null").execute()
             except Exception as e:
                 history_res = type('obj', (object,), {'data': []})
 
             if not history_res.data:
-                st.info("청산 완료된 매매 이력이 존재하지 않습니다.")
+                st.info(f"청산 완료된 매매 이력이 존재하지 않습니다. (테이블: {current_table_name})")
             else:
                 df_hist_raw = pd.DataFrame(history_res.data)
                 df_hist_raw['sell_date_dt'] = pd.to_datetime(df_hist_raw['sell_date'])
@@ -868,6 +868,16 @@ if df_display is not None:
                     m1.metric("총 실현 손익", profit_fmt(total_profit))
                     m2.metric("총 매매 건수", f"{total_trades} 건 (성공 {win_trades} / 실패 {loss_trades})")
                     m3.metric("승률", f"{win_rate:.1f}%")
+
+                    st.write("")
+                    st.markdown("###### 📜 상세 매매 완료 내역")
+                    display_hist_cols = ['sell_date', 'ticker', '종목명', 'buy_date', 'buy_price', 'sell_price', 'quantity', 'profit_amount', 'profit_rate']
+                    df_hist_sorted = df_hist.sort_values('sell_date', ascending=False)
+                    
+                    st.dataframe(
+                        df_hist_sorted[display_hist_cols],
+                        hide_index=True, use_container_width=True
+                    )
 
     st.divider()
     st.markdown("<div id='chart-section'></div>", unsafe_allow_html=True)
