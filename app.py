@@ -246,7 +246,7 @@ def get_available_dates():
 def get_recently_sold_info(market_type, target_date, cooldown_days=3):
     table_name = get_holdings_table(market_type)
     try:
-        res = supabase.table(table_name).select("ticker, sell_date, sell_price").neq("sell_date", "null").execute()
+        res = supabase.table(table_name).select("ticker, sell_date, sell_price").not_.is_("sell_date", "null").execute()
         if not res.data:
             return {}
         
@@ -813,12 +813,13 @@ if df_display is not None:
 
             current_table_name = get_holdings_table(market_type)
             try:
-                history_res = supabase.table(current_table_name).select("*").neq("sell_date", "null").execute()
+                # 💡 정상 작동하던 원래 쿼리로 복구
+                history_res = supabase.table(current_table_name).select("*").not_.is_("sell_date", "null").execute()
             except Exception as e:
                 history_res = type('obj', (object,), {'data': []})
 
             if not history_res.data:
-                st.info(f"청산 완료된 매매 이력이 존재하지 않습니다. (테이블: {current_table_name})")
+                st.info("청산 완료된 매매 이력이 존재하지 않습니다.")
             else:
                 df_hist_raw = pd.DataFrame(history_res.data)
                 df_hist_raw['sell_date_dt'] = pd.to_datetime(df_hist_raw['sell_date'])
@@ -860,22 +861,61 @@ if df_display is not None:
                     
                     win_trades = len(win_df)
                     loss_trades = len(loss_df)
+                    
                     win_rate = (win_trades / total_trades * 100) if total_trades > 0 else 0.0
+                    loss_rate = (loss_trades / total_trades * 100) if total_trades > 0 else 0.0
                     
-                    profit_fmt = lambda x: f"${x:,.2f}" if market_type == "US" else f"{x:,.0f} 원"
+                    avg_win_amt = win_df['profit_amount'].mean() if win_trades > 0 else 0.0
+                    avg_loss_amt = abs(loss_df['profit_amount'].mean()) if loss_trades > 0 else 0.0
                     
-                    m1, m2, m3 = st.columns(3)
+                    profit_factor = (avg_win_amt / avg_loss_amt) if avg_loss_amt > 0 else (999.0 if avg_win_amt > 0 else 0.0)
+                    
+                    if market_type == "US":
+                        profit_fmt = lambda x: f"${x:,.2f}"
+                        price_fmt = "{:,.2f}"
+                        zero_str = "$0.00"
+                    else:
+                        profit_fmt = lambda x: f"{x:,.0f} 원"
+                        price_fmt = "{:,.0f}"
+                        zero_str = "0 원"
+                    
+                    m1, m2, m3, m4 = st.columns(4)
                     m1.metric("총 실현 손익", profit_fmt(total_profit))
                     m2.metric("총 매매 건수", f"{total_trades} 건 (성공 {win_trades} / 실패 {loss_trades})")
-                    m3.metric("승률", f"{win_rate:.1f}%")
-
+                    m3.metric("성공률 / 실패율", f"{win_rate:.1f}% / {loss_rate:.1f}%")
+                    m4.metric("손익비 (Profit Factor)", f"{profit_factor:.2f}" if profit_factor < 999 else "무제한")
+                    
+                    m5, m6, m7, m8 = st.columns(4)
+                    m5.metric("평균 익절 금액", profit_fmt(avg_win_amt))
+                    m6.metric("평균 손절 금액", profit_fmt(avg_loss_amt))
+                    m7.metric("평균 수익률", f"{df_hist['profit_rate'].mean():+.2f} %")
+                    m8.metric("최대 단일 수익금", profit_fmt(df_hist['profit_amount'].max()) if total_trades > 0 else zero_str)
+                    
+                    # 💡 복구된 UI: 월별 성과 및 상세 매매 표 렌더링 영역
+                    st.write("")
+                    st.markdown("###### 📅 월별 성과 종합")
+                    df_hist['sell_month'] = pd.to_datetime(df_hist['sell_date']).dt.strftime('%Y-%m')
+                    df_monthly = df_hist.groupby('sell_month').agg(
+                        월간손익=('profit_amount', 'sum'),
+                        매매건수=('id', 'count'),
+                        평균수익률=('profit_rate', 'mean')
+                    ).reset_index().sort_values('sell_month', ascending=False)
+                    
+                    st.dataframe(
+                        df_monthly.style.format({'월간손익': profit_fmt, '평균수익률': '{:+.2f}%'}),
+                        hide_index=True, use_container_width=True
+                    )
+                    
                     st.write("")
                     st.markdown("###### 📜 상세 매매 완료 내역")
                     display_hist_cols = ['sell_date', 'ticker', '종목명', 'buy_date', 'buy_price', 'sell_price', 'quantity', 'profit_amount', 'profit_rate']
                     df_hist_sorted = df_hist.sort_values('sell_date', ascending=False)
                     
                     st.dataframe(
-                        df_hist_sorted[display_hist_cols],
+                        df_hist_sorted[display_hist_cols].style.format({
+                            'buy_price': price_fmt, 'sell_price': price_fmt, 'quantity': '{:,.6f}',
+                            'profit_amount': profit_fmt, 'profit_rate': '{:+.2f}%'
+                        }),
                         hide_index=True, use_container_width=True
                     )
 
