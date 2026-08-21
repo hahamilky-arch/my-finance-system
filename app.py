@@ -195,11 +195,6 @@ def update_holdings(ticker, action, price, trade_date, quantity, market_type):
     st.rerun()
 
 def get_market_regime(market_type, target_date_str):
-    """
-    백테스트 검증 전략:
-    1. Bull/Bear 판단: 지수 종가 >= MA20
-    2. MA50 3일 연속 하회 시 신규 매수 전면 중단 (현금화) 체크
-    """
     idx_ticker = "^KS11" if market_type == "KR" else "^GSPC"
     res = supabase.table("daily_analysis").select("price_date, close_price, ma20, ma50") \
         .eq("ticker", idx_ticker) \
@@ -219,7 +214,6 @@ def get_market_regime(market_type, target_date_str):
     current_row = df_idx.iloc[-1]
     is_bull = current_row['close_price'] >= current_row['ma20']
     
-    # MA50 3일 연속 하회 체크
     df_idx['is_below_ma50'] = df_idx['close_price'] < df_idx['ma50']
     df_idx['below_ma50_cnt'] = df_idx['is_below_ma50'].groupby((~df_idx['is_below_ma50']).cumsum()).cumsum()
     stop_new_buy = df_idx.iloc[-1]['below_ma50_cnt'] >= 3
@@ -272,7 +266,7 @@ def get_recently_sold_info(market_type, target_date, cooldown_days=3):
     except Exception:
         return {}
 
-def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_cycle, stop_cfg, trig_cfg, is_bull_mode, stop_new_buy):
+def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_cycle, is_bull_mode, stop_new_buy):
     target_date_str = pd.to_datetime(target_date).strftime('%Y-%m-%d')
     res_curr = supabase.table("daily_analysis") \
         .select("ticker, momentum_rank, weighted_momentum, rs_score, rs_score_10, close_price, ma10, ma20, atr, high_price, low_price, ma200") \
@@ -378,22 +372,9 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_c
     my_holdings = holdings_df['ticker'].tolist() if not holdings_df.empty else []
     my_holdings_clean = [str(t).strip().upper() for t in my_holdings]
     
-    peak_metrics = {}
-    if not holdings_df.empty:
-        for _, r in holdings_df.iterrows():
-            tk = str(r['ticker']).strip().upper()
-            bd = r['buy_date']
-            p_res = supabase.table("daily_analysis").select("high_price").eq("ticker", tk).gte("price_date", bd).lte("price_date", target_date_str).execute()
-            if p_res.data:
-                highs = [pd.to_numeric(x['high_price'], errors='coerce') for x in p_res.data]
-                peak_metrics[tk] = max([h for h in highs if pd.notna(h)] + [0])
-            else:
-                peak_metrics[tk] = float(r['buy_price'])
-
     sold_info = get_recently_sold_info(market_type, target_date_str, cooldown_days=3)
     sell_list = set()
     
-    # 청산 조건 (백테스트 룰 적용: 강세장 순위 60위 밖 또는 MA20 이탈 / 약세장 순위 30위 밖 또는 MA20 이탈)
     rank_exit_limit = 60 if is_bull_mode else 30
     
     for _, row in df_final.iterrows():
@@ -423,7 +404,6 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_c
     
     if cycle_passed and (not stop_new_buy) and slots_available > 0:
         if is_bull_mode:
-            # 강세장 매수 조건: 모멘텀 상위 30위 이내, RS > 0, 종가 > MA20
             tech_cond = (
                 (df_final['순위'] <= 30) & 
                 (df_final['RS(90)'] > 0) & 
@@ -432,7 +412,6 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_c
             )
             candidates = df_final[tech_cond].sort_values(by='순위', ascending=True)
         else:
-            # 약세장 매수 조건: 모멘텀 상위 50위 이내, RS 0.5~1.5, 이격도 -5%~+5%
             tech_cond = (
                 (df_final['순위'] <= 50) & 
                 (df_final['RS(90)'] >= 0.5) & (df_final['RS(90)'] <= 1.5) &
@@ -625,6 +604,70 @@ with st.sidebar:
     )
     st.session_state[cap_key] = account_total_input
 
+    st.divider()
+    
+    # 💡 누락되었던 설정값 DB 저장 및 초기화 기능 복구
+    with st.expander("💾 설정값 DB 저장 / 초기화", expanded=False):
+        config_pwd = st.text_input("매매 비밀번호 입력", type="password", key="pwd_config")
+        
+        col_btn1, col_btn2 = st.columns(2)
+        with col_btn1:
+            if st.button("설정 저장", use_container_width=True):
+                if config_pwd == st.secrets.get("TRADE_PASSWORD", "1234"):
+                    if is_bull:
+                        st.session_state['bull_top_n'] = top_n_cfg
+                        st.session_state['bull_sl'] = sl_cfg
+                    else:
+                        st.session_state['bear_top_n'] = top_n_cfg
+                        st.session_state['bear_sl'] = sl_cfg
+                    
+                    settings_data = {
+                        "id": 1,
+                        "bull_top_n": int(st.session_state.get('bull_top_n', 5)),
+                        "bull_sl": float(st.session_state.get('bull_sl', -10.0)),
+                        "bear_top_n": int(st.session_state.get('bear_top_n', 3)),
+                        "bear_sl": float(st.session_state.get('bear_sl', -6.0)),
+                        "kr_capital": float(st.session_state.get('kr_capital', 20000000.0)),
+                        "us_capital": float(st.session_state.get('us_capital', 6000000.0))
+                    }
+                    
+                    try:
+                        supabase.table("strategy_settings").upsert(settings_data).execute()
+                        st.success("✅ 전략 설정 및 운용 자금이 DB에 저장되었습니다.")
+                    except Exception as e:
+                        st.error(f"❌ DB 저장 실패: {e}")
+                else:
+                    st.error("❌ 비밀번호 불일치")
+                    
+        with col_btn2:
+            if st.button("🔄 기본값 초기화", use_container_width=True):
+                if config_pwd == st.secrets.get("TRADE_PASSWORD", "1234"):
+                    default_settings = {
+                        "id": 1,
+                        "bull_top_n": 5,
+                        "bull_sl": -10.0,
+                        "bear_top_n": 3,
+                        "bear_sl": -6.0,
+                        "kr_capital": 20000000.0,
+                        "us_capital": 6000000.0
+                    }
+                    try:
+                        supabase.table("strategy_settings").upsert(default_settings).execute()
+                        
+                        st.session_state['bull_top_n'] = 5
+                        st.session_state['bull_sl'] = -10.0
+                        st.session_state['bear_top_n'] = 3
+                        st.session_state['bear_sl'] = -6.0
+                        st.session_state['kr_capital'] = 20000000.0
+                        st.session_state['us_capital'] = 6000000.0
+                        
+                        st.success("✅ 설정이 기본값으로 초기화되었습니다.")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"❌ 초기화 중 오류: {e}")
+                else:
+                    st.error("❌ 비밀번호 불일치")
+
     if st.button("Refresh", use_container_width=True): 
         st.rerun()
 
@@ -635,10 +678,9 @@ if all_dates and selected_date:
     if selected_date_str == latest_date_str:
         is_latest_date = True
 
-df_display = get_data(selected_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_cycle, 0, 0, is_bull, stop_new_buy)
+df_display = get_data(selected_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_cycle, is_bull, stop_new_buy)
 
 if df_display is not None:
-    # 💡 요청하신 대로 2, 3번 탭을 제거하고 Overview, 알파 시그널, 성과 분석 탭으로 슬림화
     tab1, tab4, tab5 = st.tabs(["Overview", "🚀 알파 시그널", "📊 성과 분석"])
     
     col_order = ['순위', '변동', '매매상태', '종목명', '이격도', 'MOT', 'RS(90)', 'RS(10)', 'MA20', '종가', '상승금액', '상승률', 'ticker'] 
@@ -711,7 +753,6 @@ if df_display is not None:
                         raw_name = h_row.get('name', ticker)
                         if pd.isna(raw_name): raw_name = ticker
                         buy_price = float(h_row.get('buy_price', 0.0))
-                        buy_date = h_row.get('buy_date')
                         qty = float(h_row.get('quantity', 1.0))
                         
                         curr_row = df_display[df_display['ticker'].astype(str).str.strip().str.upper() == str(ticker).strip().upper()]
@@ -720,7 +761,7 @@ if df_display is not None:
                         total_holdings_val += eval_val
                         
                         holdings_info_list.append({
-                            'ticker': ticker, 'raw_name': raw_name, 'buy_price': buy_price, 'buy_date': buy_date,
+                            'ticker': ticker, 'raw_name': raw_name, 'buy_price': buy_price,
                             'qty': qty, 'curr_price': curr_price, 'eval_val': eval_val
                         })
                     
@@ -820,15 +861,9 @@ if df_display is not None:
                     
                     win_trades = len(win_df)
                     loss_trades = len(loss_df)
-                    
                     win_rate = (win_trades / total_trades * 100) if total_trades > 0 else 0.0
                     
-                    if market_type == "US":
-                        profit_fmt = lambda x: f"${x:,.2f}"
-                        price_fmt = "{:,.2f}"
-                    else:
-                        profit_fmt = lambda x: f"{x:,.0f} 원"
-                        price_fmt = "{:,.0f}"
+                    profit_fmt = lambda x: f"${x:,.2f}" if market_type == "US" else f"{x:,.0f} 원"
                     
                     m1, m2, m3 = st.columns(3)
                     m1.metric("총 실현 손익", profit_fmt(total_profit))
