@@ -606,7 +606,6 @@ with st.sidebar:
 
     st.divider()
     
-    # 💡 누락되었던 설정값 DB 저장 및 초기화 기능 복구
     with st.expander("💾 설정값 DB 저장 / 초기화", expanded=False):
         config_pwd = st.text_input("매매 비밀번호 입력", type="password", key="pwd_config")
         
@@ -896,7 +895,7 @@ if df_display is not None:
     default_index = top100_tickers.index(default_ticker) if default_ticker in top100_tickers else 0
             
     selected_chart_ticker = st.selectbox(
-        "분석할 종목을 선택하세요", 
+        "분석할 종목을 선택하세요 (위 표에서 종목 행을 직접 클릭해도 자동으로 변경됩니다)", 
         options=top100_tickers, 
         index=default_index,
         format_func=lambda x: f"{ticker_name_map.get(x, x)}"
@@ -916,19 +915,72 @@ if df_display is not None:
             .order("price_date", desc=True) \
             .limit(20).execute()
             
-        if chart_res.data:
+        if not chart_res.data:
+            st.info("해당 종목의 시계열 차트 데이터가 존재하지 않습니다.")
+        else:
             df_chart = pd.DataFrame(chart_res.data)
             df_chart['price_date'] = pd.to_datetime(df_chart['price_date'])
             df_chart = df_chart.sort_values('price_date', ascending=True)
             df_chart['price_date_str'] = df_chart['price_date'].dt.strftime('%m-%d')
             df_chart['close_price'] = pd.to_numeric(df_chart['close_price'], errors='coerce')
             df_chart['ma20'] = pd.to_numeric(df_chart['ma20'], errors='coerce')
+            df_chart.loc[df_chart['ma20'] == 0, 'ma20'] = None
             
-            line_stock = alt.Chart(df_chart).mark_line(color='#1f77b4', strokeWidth=2.5).encode(
-                x=alt.X('price_date_str:N', title=None),
-                y=alt.Y('close_price:Q', title='주가', scale=alt.Scale(zero=False))
+            if index_res.data:
+                df_idx_chart = pd.DataFrame(index_res.data).rename(columns={'close_price': 'index_price'})
+                df_idx_chart['price_date'] = pd.to_datetime(df_idx_chart['price_date'])
+                df_idx_chart['index_price'] = pd.to_numeric(df_idx_chart['index_price'], errors='coerce')
+                df_merged = pd.merge(df_chart, df_idx_chart, on='price_date', how='left')
+            else:
+                df_merged = df_chart
+                df_merged['index_price'] = None
+
+            idx_name = "KOSPI" if market_type == "KR" else "S&P 500"
+            stock_name = ticker_name_map.get(selected_chart_ticker, selected_chart_ticker)
+
+            line_stock = alt.Chart(df_merged).mark_line(color='#1f77b4', strokeWidth=2.5).encode(
+                x=alt.X('price_date_str:N', title=None, axis=alt.Axis(labelAngle=-45)),
+                y=alt.Y('close_price:Q', title='주가', scale=alt.Scale(zero=False, padding=15)),
+                tooltip=[alt.Tooltip('price_date_str:N', title='날짜'), alt.Tooltip('close_price:Q', title='종가', format=',.0f')]
             )
-            st.altair_chart(line_stock, use_container_width=True)
+
+            line_ma20 = alt.Chart(df_merged).mark_line(color='#ff4b4b', strokeDash=[4, 4]).encode(
+                x=alt.X('price_date_str:N', title=None),
+                y=alt.Y('ma20:Q', title=None, scale=alt.Scale(zero=False, padding=15)) 
+            )
+
+            line_rank = alt.Chart(df_merged).mark_line(color='#ff7f0e', point=True).encode(
+                x=alt.X('price_date_str:N', title=None),
+                y=alt.Y('momentum_rank:Q', title='순위', scale=alt.Scale(domain=[100, 1], clamp=True), axis=alt.Axis(orient='right', titlePadding=10)),
+                tooltip=[alt.Tooltip('momentum_rank:Q', title='모멘텀 순위')]
+            )
+
+            chart_price = alt.layer(line_stock, line_ma20)
+            chart_top = alt.layer(chart_price, line_rank).resolve_scale(y='independent').properties(height=350)
+
+            chart_bottom = alt.Chart(df_merged).mark_line(color='#2ca02c', strokeWidth=2).encode(
+                x=alt.X('price_date_str:N', title=None, axis=alt.Axis(labelAngle=-45)),
+                y=alt.Y('index_price:Q', title=f'{idx_name} 지수', scale=alt.Scale(zero=False, padding=10)),
+                tooltip=[alt.Tooltip('price_date_str:N', title='날짜'), alt.Tooltip('index_price:Q', title='지수', format=',.2f')]
+            ).properties(height=140)
+
+            st.markdown(f"""
+            <div style="text-align: center; margin-bottom: 10px; font-size: 0.9em; color: #555555;">
+                <span style="color:#1f77b4; font-weight:bold;">━</span> {stock_name} 주가 | 
+                <span style="color:#ff4b4b; font-weight:bold;">---</span> MA20 | 
+                <span style="color:#ff7f0e; font-weight:bold;">━●━</span> 모멘텀 순위 (우측 Y축 반전)
+            </div>
+            """, unsafe_allow_html=True)
+            
+            st.altair_chart(chart_top, use_container_width=True)
+            
+            st.markdown(f"""
+            <div style="text-align: center; margin-top: 5px; margin-bottom: 10px; font-size: 0.9em; color: #555555;">
+                <span style="color:#2ca02c; font-weight:bold;">━</span> {idx_name} 지수 흐름
+            </div>
+            """, unsafe_allow_html=True)
+            
+            st.altair_chart(chart_bottom, use_container_width=True)
 
 else:
     st.warning("데이터를 불러오는 중입니다.")
