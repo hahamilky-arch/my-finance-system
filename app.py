@@ -246,7 +246,7 @@ def get_available_dates():
 def get_recently_sold_info(market_type, target_date, cooldown_days=3):
     table_name = get_holdings_table(market_type)
     try:
-        res = supabase.table(table_name).select("ticker, sell_date, sell_price").not_.is_("sell_date", "null").execute()
+        res = supabase.table(table_name).select("ticker, sell_date, sell_price").neq("sell_date", "null").execute()
         if not res.data:
             return {}
         
@@ -788,6 +788,58 @@ if df_display is not None:
             display_trade_list(df_rebal[df_rebal['매매상태'] == '매도필요'], "시스템 매도 필요 종목", "매도", "sys_s", selected_date, is_latest_date, market_type, holdings_db, top_n_cfg, account_total_input, is_bull)
             display_trade_list(df_rebal[df_rebal['매매상태'] == '매수추천'], "시스템 매수 추천 종목", "매수", "sys_b", selected_date, is_latest_date, market_type, holdings_db, top_n_cfg, account_total_input, is_bull)
 
+            # 💡 복구된 UI: 수동 매수/매도 기능
+            st.markdown("---")
+            st.markdown("###### ➕ 수동 종목 편입 (Manual Buy)")
+            with st.expander("시스템 추천 외 종목 수동 매수", expanded=False):
+                col_m1, col_m2, col_m3, col_m4 = st.columns(4)
+                with col_m1:
+                    m_ticker = st.text_input("종목코드 (Ticker)", key="m_ticker").strip().upper()
+                with col_m2:
+                    m_price = st.number_input("매수가", min_value=0.0, value=0.0, step=100.0, key="m_price")
+                with col_m3:
+                    m_qty = st.number_input("매수 수량", min_value=0.0, value=1.0, step=1.0, format="%.6f", key="m_qty")
+                with col_m4:
+                    m_date = st.date_input("매수일", value=selected_date, key="m_date")
+                
+                if st.button("수동 매수 실행", use_container_width=True, type="primary"):
+                    if m_ticker and m_price > 0 and m_qty > 0:
+                        update_holdings(m_ticker, 'BUY', m_price, m_date, m_qty, market_type)
+                    else:
+                        st.warning("종목코드, 매수가, 매수 수량을 올바르게 입력해주세요.")
+
+            st.markdown("###### 🗑️ 수동 종목 청산 (Manual Sell)")
+            with st.expander("보유 종목 수동 매도 처리", expanded=False):
+                col_ms1, col_ms2, col_ms3, col_ms4 = st.columns(4)
+                with col_ms1:
+                    ms_ticker = st.text_input("종목코드 (Ticker)", key="ms_ticker").strip().upper()
+                with col_ms2:
+                    ms_price = st.number_input("매도가", min_value=0.0, value=0.0, step=100.0, key="ms_price")
+                with col_ms3:
+                    ms_qty = st.number_input("매도 수량", min_value=0.0, value=1.0, step=1.0, format="%.6f", key="ms_qty")
+                with col_ms4:
+                    ms_date = st.date_input("매도일", value=selected_date, key="ms_date")
+                
+                if st.button("수동 매도 실행", use_container_width=True, type="secondary"):
+                    if ms_ticker and ms_price > 0 and ms_qty > 0:
+                        update_holdings(ms_ticker, 'SELL', ms_price, ms_date, ms_qty, market_type)
+                    else:
+                        st.warning("종목코드, 매도가, 매도 수량을 올바르게 입력해주세요.")
+
+        # 💡 복구된 UI: 매매 조건 및 시스템 가이드 표시 (잠금 해제 여부와 상관없이 항시 표시)
+        st.info(f"""
+        📌 **하이브리드 듀얼 알파 매매 전략 시스템 가이드 (백테스트 최적화 적용)**
+        * **시장 필터**: 지수 종가 기준 MA50 3일 연속 하회 시 신규 매수 전면 중지 (현금화)
+        * **리밸런싱 주기**: `{rebalance_cycle}`
+        * **강세장 매수 조건**: 모멘텀 순위 **상위 30위 이내**, RS(90) > 0, 종가 > MA20 (이격도 우선 편입)
+        * **약세장 매수 조건**: 모멘텀 순위 **상위 50위 이내**, RS(90) 0.5~1.5 구간, 이격도 -5% ~ +5% (이격도 절대값 작은순 우선 편입)
+        * **보유 종목 수**: 조건 충족 상위 **{top_n_cfg}개** 분산 투자
+        * **매도 조건** (하나라도 충족 시 익일 매도):
+            1. 종가 < MA20 하향 이탈 혹은, 순위 이탈 (강세장 60위 밖 / 약세장 30위 밖)
+            2. 고정 손절선 이탈 (`{sl_cfg}%`)
+        * **쿨다운 룰**: 매도 후 3거래일 신규 편입 금지 (단, 종가가 직전 매도가를 재돌파하면 쿨다운 해제)
+        """)
+
     with tab5:
         st.markdown(f"##### 📊 {market_type} 시장 매매 성과 분석")
         
@@ -813,7 +865,6 @@ if df_display is not None:
 
             current_table_name = get_holdings_table(market_type)
             try:
-                # 💡 정상 작동하던 원래 쿼리로 복구
                 history_res = supabase.table(current_table_name).select("*").not_.is_("sell_date", "null").execute()
             except Exception as e:
                 history_res = type('obj', (object,), {'data': []})
@@ -891,7 +942,6 @@ if df_display is not None:
                     m7.metric("평균 수익률", f"{df_hist['profit_rate'].mean():+.2f} %")
                     m8.metric("최대 단일 수익금", profit_fmt(df_hist['profit_amount'].max()) if total_trades > 0 else zero_str)
                     
-                    # 💡 복구된 UI: 월별 성과 및 상세 매매 표 렌더링 영역
                     st.write("")
                     st.markdown("###### 📅 월별 성과 종합")
                     df_hist['sell_month'] = pd.to_datetime(df_hist['sell_date']).dt.strftime('%Y-%m')
