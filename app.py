@@ -91,6 +91,10 @@ def apply_styles(df):
         df_styles.loc[df['매매상태'] == '매도필요', '매매상태'] += 'color: #1f77b4; font-weight: bold;'
         df_styles.loc[df['매매상태'] == '보유중', '매매상태'] += 'color: #2ca02c; font-weight: bold;'
 
+    if '제외사유' in df.columns:
+        df_styles.loc[df['제외사유'] != '', '제외사유'] += 'color: #888888; font-size: 0.9em;'
+        df_styles.loc[df['제외사유'] == '조건충족', '제외사유'] += 'color: #d62728; font-weight: bold;'
+
     if 'RS(90)' in df.columns:
         df_styles.loc[df['RS(90)'] > 0, 'RS(90)'] += 'color: #d62728; font-weight: bold;'
         df_styles.loc[df['RS(90)'] <= 0, 'RS(90)'] += 'color: #bbbbbb;'
@@ -438,17 +442,53 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_c
             buy_list.add(ticker_upper)
             df_final.at[idx, 'is_signal'] = True
 
-    def assign_status(row):
+    def assign_status_and_reason(row):
         t_upper = str(row['ticker']).strip().upper()
+        
         if t_upper in sell_list:
-            return '매도필요'
-        elif t_upper in my_holdings_clean:
-            return '보유중'
-        elif t_upper in buy_list:
-            return '매수추천'
-        return ''
+            return '매도필요', '추세이탈/손절조건'
+        
+        if t_upper in my_holdings_clean:
+            return '보유중', '기보유'
+        
+        if t_upper in buy_list:
+            return '매수추천', '조건충족'
+        
+        reasons = []
+        
+        if stop_new_buy:
+            reasons.append("시장경보(MA50하회)")
+        if not cycle_passed:
+            reasons.append("리밸런싱일 미해당")
+        if slots_available <= 0:
+            reasons.append("보유슬롯 가득참")
+            
+        if is_bull_mode:
+            if row['순위'] > 30:
+                reasons.append("순위30위초과")
+            if row['RS(90)'] <= 0:
+                reasons.append("RS(90)<=0")
+            if row['MA20'] <= 0 or row['종가'] <= row['MA20']:
+                reasons.append("MA20하회")
+        else: 
+            if row['순위'] > 50:
+                reasons.append("순위50위초과")
+            if not (0.5 <= row['RS(90)'] <= 1.5):
+                reasons.append(f"RS범위초과({row['RS(90)']:.2f})")
+            if not (-5.0 <= row['이격도'] <= 5.0):
+                reasons.append(f"이격도초과({row['이격도']:+.1f}%)")
+                
+        if t_upper in sold_info:
+            if row['종가'] <= sold_info[t_upper]:
+                reasons.append("최근매도 쿨다운")
 
-    df_final['매매상태'] = df_final.apply(assign_status, axis=1)
+        reason_str = ", ".join(reasons) if reasons else "선순위밀림"
+        return '', reason_str
+
+    status_reason = df_final.apply(assign_status_and_reason, axis=1)
+    df_final['매매상태'] = [x[0] for x in status_reason]
+    df_final['제외사유'] = [x[1] for x in status_reason]
+    
     return df_final.sort_values('순위')
 
 def display_trade_list(data, title, button_label, key_prefix, target_date, is_latest_date, market_type, holdings_df, top_n_cfg, account_total=0.0, is_bull_mode=True):
@@ -682,7 +722,7 @@ df_display = get_data(selected_date, all_dates, market_type, top_n_cfg, sl_cfg, 
 if df_display is not None:
     tab1, tab4, tab5 = st.tabs(["Overview", "🚀 알파 시그널", "📊 성과 분석"])
     
-    col_order = ['순위', '변동', '매매상태', '종목명', '이격도', 'MOT', 'RS(90)', 'RS(10)', 'MA20', '종가', '상승금액', '상승률', 'ticker'] 
+    col_order = ['순위', '변동', '매매상태', '제외사유', '종목명', '이격도', 'MOT', 'RS(90)', 'RS(10)', 'MA20', '종가', '상승금액', '상승률', 'ticker'] 
 
     with tab1:
         df_target = df_display.head(100)[col_order].copy()
@@ -788,7 +828,6 @@ if df_display is not None:
             display_trade_list(df_rebal[df_rebal['매매상태'] == '매도필요'], "시스템 매도 필요 종목", "매도", "sys_s", selected_date, is_latest_date, market_type, holdings_db, top_n_cfg, account_total_input, is_bull)
             display_trade_list(df_rebal[df_rebal['매매상태'] == '매수추천'], "시스템 매수 추천 종목", "매수", "sys_b", selected_date, is_latest_date, market_type, holdings_db, top_n_cfg, account_total_input, is_bull)
 
-            # 💡 복구된 UI: 수동 매수/매도 기능
             st.markdown("---")
             st.markdown("###### ➕ 수동 종목 편입 (Manual Buy)")
             with st.expander("시스템 추천 외 종목 수동 매수", expanded=False):
@@ -826,7 +865,6 @@ if df_display is not None:
                     else:
                         st.warning("종목코드, 매도가, 매도 수량을 올바르게 입력해주세요.")
 
-        # 💡 복구된 UI: 매매 조건 및 시스템 가이드 표시 (잠금 해제 여부와 상관없이 항시 표시)
         st.info(f"""
         📌 **하이브리드 듀얼 알파 매매 전략 시스템 가이드 (백테스트 최적화 적용)**
         * **시장 필터**: 지수 종가 기준 MA50 3일 연속 하회 시 신규 매수 전면 중지 (현금화)
