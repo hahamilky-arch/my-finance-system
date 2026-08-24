@@ -66,7 +66,7 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
         for _, row in data.iterrows():
             ticker = row['ticker']
             c1, c2 = st.columns([4, 1])
-            c1.markdown(f"**{row['종목명']} ({ticker})** - 이격도: {row['이격도']:+.1f}%", unsafe_allow_html=True)
+            c1.markdown(f"**{row['종목명']} ({ticker})** - 이격도: {row['이격도']:+.2f}%", unsafe_allow_html=True)
             if is_latest_date:
                 with c2.popover(button_label):
                     p_key, q_key, acc_key = f"p_{key_prefix}_{ticker}", f"q_{key_prefix}_{ticker}", f"acc_{key_prefix}_{ticker}"
@@ -127,10 +127,22 @@ if df_display is not None:
     tab1, tab4, tab5 = st.tabs(["Overview", "🚀 알파 시그널", "📊 성과 분석"])
     
     with tab1:
-        col_order = ['순위', '변동', '매매상태', '제외사유', '종목명', '이격도', 'MOT', 'RS(90)', 'RS(10)', 'MA20', '종가', '상승금액', '상승률', 'ticker'] 
+        # 💡 수정 1: 제외사유를 MA20 뒤로 이동
+        col_order = ['순위', '변동', '매매상태', '종목명', '이격도', 'MOT', 'RS(90)', 'RS(10)', 'MA20', '제외사유', '종가', '상승금액', '상승률', 'ticker'] 
         df_target = df_display.head(100)[col_order].copy()
+        
+        # 💡 수정 2: format 설정을 통해 모든 값 소수점 2자리로 통일 (종가, MA20, 상승금액 등 포함)
         event = st.dataframe(
-            df_target.style.apply(apply_styles, axis=None).format({'이격도': lambda x: f"{x:+.1f}%" if x != 0 else "-", '종가': '{:,.0f}', 'MA20': '{:,.0f}'}), 
+            df_target.style.apply(apply_styles, axis=None).format({
+                '이격도': lambda x: f"{x:+.2f}%" if x != 0 else "-", 
+                'MOT': '{:.2f}',
+                'RS(90)': '{:.2f}',
+                'RS(10)': '{:.2f}',
+                '종가': '{:,.2f}', 
+                'MA20': '{:,.2f}',
+                '상승금액': '{:+,.2f}', 
+                '상승률': '{:+.2f}%'
+            }), 
             hide_index=True, use_container_width=True, on_select="rerun", selection_mode="single-row"
         )
         if event and event.get("selection", {}).get("rows"):
@@ -139,12 +151,12 @@ if df_display is not None:
 
     with tab4:
         st.markdown("##### 📋 시스템 매매 지시서")
-        # (생략: 기존 tab4의 비밀번호 및 보유종목, 수동매수/매도 UI 코드 유지)
+        # (이하 생략: 기존 tab4 코드와 동일)
         pass 
 
     with tab5:
         st.markdown(f"##### 📊 {market_type} 시장 성과 분석")
-        # (생략: 기존 tab5의 성과분석 UI 코드 유지)
+        # (이하 생략: 기존 tab5 코드와 동일)
         pass
 
     st.divider()
