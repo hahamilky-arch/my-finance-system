@@ -1047,8 +1047,10 @@ if df_display is not None:
             .limit(20).execute()
             
         benchmark_ticker = "^KS11" if market_type == "KR" else "^GSPC"
+        
+        # 💡 지수 조회 시 ma50 추가
         index_res = supabase.table("daily_analysis") \
-            .select("price_date, close_price") \
+            .select("price_date, close_price, ma50") \
             .eq("ticker", benchmark_ticker) \
             .order("price_date", desc=True) \
             .limit(20).execute()
@@ -1065,13 +1067,15 @@ if df_display is not None:
             df_chart.loc[df_chart['ma20'] == 0, 'ma20'] = None
             
             if index_res.data:
-                df_idx_chart = pd.DataFrame(index_res.data).rename(columns={'close_price': 'index_price'})
+                df_idx_chart = pd.DataFrame(index_res.data).rename(columns={'close_price': 'index_price', 'ma50': 'index_ma50'})
                 df_idx_chart['price_date'] = pd.to_datetime(df_idx_chart['price_date'])
                 df_idx_chart['index_price'] = pd.to_numeric(df_idx_chart['index_price'], errors='coerce')
+                df_idx_chart['index_ma50'] = pd.to_numeric(df_idx_chart['index_ma50'], errors='coerce')
                 df_merged = pd.merge(df_chart, df_idx_chart, on='price_date', how='left')
             else:
                 df_merged = df_chart
                 df_merged['index_price'] = None
+                df_merged['index_ma50'] = None
 
             idx_name = "KOSPI" if market_type == "KR" else "S&P 500"
             stock_name = ticker_name_map.get(selected_chart_ticker, selected_chart_ticker)
@@ -1096,11 +1100,20 @@ if df_display is not None:
             chart_price = alt.layer(line_stock, line_ma20)
             chart_top = alt.layer(chart_price, line_rank).resolve_scale(y='independent').properties(height=350)
 
-            chart_bottom = alt.Chart(df_merged).mark_line(color='#2ca02c', strokeWidth=2).encode(
+            # 💡 지수 차트에 MA50 점선 레이어 병합
+            line_idx = alt.Chart(df_merged).mark_line(color='#2ca02c', strokeWidth=2).encode(
                 x=alt.X('price_date_str:N', title=None, axis=alt.Axis(labelAngle=-45)),
                 y=alt.Y('index_price:Q', title=f'{idx_name} 지수', scale=alt.Scale(zero=False, padding=10)),
-                tooltip=[alt.Tooltip('price_date_str:N', title='날짜'), alt.Tooltip('index_price:Q', title='지수', format=',.2f')]
-            ).properties(height=140)
+                tooltip=[alt.Tooltip('price_date_str:N', title='날짜'), alt.Tooltip('index_price:Q', title='지수 종가', format=',.2f')]
+            )
+
+            line_idx_ma50 = alt.Chart(df_merged).mark_line(color='#ff4b4b', strokeDash=[4, 4]).encode(
+                x=alt.X('price_date_str:N', title=None),
+                y=alt.Y('index_ma50:Q', title=None, scale=alt.Scale(zero=False, padding=10)),
+                tooltip=[alt.Tooltip('index_ma50:Q', title='MA50', format=',.2f')]
+            )
+
+            chart_bottom = alt.layer(line_idx, line_idx_ma50).resolve_scale(y='shared').properties(height=140)
 
             st.markdown(f"""
             <div style="text-align: center; margin-bottom: 10px; font-size: 0.9em; color: #555555;">
@@ -1114,7 +1127,8 @@ if df_display is not None:
             
             st.markdown(f"""
             <div style="text-align: center; margin-top: 5px; margin-bottom: 10px; font-size: 0.9em; color: #555555;">
-                <span style="color:#2ca02c; font-weight:bold;">━</span> {idx_name} 지수 흐름
+                <span style="color:#2ca02c; font-weight:bold;">━</span> {idx_name} 지수 종가 | 
+                <span style="color:#ff4b4b; font-weight:bold;">---</span> MA50
             </div>
             """, unsafe_allow_html=True)
             
