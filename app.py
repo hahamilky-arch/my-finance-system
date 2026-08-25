@@ -128,6 +128,8 @@ with st.sidebar:
     market_type = st.radio("Market", ["KR", "US"], horizontal=True)
     all_dates = get_available_dates()
     selected_date = st.date_input("Date", value=pd.to_datetime(all_dates[0]) if all_dates else None)
+    
+    # 💡 target_date_str을 통해 날짜를 문자열로 안전하게 관리
     target_date_str = pd.to_datetime(selected_date).strftime('%Y-%m-%d') if selected_date else ""
     
     market_safe, stop_new_buy = get_market_regime(market_type, target_date_str)
@@ -153,7 +155,8 @@ with st.sidebar:
 df_display = get_data(selected_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_cycle, is_bull, stop_new_buy)
 
 if df_display is not None:
-    is_latest_date = (selected_date_str == max(all_dates)) if all_dates and selected_date else False
+    # 💡 target_date_str를 사용하여 가장 최신 날짜인지 판별
+    is_latest_date = (target_date_str == max(all_dates)) if all_dates and target_date_str else False
     
     tab1, tab4, tab5 = st.tabs(["Overview", "🚀 알파 시그널", "📊 성과 분석"])
     
@@ -261,8 +264,10 @@ if df_display is not None:
                         st.markdown(f"**{display_name}** | 비중: **{holding_weight:.1f}%** ({amt_str}) | 수익률: {profit_rate:+.2f}% | 현재가: {curr_price:,.2f}{warning_desc}", unsafe_allow_html=True)
 
             df_rebal = df_display[df_display['매매상태'].isin(['매도필요', '매수추천'])]
-            display_trade_list(df_rebal[df_rebal['매매상태'] == '매도필요'], "시스템 매도 필요 종목", "매도", "sys_s", selected_date_str, is_latest_date, market_type, holdings_db, top_n_cfg, account_total_input)
-            display_trade_list(df_rebal[df_rebal['매매상태'] == '매수추천'], "시스템 매수 추천 종목", "매수", "sys_b", selected_date_str, is_latest_date, market_type, holdings_db, top_n_cfg, account_total_input)
+            
+            # 💡 target_date_str 반영
+            display_trade_list(df_rebal[df_rebal['매매상태'] == '매도필요'], "시스템 매도 필요 종목", "매도", "sys_s", target_date_str, is_latest_date, market_type, holdings_db, top_n_cfg, account_total_input)
+            display_trade_list(df_rebal[df_rebal['매매상태'] == '매수추천'], "시스템 매수 추천 종목", "매수", "sys_b", target_date_str, is_latest_date, market_type, holdings_db, top_n_cfg, account_total_input)
 
             st.markdown("---")
             st.markdown("###### ➕ 수동 종목 편입 (Manual Buy)")
