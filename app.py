@@ -456,14 +456,138 @@ if df_display is not None:
                     price_fmt = "{:,.2f}" if market_type == "US" else "{:,.0f}"
                     
                     m1, m2, m3, m4 = st.columns(4)
+    with tab5:
+        st.markdown(f"##### 📊 {market_type} 시장 성과 분석")
+        
+        if not st.session_state.get('trade_authenticated', False):
+            st.info("🔒 상세 성과 내역 확인을 위해 비밀번호를 입력해 주십시오.")
+            col_pwd1, col_pwd2 = st.columns([3, 1])
+            with col_pwd1:
+                input_pwd_5 = st.text_input("매매 비밀번호", type="password", key="pwd_tab5", label_visibility="collapsed")
+            with col_pwd2:
+                if st.button("잠금 해제", key="btn_unlock_tab5", use_container_width=True):
+                    if input_pwd_5 == st.secrets.get("TRADE_PASSWORD", "1234"):
+                        st.session_state['trade_authenticated'] = True
+                        st.rerun()
+                    else:
+                        st.error("비밀번호가 일치하지 않습니다.")
+        else:
+            col_header1, col_header2 = st.columns([5, 1])
+            with col_header2:
+                if st.button("🔒 다시 잠금", key="btn_lock_tab5", use_container_width=True):
+                    st.session_state['trade_authenticated'] = False
+                    st.rerun()
+
+            current_table_name = get_holdings_table(market_type)
+            try:
+                history_res = supabase.table(current_table_name).select("*").not_.is_("sell_date", "null").execute()
+            except Exception:
+                history_res = type('obj', (object,), {'data': []})
+
+            if not history_res.data:
+                st.info("청산 완료된 매매 이력이 존재하지 않습니다.")
+            else:
+                df_hist_raw = pd.DataFrame(history_res.data)
+                df_hist_raw['sell_date_dt'] = pd.to_datetime(df_hist_raw['sell_date'])
+                
+                st.markdown("###### 📅 성과 분석 기간 설정")
+                min_sell_date = df_hist_raw['sell_date_dt'].min().date()
+                max_sell_date = df_hist_raw['sell_date_dt'].max().date()
+                
+                col_d1, col_d2 = st.columns(2)
+                with col_d1:
+                    start_date_perf = st.date_input("조회 시작일", value=min_sell_date, key="perf_start_date")
+                with col_d2:
+                    end_date_perf = st.date_input("조회 종료일", value=max_sell_date, key="perf_end_date")
+                
+                mask_period = (df_hist_raw['sell_date_dt'].dt.date >= start_date_perf) & (df_hist_raw['sell_date_dt'].dt.date <= end_date_perf)
+                df_hist = df_hist_raw[mask_period].copy()
+                
+                if df_hist.empty:
+                    st.warning("선택하신 기간 내에 매도 완료된 거래 내역이 없습니다.")
+                else:
+                    df_stocks_info = pd.DataFrame(supabase.table("stocks").select("ticker, name").execute().data)
+                    if not df_stocks_info.empty:
+                        df_stocks_info['ticker'] = df_stocks_info['ticker'].astype(str).str.strip()
+                        df_hist = pd.merge(df_hist, df_stocks_info, on="ticker", how="left")
+                        df_hist['종목명'] = df_hist['name'].fillna(df_hist['ticker'])
+                    else:
+                        df_hist['종목명'] = df_hist['ticker']
+
+                    if market_type == "US": df_hist['종목명'] = df_hist.apply(lambda r: f"[{r['ticker']}] {r['종목명']}", axis=1)
+
+                    df_hist['profit_amount'] = pd.to_numeric(df_hist['profit_amount'], errors='coerce').fillna(0.0)
+                    df_hist['profit_rate'] = pd.to_numeric(df_hist['profit_rate'], errors='coerce').fillna(0.0)
+                    
+                    # 💡 추가 계산 로직: 보유 기간(Days)
+                    df_hist['buy_date_dt'] = pd.to_datetime(df_hist['buy_date'], errors='coerce')
+                    df_hist['holding_days'] = (df_hist['sell_date_dt'] - df_hist['buy_date_dt']).dt.days
+                    avg_holding_days = df_hist['holding_days'].mean()
+                    
+                    df_hist = df_hist.sort_values('sell_date_dt')
+                    
+                    total_profit = df_hist['profit_amount'].sum()
+                    total_trades = len(df_hist)
+                    win_df = df_hist[df_hist['profit_amount'] > 0]
+                    loss_df = df_hist[df_hist['profit_amount'] < 0]
+                    
+                    win_trades = len(win_df)
+                    loss_trades = len(loss_df)
+                    
+                    win_rate = (win_trades / total_trades * 100) if total_trades > 0 else 0.0
+                    loss_rate = (loss_trades / total_trades * 100) if total_trades > 0 else 0.0
+                    
+                    avg_win_amt = win_df['profit_amount'].mean() if win_trades > 0 else 0.0
+                    avg_loss_amt = abs(loss_df['profit_amount'].mean()) if loss_trades > 0 else 0.0
+                    
+                    profit_factor = (avg_win_amt / avg_loss_amt) if avg_loss_amt > 0 else 999.0
+                    
+                    # 💡 추가 계산 로직: 기대 수익금 (Expectancy)
+                    expectancy = ( (win_rate/100) * avg_win_amt ) - ( (loss_rate/100) * avg_loss_amt )
+                    
+                    # 💡 추가 계산 로직: 연속 수익 / 손실 횟수
+                    df_hist['is_win'] = df_hist['profit_amount'] > 0
+                    streak = df_hist['is_win'].groupby((df_hist['is_win'] != df_hist['is_win'].shift()).cumsum()).cumsum()
+                    max_consecutive_wins = streak[df_hist['is_win']].max() if win_trades > 0 else 0
+                    
+                    df_hist['is_loss'] = df_hist['profit_amount'] < 0
+                    streak_loss = df_hist['is_loss'].groupby((df_hist['is_loss'] != df_hist['is_loss'].shift()).cumsum()).cumsum()
+                    max_consecutive_losses = streak_loss[df_hist['is_loss']].max() if loss_trades > 0 else 0
+                    
+                    # 수익률 표준편차(변동성)
+                    std_dev = df_hist['profit_rate'].std()
+
+                    total_return_pct = (total_profit / account_total_input) * 100 if account_total_input > 0 else 0.0
+                    
+                    profit_fmt = lambda x: f"${x:,.2f}" if market_type == "US" else f"{x:,.0f}원"
+                    price_fmt = "{:,.2f}" if market_type == "US" else "{:,.0f}"
+                    
+                    st.markdown("###### 📈 핵심 성과 지표 (KPI)")
+                    
+                    # 1행: 주요 손익 지표
+                    m1, m2, m3, m4 = st.columns(4)
                     m1.metric("총 실현 손익", profit_fmt(total_profit))
-                    m2.metric("운용자금 대비 누적 수익률", f"{total_return_pct:+.2f}%")
-                    m3.metric("성공률", f"{win_rate:.1f}%")
-                    m4.metric("손익비", f"{profit_factor:.2f}" if profit_factor < 999 else "무한")
+                    m2.metric("누적 자금 수익률", f"{total_return_pct:+.2f}%")
+                    m3.metric("성공률 / 실패율", f"{win_rate:.1f}% / {loss_rate:.1f}%")
+                    m4.metric("매매 기대 수익 (Expectancy)", profit_fmt(expectancy))
+                    
+                    # 2행: 평균 지표 및 변동성
+                    m5, m6, m7, m8 = st.columns(4)
+                    m5.metric("평균 익절 금액", profit_fmt(avg_win_amt))
+                    m6.metric("평균 손절 금액", profit_fmt(avg_loss_amt))
+                    m7.metric("평균 수익률 / 변동성(SD)", f"{df_hist['profit_rate'].mean():+.2f}% / {std_dev:.2f}%")
+                    m8.metric("손익비 (Profit Factor)", f"{profit_factor:.2f}" if profit_factor < 999 else "무한")
+                    
+                    # 3행: 트레이딩 통계
+                    m9, m10, m11, m12 = st.columns(4)
+                    m9.metric("총 매매 건수", f"{total_trades} 건")
+                    m10.metric("평균 보유 기간", f"{avg_holding_days:.1f} 일" if pd.notna(avg_holding_days) else "- 일")
+                    m11.metric("최대 연속 수익 횟수", f"{max_consecutive_wins} 연승")
+                    m12.metric("최대 연속 손실 횟수", f"{max_consecutive_losses} 연패")
                     
                     st.write("")
                     st.markdown("###### 📅 월별 성과 종합")
-                    df_hist['sell_month'] = pd.to_datetime(df_hist['sell_date']).dt.strftime('%Y-%m')
+                    df_hist['sell_month'] = df_hist['sell_date_dt'].dt.strftime('%Y-%m')
                     df_monthly = df_hist.groupby('sell_month').agg(
                         월간손익=('profit_amount', 'sum'),
                         매매건수=('id', 'count'),
@@ -474,13 +598,19 @@ if df_display is not None:
                     st.write("")
                     st.markdown("###### 📜 상세 매매 내역")
                     df_hist_sorted = df_hist.sort_values('sell_date', ascending=False)
-                    disp_cols = ['sell_date', 'ticker', '종목명', 'buy_date', 'buy_price', 'sell_price', 'quantity', 'profit_amount', 'profit_rate']
+                    disp_cols = ['sell_date', 'ticker', '종목명', 'buy_date', 'buy_price', 'sell_price', 'quantity', 'profit_amount', 'profit_rate', 'holding_days']
+                    
+                    # 표시용 컬럼명 변경
+                    df_hist_sorted = df_hist_sorted.rename(columns={'holding_days': '보유일수'})
+                    disp_cols[-1] = '보유일수'
+                    
                     st.dataframe(
                         df_hist_sorted[disp_cols].style.format({
                             'buy_price': price_fmt, 'sell_price': price_fmt, 'quantity': '{:,.2f}',
-                            'profit_amount': profit_fmt, 'profit_rate': '{:+.2f}%'
+                            'profit_amount': profit_fmt, 'profit_rate': '{:+.2f}%', '보유일수': '{:.0f}일'
                         }), hide_index=True, use_container_width=True
                     )
+
 
     st.divider()
     st.markdown("<div id='chart-section'></div>", unsafe_allow_html=True)
