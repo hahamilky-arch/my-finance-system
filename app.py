@@ -330,10 +330,11 @@ if df_display is not None:
                             '수익률(%)': '{:+.2f}%',
                             '비중(%)': '{:.1f}%',
                             '평가금액': '{:,.2f}'
-                        }).applymap(lambda x: 'color: red; font-weight: bold;' if x == '🚨 손절 이탈' else '', subset=['상태'])
-                          .applymap(lambda x: 'color: red;' if float(x) > 0 else 'color: blue;', subset=['수익률(%)']),
+                        }).map(lambda x: 'color: red; font-weight: bold;' if x == '🚨 손절 이탈' else '', subset=['상태'])
+                          .map(lambda x: 'color: red;' if float(x) > 0 else 'color: blue;', subset=['수익률(%)']),
                         hide_index=True, use_container_width=True
                     )
+
 
             df_rebal = df_display[df_display['매매상태'].isin(['매도필요', '매수추천'])]
             display_trade_list(df_rebal[df_rebal['매매상태'] == '매도필요'], "시스템 매도 필요 종목", "매도", "sys_s", target_date_str, is_latest_date, market_type, holdings_db, top_n_cfg, account_total_input)
