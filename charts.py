@@ -4,7 +4,6 @@ import streamlit as st
 from db import supabase
 
 def draw_integrated_chart(selected_chart_ticker, market_type, ticker_name_map):
-    # 💡 수정 1: limit(20)을 limit(125)로 변경하여 약 6개월(125 거래일) 데이터 조회
     chart_res = supabase.table("daily_analysis") \
         .select("price_date, close_price, momentum_rank, ma20") \
         .eq("ticker", selected_chart_ticker).order("price_date", desc=True).limit(125).execute()
@@ -38,7 +37,6 @@ def draw_integrated_chart(selected_chart_ticker, market_type, ticker_name_map):
     idx_name = "KOSPI" if market_type == "KR" else "S&P 500"
     stock_name = ticker_name_map.get(selected_chart_ticker, selected_chart_ticker)
 
-    # 💡 수정 2: X축을 시간형(price_date:T)으로 변경하여 데이터가 많아도 날짜가 자동 정렬되도록 개선
     line_stock = alt.Chart(df_merged).mark_line(color='#1f77b4', strokeWidth=2.5).encode(
         x=alt.X('price_date:T', title=None, axis=alt.Axis(format='%y-%m-%d', labelAngle=-45, tickCount=6)),
         y=alt.Y('close_price:Q', title='주가', scale=alt.Scale(zero=False, padding=15)),
@@ -50,7 +48,6 @@ def draw_integrated_chart(selected_chart_ticker, market_type, ticker_name_map):
         y=alt.Y('ma20:Q', title=None, scale=alt.Scale(zero=False, padding=15)) 
     )
 
-    # 💡 수정 3: 데이터가 촘촘해지므로 차트 점(point)을 제거하고 불투명도를 조정하여 가독성 확보
     line_rank = alt.Chart(df_merged).mark_line(color='#ff7f0e', opacity=0.7).encode(
         x=alt.X('price_date:T', title=None),
         y=alt.Y('momentum_rank:Q', title='순위', scale=alt.Scale(domain=[100, 1], clamp=True), axis=alt.Axis(orient='right', titlePadding=10)),
@@ -92,3 +89,45 @@ def draw_integrated_chart(selected_chart_ticker, market_type, ticker_name_map):
     """, unsafe_allow_html=True)
     
     st.altair_chart(chart_bottom, use_container_width=True)
+
+def draw_attribution_charts(df_hist, market_type):
+    if df_hist.empty:
+        return
+
+    df_grouped = df_hist.groupby(['ticker', '종목명'])['profit_amount'].sum().reset_index()
+    
+    top5 = df_grouped.nlargest(5, 'profit_amount')
+    worst5 = df_grouped.nsmallest(5, 'profit_amount')
+    
+    df_top_worst = pd.concat([top5, worst5])
+    df_top_worst['color'] = df_top_worst['profit_amount'].apply(lambda x: '#1f77b4' if x > 0 else '#d62728')
+    df_top_worst['display_name'] = df_top_worst.apply(lambda r: f"{r['종목명']} ({r['ticker']})", axis=1)
+
+    bar_chart = alt.Chart(df_top_worst).mark_bar().encode(
+        y=alt.Y('display_name:N', sort=alt.EncodingSortField(field="profit_amount", order='descending'), title=None),
+        x=alt.X('profit_amount:Q', title='총 실현 손익'),
+        color=alt.Color('color:N', scale=None),
+        tooltip=[alt.Tooltip('display_name:N', title='종목'), alt.Tooltip('profit_amount:Q', title='손익', format=',.0f' if market_type=='KR' else ',.2f')]
+    ).properties(height=300, title="기여도 Top 5 & Worst 5")
+
+    scatter_chart = alt.Chart(df_hist).mark_circle(size=60, opacity=0.6).encode(
+        x=alt.X('holding_days:Q', title='보유 기간 (일)'),
+        y=alt.Y('profit_rate:Q', title='수익률 (%)', scale=alt.Scale(zero=True)),
+        color=alt.condition(
+            alt.datum.profit_rate > 0,
+            alt.value('#1f77b4'),
+            alt.value('#d62728')
+        ),
+        tooltip=[
+            alt.Tooltip('종목명:N', title='종목'),
+            alt.Tooltip('holding_days:Q', title='보유일수'),
+            alt.Tooltip('profit_rate:Q', title='수익률(%)', format='.2f'),
+            alt.Tooltip('profit_amount:Q', title='손익', format=',.0f' if market_type=='KR' else ',.2f')
+        ]
+    ).properties(height=300, title="보유 기간 대비 수익률 분포")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        st.altair_chart(bar_chart, use_container_width=True)
+    with col2:
+        st.altair_chart(scatter_chart, use_container_width=True)
