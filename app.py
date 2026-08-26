@@ -212,20 +212,49 @@ if df_display is not None:
     tab1, tab4, tab5 = st.tabs(["Overview", "🚀 알파 시그널", "📊 성과 분석"])
     
     with tab1:
+        st.markdown("###### 📊 시장 및 시그널 요약")
+        
+        # 💡 요약 대시보드 표시
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("현재 시장 모드", "🟢 강세장 (Bull)" if is_bull else "🔴 약세장 (Bear)")
+        c2.metric("신규 매수 상태", "🛑 중지 (MA50 하회)" if stop_new_buy else "✅ 허용")
+        
+        buy_cnt = len(df_display[df_display['매매상태'] == '매수추천'])
+        sell_cnt = len(df_display[df_display['매매상태'] == '매도필요'])
+        c3.metric("오늘의 매수 추천", f"{buy_cnt} 종목")
+        c4.metric("오늘의 매도 필요", f"{sell_cnt} 종목")
+        
+        st.write("")
+        
+        # 💡 빠른 시그널 필터 추가
+        st.markdown("###### 📋 알파 시그널 전체 목록")
+        filter_opt = st.radio("빠른 필터", ["전체보기", "🔴 매수 추천 종목만", "🔵 매도 필요 종목만", "🟢 현재 보유 종목만"], horizontal=True, label_visibility="collapsed")
+        
         col_order = ['순위', '변동', '매매상태', '종목명', '이격도', 'MOT', 'RS(90)', 'RS(10)', 'MA20', '제외사유', '종가', '상승금액', '상승률', 'ticker'] 
         df_target = df_display.head(100)[col_order].copy()
         
-        event = st.dataframe(
-            df_target.style.apply(apply_styles, axis=None).format({
-                '이격도': lambda x: f"{x:+.2f}%" if x != 0 else "-", 
-                'MOT': '{:.2f}', 'RS(90)': '{:.2f}', 'RS(10)': '{:.2f}',
-                '종가': '{:,.2f}', 'MA20': '{:,.2f}', '상승금액': '{:+,.2f}', '상승률': '{:+.2f}%'
-            }), 
-            hide_index=True, use_container_width=True, on_select="rerun", selection_mode="single-row"
-        )
-        if event and event.get("selection", {}).get("rows"):
-            st.session_state['selected_ticker_from_table'] = df_target.iloc[event["selection"]["rows"][0]]['ticker']
-            st.session_state['trigger_scroll'] = True
+        # 필터 적용
+        if filter_opt == "🔴 매수 추천 종목만":
+            df_target = df_target[df_target['매매상태'] == '매수추천']
+        elif filter_opt == "🔵 매도 필요 종목만":
+            df_target = df_target[df_target['매매상태'] == '매도필요']
+        elif filter_opt == "🟢 현재 보유 종목만":
+            df_target = df_target[df_target['매매상태'] == '보유중']
+        
+        if df_target.empty:
+            st.info("해당되는 종목이 없습니다.")
+        else:
+            event = st.dataframe(
+                df_target.style.apply(apply_styles, axis=None).format({
+                    '이격도': lambda x: f"{x:+.2f}%" if x != 0 else "-", 
+                    'MOT': '{:.2f}', 'RS(90)': '{:.2f}', 'RS(10)': '{:.2f}',
+                    '종가': '{:,.2f}', 'MA20': '{:,.2f}', '상승금액': '{:+,.2f}', '상승률': '{:+.2f}%'
+                }), 
+                hide_index=True, use_container_width=True, on_select="rerun", selection_mode="single-row"
+            )
+            if event and event.get("selection", {}).get("rows"):
+                st.session_state['selected_ticker_from_table'] = df_target.iloc[event["selection"]["rows"][0]]['ticker']
+                st.session_state['trigger_scroll'] = True
 
     with tab4:
         st.markdown("##### 📋 시스템 매매 지시서")
@@ -305,7 +334,6 @@ if df_display is not None:
                             '상태': status
                         })
                     
-                    # 1번 기능: 포트폴리오 리스크 노출도 시각화
                     total_risk_pct = (total_risk_amount / account_total_input) * 100 if account_total_input > 0 else 0.0
                     
                     st.markdown("###### 🛡️ 포트폴리오 총 리스크 노출도")
@@ -512,7 +540,6 @@ if df_display is not None:
                     ).reset_index().sort_values('sell_month', ascending=False)
                     st.dataframe(df_monthly.style.format({'월간손익': profit_fmt, '평균수익률': '{:+.2f}%'}), hide_index=True, use_container_width=True)
                     
-                    # 5번 기능: 기여도 차트 추가
                     st.write("")
                     st.markdown("###### 🔍 수익 기여도 및 보유 기간 분석 차트")
                     draw_attribution_charts(df_hist, market_type)
