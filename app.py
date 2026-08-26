@@ -3,7 +3,7 @@ import pandas as pd
 import streamlit.components.v1 as components
 from db import supabase, get_holdings_table, update_holdings, get_market_regime, get_available_dates
 from strategy import get_data
-from charts import draw_integrated_chart
+from charts import draw_integrated_chart, draw_attribution_charts
 
 st.set_page_config(layout="wide")
 
@@ -111,7 +111,6 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
             else:
                 c2.markdown("<div style='color:#999999; font-size:0.85em; margin-top:8px; text-align:right;'>과거일 매매불가</div>", unsafe_allow_html=True)
 
-
 st.markdown("##### 📈 Hybrid Dual Alpha Dashboard")
 
 if 'db_settings_loaded' not in st.session_state:
@@ -128,7 +127,6 @@ if 'db_settings_loaded' not in st.session_state:
     except Exception:
         pass
     st.session_state['db_settings_loaded'] = True
-
 
 with st.sidebar:
     st.markdown("### ⚙️ 알파 매매전략 설정")
@@ -158,17 +156,10 @@ with st.sidebar:
 
     cap_key = "us_capital" if market_type == "US" else "kr_capital"
     default_cap = st.session_state.get(cap_key, 6000000.0 if market_type == "US" else 20000000.0)
-    
-    account_total_input = st.number_input(
-        f"💰 [{market_type}] 총 운용 자금", 
-        value=float(default_cap), 
-        step=500000.0, 
-        key=f"cap_input_{market_type}"
-    )
+    account_total_input = st.number_input(f"💰 [{market_type}] 총 운용 자금", value=float(default_cap), step=500000.0, key=f"cap_input_{market_type}")
 
     with st.expander("💾 설정값 DB 저장 / 초기화", expanded=False):
         config_pwd = st.text_input("매매 비밀번호 입력", type="password", key="pwd_config")
-        
         col_btn1, col_btn2 = st.columns(2)
         with col_btn1:
             if st.button("설정 저장", use_container_width=True):
@@ -180,7 +171,6 @@ with st.sidebar:
                     else:
                         st.session_state['bear_top_n'] = top_n_cfg
                         st.session_state['bear_sl'] = sl_cfg
-                    
                     settings_data = {
                         "id": 1,
                         "bull_top_n": int(st.session_state.get('bull_top_n', 5)),
@@ -197,7 +187,6 @@ with st.sidebar:
                         st.error(f"❌ DB 저장 실패: {e}")
                 else:
                     st.error("❌ 비밀번호 불일치")
-                    
         with col_btn2:
             if st.button("🔄 기본값 초기화", use_container_width=True):
                 if config_pwd == st.secrets.get("TRADE_PASSWORD", "1234"):
@@ -214,7 +203,6 @@ with st.sidebar:
                         st.error(f"❌ 초기화 오류: {e}")
                 else:
                     st.error("❌ 비밀번호 불일치")
-
 
 df_display = get_data(selected_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_cycle, is_bull, stop_new_buy)
 
@@ -280,6 +268,8 @@ if df_display is not None:
                     
                     holdings_list = []
                     total_holdings_val = 0.0
+                    total_risk_amount = 0.0
+                    risk_violations = []
                     
                     for _, h_row in holdings_merged.iterrows():
                         ticker = h_row['ticker']
@@ -295,6 +285,13 @@ if df_display is not None:
                         profit_rate = ((curr_price / buy_price) - 1) * 100 if buy_price > 0 else 0.0
                         stop_loss = buy_price * (1 + (sl_cfg / 100.0))
                         
+                        risk_amt = eval_val * (abs(sl_cfg) / 100.0)
+                        total_risk_amount += risk_amt
+                        
+                        stock_risk_pct = (risk_amt / account_total_input) * 100 if account_total_input > 0 else 0.0
+                        if stock_risk_pct > 2.0:
+                            risk_violations.append(f"{ticker} ({stock_risk_pct:.1f}%)")
+                            
                         status = "🚨 손절 이탈" if curr_price <= stop_loss else "정상"
                         
                         holdings_list.append({
@@ -308,13 +305,27 @@ if df_display is not None:
                             '상태': status
                         })
                     
+                    # 1번 기능: 포트폴리오 리스크 노출도 시각화
+                    total_risk_pct = (total_risk_amount / account_total_input) * 100 if account_total_input > 0 else 0.0
+                    
+                    st.markdown("###### 🛡️ 포트폴리오 총 리스크 노출도")
+                    risk_col1, risk_col2 = st.columns([3, 1])
+                    with risk_col1:
+                        st.progress(min(total_risk_pct / 100.0, 1.0))
+                    with risk_col2:
+                        st.markdown(f"**최대 손실 노출: {total_risk_pct:.2f}%**")
+                    
+                    st.caption(f"※ 설정된 손절선({sl_cfg}%) 도달 시 포트폴리오의 예상 최대 손실액은 약 {total_risk_amount:,.0f}원입니다.")
+                    if risk_violations:
+                        st.warning(f"단일 종목 최대 허용 손실 2.0% 초과 종목: {', '.join(risk_violations)}")
+                        
+                    st.write("")
                     df_h = pd.DataFrame(holdings_list)
                     calc_base_total = account_total_input if account_total_input > 0 else total_holdings_val
                     df_h['비중(%)'] = (df_h['평가금액'] / calc_base_total) * 100
                     
                     df_h = df_h[['종목명', '종목코드', '수량', '평단가', '현재가', '수익률(%)', '비중(%)', '평가금액', '상태']]
                     
-                    # 💡 Pandas 2.1.0 업데이트 대응: applymap 대신 map 사용
                     st.dataframe(
                         df_h.style.format({
                             '수량': '{:,.2f}', '평단가': '{:,.2f}', '현재가': '{:,.2f}',
@@ -331,7 +342,6 @@ if df_display is not None:
 
             st.markdown("---")
             col_m_left, col_m_right = st.columns(2)
-            
             with col_m_left:
                 st.markdown("###### ➕ 수동 매수 (Manual Buy)")
                 with st.container(border=True):
@@ -345,7 +355,6 @@ if df_display is not None:
                             update_holdings(m_ticker, 'BUY', m_price, m_date, m_qty, market_type)
                         else:
                             st.warning("종목코드, 매수가, 수량을 확인하세요.")
-                            
             with col_m_right:
                 st.markdown("###### 🗑️ 수동 매도 (Manual Sell)")
                 with st.container(border=True):
@@ -503,6 +512,11 @@ if df_display is not None:
                     ).reset_index().sort_values('sell_month', ascending=False)
                     st.dataframe(df_monthly.style.format({'월간손익': profit_fmt, '평균수익률': '{:+.2f}%'}), hide_index=True, use_container_width=True)
                     
+                    # 5번 기능: 기여도 차트 추가
+                    st.write("")
+                    st.markdown("###### 🔍 수익 기여도 및 보유 기간 분석 차트")
+                    draw_attribution_charts(df_hist, market_type)
+
                     st.write("")
                     st.markdown("###### 📜 상세 매매 내역")
                     df_hist_sorted = df_hist.sort_values('sell_date', ascending=False)
