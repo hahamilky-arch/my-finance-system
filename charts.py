@@ -37,49 +37,45 @@ def draw_integrated_chart(selected_chart_ticker, market_type, ticker_name_map):
     idx_name = "KOSPI" if market_type == "KR" else "S&P 500"
     stock_name = ticker_name_map.get(selected_chart_ticker, selected_chart_ticker)
 
-    # 💡 개선 1: 날짜 포맷을 '월/일'로 간소화, 기울기 0도 평행 배열, 겹침 방지 적용
-    line_stock = alt.Chart(df_merged).mark_line(color='#1f77b4', strokeWidth=3).encode(
-        x=alt.X('price_date:T', title=None, axis=alt.Axis(format='%m/%d', labelAngle=0, tickCount=6, labelOverlap=True, grid=False)),
+    line_stock = alt.Chart(df_merged).mark_line(color='#1f77b4', strokeWidth=2.5).encode(
+        x=alt.X('price_date:T', title=None, axis=alt.Axis(format='%y-%m-%d', labelAngle=-45, tickCount=6)),
         y=alt.Y('close_price:Q', title='주가', scale=alt.Scale(zero=False, padding=15)),
-        tooltip=[alt.Tooltip('price_date:T', title='날짜', format='%Y-%m-%d'), alt.Tooltip('close_price:Q', title='종가', format=',.2f')]
+        tooltip=[alt.Tooltip('price_date:T', title='날짜', format='%Y-%m-%d'), alt.Tooltip('close_price:Q', title='종가', format=',.0f')]
     )
 
-    line_ma20 = alt.Chart(df_merged).mark_line(color='#d62728', strokeDash=[5, 5], strokeWidth=1.5).encode(
+    line_ma20 = alt.Chart(df_merged).mark_line(color='#ff4b4b', strokeDash=[4, 4]).encode(
         x=alt.X('price_date:T', title=None),
         y=alt.Y('ma20:Q', title=None, scale=alt.Scale(zero=False, padding=15)) 
     )
 
-    # 💡 개선 2: 순위 차트는 배경 보조 지표처럼 보이도록 투명도(0.3)와 두께(1.5) 대폭 낮춤
-    line_rank = alt.Chart(df_merged).mark_line(color='#ff7f0e', opacity=0.3, strokeWidth=1.5).encode(
+    line_rank = alt.Chart(df_merged).mark_line(color='#ff7f0e', opacity=0.7).encode(
         x=alt.X('price_date:T', title=None),
-        y=alt.Y('momentum_rank:Q', title='순위', scale=alt.Scale(domain=[100, 1], clamp=True), axis=alt.Axis(orient='right', titlePadding=10, tickCount=5)),
+        y=alt.Y('momentum_rank:Q', title='순위', scale=alt.Scale(domain=[100, 1], clamp=True), axis=alt.Axis(orient='right', titlePadding=10)),
         tooltip=[alt.Tooltip('price_date:T', title='날짜', format='%Y-%m-%d'), alt.Tooltip('momentum_rank:Q', title='모멘텀 순위')]
     )
 
     chart_price = alt.layer(line_stock, line_ma20)
-    
-    # 💡 개선 3: interactive(bind_y=False)를 통해 마우스 스크롤(줌) 시 X축 날짜만 확대되도록 설정
-    chart_top = alt.layer(chart_price, line_rank).resolve_scale(y='independent').properties(height=350).interactive(bind_y=False)
+    chart_top = alt.layer(chart_price, line_rank).resolve_scale(y='independent').properties(height=350)
 
-    line_idx = alt.Chart(df_merged).mark_line(color='#2ca02c', strokeWidth=2.5).encode(
-        x=alt.X('price_date:T', title=None, axis=alt.Axis(format='%m/%d', labelAngle=0, tickCount=6, labelOverlap=True, grid=False)),
+    line_idx = alt.Chart(df_merged).mark_line(color='#2ca02c', strokeWidth=2).encode(
+        x=alt.X('price_date:T', title=None, axis=alt.Axis(format='%y-%m-%d', labelAngle=-45, tickCount=6)),
         y=alt.Y('index_price:Q', title=f'{idx_name} 지수', scale=alt.Scale(zero=False, padding=10)),
         tooltip=[alt.Tooltip('price_date:T', title='날짜', format='%Y-%m-%d'), alt.Tooltip('index_price:Q', title='지수 종가', format=',.2f')]
     )
 
-    line_idx_ma50 = alt.Chart(df_merged).mark_line(color='#d62728', strokeDash=[5, 5], strokeWidth=1.5).encode(
+    line_idx_ma50 = alt.Chart(df_merged).mark_line(color='#ff4b4b', strokeDash=[4, 4]).encode(
         x=alt.X('price_date:T', title=None),
         y=alt.Y('index_ma50:Q', title=None, scale=alt.Scale(zero=False, padding=10)),
         tooltip=[alt.Tooltip('index_ma50:Q', title='MA50', format=',.2f')]
     )
 
-    chart_bottom = alt.layer(line_idx, line_idx_ma50).resolve_scale(y='shared').properties(height=140).interactive(bind_y=False)
+    chart_bottom = alt.layer(line_idx, line_idx_ma50).resolve_scale(y='shared').properties(height=140)
 
     st.markdown(f"""
     <div style="text-align: center; margin-bottom: 10px; font-size: 0.9em; color: #555555;">
         <span style="color:#1f77b4; font-weight:bold;">━</span> {stock_name} 주가 | 
-        <span style="color:#d62728; font-weight:bold;">---</span> MA20 | 
-        <span style="color:rgba(255, 127, 14, 0.5); font-weight:bold;">━</span> 모멘텀 순위 (우측 Y축 반전)
+        <span style="color:#ff4b4b; font-weight:bold;">---</span> MA20 | 
+        <span style="color:#ff7f0e; font-weight:bold;">━</span> 모멘텀 순위 (우측 Y축 반전)
     </div>
     """, unsafe_allow_html=True)
     
@@ -88,7 +84,7 @@ def draw_integrated_chart(selected_chart_ticker, market_type, ticker_name_map):
     st.markdown(f"""
     <div style="text-align: center; margin-top: 5px; margin-bottom: 10px; font-size: 0.9em; color: #555555;">
         <span style="color:#2ca02c; font-weight:bold;">━</span> {idx_name} 지수 종가 | 
-        <span style="color:#d62728; font-weight:bold;">---</span> MA50
+        <span style="color:#ff4b4b; font-weight:bold;">---</span> MA50
     </div>
     """, unsafe_allow_html=True)
     
