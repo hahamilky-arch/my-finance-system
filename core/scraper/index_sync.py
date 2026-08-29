@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np  # 💡 np.inf 처리를 위해 추가
 import yfinance as yf
 from datetime import datetime, timedelta
 from database.client import supabase
@@ -50,7 +51,10 @@ def sync_index(market, start_date=None, end_date=None):
         print(f"[{market}] 조건에 부합하는 신규 지수 데이터가 없습니다.")
         return
 
-    # 3. DB 적재 데이터 가공 (stock_prices 테이블 스키마에 맞춤: OHLCV)
+    # 💡 3. 데이터프레임 내의 무한대(inf) 값을 모두 NaN으로 일괄 치환
+    df = df.replace([np.inf, -np.inf], np.nan)
+
+    # 4. DB 적재 데이터 가공 (stock_prices 테이블 스키마에 맞춤: OHLCV)
     records = []
     for date, row in df.iterrows():
         records.append({
@@ -59,7 +63,8 @@ def sync_index(market, start_date=None, end_date=None):
             "open_price": float(row['Open']) if pd.notna(row['Open']) else None,
             "high_price": float(row['High']) if pd.notna(row['High']) else None,
             "low_price": float(row['Low']) if pd.notna(row['Low']) else None,
-            "close_price": float(row['Close']),
+            # 💡 수정됨: close_price에도 결측치(NaN) 방어 로직 추가
+            "close_price": float(row['Close']) if pd.notna(row['Close']) else None,
             "volume": int(row['Volume']) if pd.notna(row['Volume']) else 0
         })
     
