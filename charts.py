@@ -71,7 +71,7 @@ def draw_integrated_chart(selected_chart_ticker, market_type, ticker_name_map):
     )
 
     # 💡 수정 포인트: height를 140에서 250으로 증가시켜 지수 차트의 세로폭을 넓게 확보
-    chart_bottom = alt.layer(line_idx, line_idx_ma50).resolve_scale(y='shared').properties(height=250).interactive(bind_y=False)
+    chart_bottom = alt.layer(line_idx, line_idx_ma50).resolve_scale(y='shared').properties(height=400).interactive(bind_y=False)
 
     st.markdown(f"""
     <div style="text-align: center; margin-bottom: 10px; font-size: 0.9em; color: #555555;">
