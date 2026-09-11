@@ -1,7 +1,7 @@
 import pandas as pd
 from db import supabase, get_holdings_table, get_recently_sold_info
 
-def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_cycle, is_bull_mode, stop_new_buy):
+def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_cycle, is_bull_mode, stop_new_buy, reduce_holdings):
     target_date_str = pd.to_datetime(target_date).strftime('%Y-%m-%d')
     res_curr = supabase.table("daily_analysis") \
         .select("ticker, momentum_rank, weighted_momentum, rs_score, rs_score_10, close_price, ma10, ma20, atr, high_price, low_price, ma200") \
@@ -63,19 +63,33 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_c
     sell_list = set()
     rank_exit_limit = 60 if is_bull_mode else 30
     
+    target_dt = pd.to_datetime(target_date)
     for _, row in df_final.iterrows():
         ticker_upper = str(row['ticker']).strip().upper()
         if ticker_upper in my_holdings_clean:
             c_price, ma20, mom_rank = row['종가'], row['MA20'], row['순위']
+            
+            # 보유 기간 계산 및 타임 스탑 체크 (10일 이상 3% 미만 수익)
+            h_row = holdings_df[holdings_df['ticker'].astype(str).str.strip().str.upper() == ticker_upper]
+            if not h_row.empty:
+                buy_dt = pd.to_datetime(h_row.iloc[0]['buy_date'])
+                buy_price = float(h_row.iloc[0]['buy_price'])
+                days_held = (target_dt - buy_dt).days
+                profit_rate_pos = ((c_price / buy_price) - 1) * 100 if buy_price > 0 else 0.0
+                
+                if days_held >= 10 and profit_rate_pos < 3.0:
+                    sell_list.add(ticker_upper)
+                    continue
+                if c_price <= buy_price * (1 + (sl_cfg / 100.0)):
+                    sell_list.add(ticker_upper)
+                    continue
+
             if (c_price < ma20) or (mom_rank > rank_exit_limit):
                 sell_list.add(ticker_upper)
                 continue
-            h_row = holdings_df[holdings_df['ticker'].astype(str).str.strip().str.upper() == ticker_upper]
-            if not h_row.empty:
-                if c_price <= float(h_row.iloc[0]['buy_price']) * (1 + (sl_cfg / 100.0)):
-                    sell_list.add(ticker_upper)
 
-    slots_available = int(top_n_cfg) - len([t for t in my_holdings_clean if t not in sell_list])
+    effective_top_n = min(top_n_cfg, 3) if reduce_holdings else top_n_cfg
+    slots_available = int(effective_top_n) - len([t for t in my_holdings_clean if t not in sell_list])
     buy_list = set()
     
     if cycle_passed and (not stop_new_buy) and slots_available > 0:
@@ -91,12 +105,12 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_c
 
     def assign_status_and_reason(row):
         t = str(row['ticker']).strip().upper()
-        if t in sell_list: return '매도필요', '추세이탈/손절조건'
+        if t in sell_list: return '매도필요', '추세이탈/손절/타임스탑'
         if t in my_holdings_clean: return '보유중', '기보유'
         if t in buy_list: return '매수추천', '조건충족'
         
         reasons = []
-        if stop_new_buy: reasons.append("시장경보(MA50하회)")
+        if stop_new_buy: reasons.append("시장경보(MA20하회)")
         if not cycle_passed: reasons.append("리밸런싱일 미해당")
         if slots_available <= 0: reasons.append("보유슬롯 가득참")
         if is_bull_mode:
