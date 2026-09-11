@@ -94,7 +94,7 @@ def get_market_regime(market_type, target_date_str):
         .limit(10).execute()
         
     df_idx = pd.DataFrame(res.data)
-    if df_idx.empty: return True, False
+    if df_idx.empty: return True, False, False
     
     df_idx['close_price'] = pd.to_numeric(df_idx['close_price'], errors='coerce')
     df_idx['ma20'] = pd.to_numeric(df_idx['ma20'], errors='coerce')
@@ -102,13 +102,15 @@ def get_market_regime(market_type, target_date_str):
     df_idx = df_idx.sort_values('price_date').reset_index(drop=True)
     
     current_row = df_idx.iloc[-1]
-    is_bull = current_row['close_price'] >= current_row['ma20']
+    is_bull = current_row['close_price'] >= current_row['ma50']
     
-    df_idx['is_below_ma50'] = df_idx['close_price'] < df_idx['ma50']
-    df_idx['below_ma50_cnt'] = df_idx['is_below_ma50'].groupby((~df_idx['is_below_ma50']).cumsum()).cumsum()
-    stop_new_buy = df_idx.iloc[-1]['below_ma50_cnt'] >= 3
+    df_idx['is_below_ma20'] = df_idx['close_price'] < df_idx['ma20']
+    df_idx['below_ma20_cnt'] = df_idx['is_below_ma20'].groupby((~df_idx['is_below_ma20']).cumsum()).cumsum()
     
-    return is_bull, stop_new_buy
+    stop_new_buy = df_idx.iloc[-1]['below_ma20_cnt'] >= 3
+    reduce_holdings = df_idx.iloc[-1]['is_below_ma20']
+    
+    return is_bull, stop_new_buy, reduce_holdings
 
 def get_available_dates():
     try:
