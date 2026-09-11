@@ -69,7 +69,7 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
             c1, c2 = st.columns([4, 1])
             
             if '매도' in title:
-                reason_desc = f"추세선 이탈 또는 손절 임계값 도달"
+                reason_desc = f"추세선 이탈, 손절 임계값 혹은 타임스탑 조건 도달"
                 position_info = ""
             else:
                 reason_desc = f"듀얼 알파 매매 전략 조건 충족 (상위 {top_n_cfg}개 분산)"
@@ -135,7 +135,7 @@ with st.sidebar:
     selected_date = st.date_input("Date", value=pd.to_datetime(all_dates[0]) if all_dates else None)
     target_date_str = pd.to_datetime(selected_date).strftime('%Y-%m-%d') if selected_date else ""
     
-    market_safe, stop_new_buy = get_market_regime(market_type, target_date_str)
+    market_safe, stop_new_buy, reduce_holdings = get_market_regime(market_type, target_date_str)
     strategy_mode = st.radio("운용 모드 선택", ["자동 감지 모드", "상승장 세팅 (Bull)", "하락장 세팅 (Bear)"], index=0)
     is_bull = True if strategy_mode == "상승장 세팅 (Bull)" else (False if strategy_mode == "하락장 세팅 (Bear)" else market_safe)
     rebalance_cycle = st.selectbox("리밸런싱 주기", ["상시 (빈자리 즉시 채우기)", "주기 (매주 수요일)"])
@@ -150,7 +150,9 @@ with st.sidebar:
         sl_cfg = st.number_input("손절 임계값 (%)", value=st.session_state.get('bear_sl', -6.0))
 
     if stop_new_buy: 
-        st.warning("⚠️ MA50 3일 연속 하회 감지: 신규 매수 중지")
+        st.warning("⚠️ MA20 3일 연속 하회 감지: 신규 매수 중지")
+    elif reduce_holdings:
+        st.warning("⚠️ MA20 하회 감지: 보유 종목 비중 축소 (최대 3개)")
     
     st.divider()
 
@@ -204,7 +206,7 @@ with st.sidebar:
                 else:
                     st.error("❌ 비밀번호 불일치")
 
-df_display = get_data(selected_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_cycle, is_bull, stop_new_buy)
+df_display = get_data(selected_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_cycle, is_bull, stop_new_buy, reduce_holdings)
 
 if df_display is not None:
     is_latest_date = (target_date_str == max(all_dates)) if all_dates and target_date_str else False
@@ -214,10 +216,9 @@ if df_display is not None:
     with tab1:
         st.markdown("###### 📊 시장 및 시그널 요약")
         
-        # 💡 요약 대시보드 표시
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("현재 시장 모드", "🟢 강세장 (Bull)" if is_bull else "🔴 약세장 (Bear)")
-        c2.metric("신규 매수 상태", "🛑 중지 (MA50 하회)" if stop_new_buy else "✅ 허용")
+        c2.metric("신규 매수 상태", "🛑 중지 (MA20 3일하회)" if stop_new_buy else ("⚠️ 비중축소 (MA20하회)" if reduce_holdings else "✅ 허용"))
         
         buy_cnt = len(df_display[df_display['매매상태'] == '매수추천'])
         sell_cnt = len(df_display[df_display['매매상태'] == '매도필요'])
@@ -226,14 +227,12 @@ if df_display is not None:
         
         st.write("")
         
-        # 💡 빠른 시그널 필터 추가
         st.markdown("###### 📋 알파 시그널 전체 목록")
         filter_opt = st.radio("빠른 필터", ["전체보기", "🔴 매수 추천 종목만", "🔵 매도 필요 종목만", "🟢 현재 보유 종목만"], horizontal=True, label_visibility="collapsed")
         
         col_order = ['순위', '변동', '매매상태', '종목명', '이격도', 'MOT', 'RS(90)', 'RS(10)', 'MA20', '제외사유', '종가', '상승금액', '상승률', 'ticker'] 
         df_target = df_display.head(100)[col_order].copy()
         
-        # 필터 적용
         if filter_opt == "🔴 매수 추천 종목만":
             df_target = df_target[df_target['매매상태'] == '매수추천']
         elif filter_opt == "🔵 매도 필요 종목만":
@@ -398,15 +397,16 @@ if df_display is not None:
                             st.warning("종목코드, 매도가, 수량을 확인하세요.")
 
         st.info(f"""
-        📌 **하이브리드 듀얼 알파 매매 전략 시스템 가이드**
-        * **시장 필터**: 지수 종가 기준 MA50 3일 연속 하회 시 신규 매수 전면 중지 (현금화)
+        📌 **하이브리드 듀얼 알파 매매 전략 시스템 가이드 (Ultimate)**
+        * **시장 필터**: 지수 종가 기준 MA20 3일 연속 하회 시 신규 매수 전면 중지 (MA20 하회 시 비중 축소)
         * **리밸런싱 주기**: `{rebalance_cycle}`
-        * **강세장 매수 조건**: 모멘텀 순위 **상위 30위 이내**, RS(90) > 0, 종가 > MA20 (이격도 우선 편입)
-        * **약세장 매수 조건**: 모멘텀 순위 **상위 50위 이내**, RS(90) 0.5~1.5 구간, 이격도 -5% ~ +5% (이격도 절대값 작은순 우선 편입)
-        * **보유 종목 수**: 조건 충족 상위 **{top_n_cfg}개** 분산 투자
+        * **강세장 매수 조건**: 모멘텀 순위 **상위 30위 이내**, RS(90) > 0, 종가 > MA20
+        * **약세장 매수 조건**: 모멘텀 순위 **상위 50위 이내**, RS(90) 0.5~1.5 구간, 이격도 -5% ~ +5%
+        * **보유 종목 수**: 조건 충족 상위 **{top_n_cfg}개** 분산 투자 (시장 경보 시 최대 3개)
         * **매도 조건** (하나라도 충족 시 익일 매도):
-            1. 종가 < MA20 하향 이탈 혹은, 순위 이탈 (강세장 60위 밖 / 약세장 30위 밖)
+            1. 종가 < MA20 하향 이탈 혹은, 순위 이탈
             2. 고정 손절선 이탈 (`{sl_cfg}%`)
+            3. **타임 스탑**: 보유일 10일 이상 & 수익률 +3% 미만 시 자동 청산
         * **쿨다운 룰**: 매도 후 3거래일 신규 편입 금지 (단, 종가가 직전 매도가를 재돌파하면 쿨다운 해제)
         """)
 
