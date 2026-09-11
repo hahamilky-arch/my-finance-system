@@ -16,6 +16,7 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_c
             df_final[col] = pd.to_numeric(df_final[col], errors='coerce').astype('float64')
             
     df_final['ticker'] = df_final['ticker'].astype(str).str.strip().str.upper()
+    df_final['atr'] = df_final['atr'].fillna(0.0)
     
     prev_date_res = supabase.table("daily_analysis").select("price_date") \
         .eq("market", market_type).lt("price_date", target_date_str).order("price_date", desc=True).limit(1).execute()
