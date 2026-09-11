@@ -144,10 +144,12 @@ with st.sidebar:
         st.success("🟢 상승장 모드 (Bull Market)")
         top_n_cfg = st.number_input("편입 종목 수", value=st.session_state.get('bull_top_n', 5))
         sl_cfg = st.number_input("손절 임계값 (%)", value=st.session_state.get('bull_sl', -10.0))
+        rank_exit_limit = 60
     else:
         st.error("🔴 하락장 모드 (Bear Market)")
         top_n_cfg = st.number_input("편입 종목 수", value=st.session_state.get('bear_top_n', 3))
         sl_cfg = st.number_input("손절 임계값 (%)", value=st.session_state.get('bear_sl', -6.0))
+        rank_exit_limit = 30
 
     if stop_new_buy: 
         st.warning("⚠️ MA20 3일 연속 하회 감지: 신규 매수 중지")
@@ -399,7 +401,7 @@ if df_display is not None:
         st.info(f"""
         📌 **하이브리드 듀얼 알파 매매 전략 시스템 가이드 (Ultimate)**
         * **시장 필터**: 지수 종가 기준 MA20 3일 연속 하회 시 신규 매수 전면 중지 (MA20 하회 시 보유 종목 최대 3개로 비중 축소)
-        * **리밸런싱 주기**: `{rebalance_cycle}`
+        * **리밸런싱 주기**: {rebalance_cycle}
         * **강세장 매수 조건**: 모멘텀 순위 **상위 30위 이내**, RS(90) > 0, 종가 > MA20
         * **약세장 매수 조건**: 모멘텀 순위 **상위 50위 이내**, RS(90) 0.5~1.5 구간, 이격도 -5% ~ +5%
         * **보유 종목 수**: 조건 충족 상위 **{top_n_cfg}개** 분산 투자 (시장 경보 시 최대 3개 제한)
@@ -409,7 +411,6 @@ if df_display is not None:
             3. **타임 스탑**: 보유일 10일 이상 & 수익률 +3% 미만 시 자동 청산
         * **쿨다운 룰**: 매도 후 3거래일 신규 편입 금지 (단, 종가가 직전 매도가를 재돌파하면 즉시 쿨다운 해제)
         """)
-
 
     with tab5:
         st.markdown(f"##### 📊 {market_type} 시장 성과 분석")
