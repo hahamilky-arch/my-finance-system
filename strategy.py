@@ -69,7 +69,6 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_c
         if ticker_upper in my_holdings_clean:
             c_price, ma20, mom_rank = row['종가'], row['MA20'], row['순위']
             
-            # 보유 기간 계산 및 타임 스탑 체크 (10일 이상 3% 미만 수익)
             h_row = holdings_df[holdings_df['ticker'].astype(str).str.strip().str.upper() == ticker_upper]
             if not h_row.empty:
                 buy_dt = pd.to_datetime(h_row.iloc[0]['buy_date'])
@@ -77,6 +76,7 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_c
                 days_held = (target_dt - buy_dt).days
                 profit_rate_pos = ((c_price / buy_price) - 1) * 100 if buy_price > 0 else 0.0
                 
+                # 타임 스탑: 보유 10일 이상 & 수익률 3% 미만
                 if days_held >= 10 and profit_rate_pos < 3.0:
                     sell_list.add(ticker_upper)
                     continue
@@ -110,19 +110,20 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_c
         if t in buy_list: return '매수추천', '조건충족'
         
         reasons = []
-        if stop_new_buy: reasons.append("시장경보(MA20하회)")
+        if stop_new_buy: reasons.append("시장경보(MA20 3일하회)")
+        elif reduce_holdings: reasons.append("비중축소(MA20하회)")
         if not cycle_passed: reasons.append("리밸런싱일 미해당")
         if slots_available <= 0: reasons.append("보유슬롯 가득참")
         if is_bull_mode:
-            if row['순위'] > 30: reasons.append("순위30위초과")
-            if row['RS(90)'] <= 0: reasons.append("RS(90)<=0")
-            if row['MA20'] <= 0 or row['종가'] <= row['MA20']: reasons.append("MA20하회")
+            if row['순위'] > 30: reasons.append("순위 30위 초과")
+            if row['RS(90)'] <= 0: reasons.append("RS(90) <= 0")
+            if row['MA20'] <= 0 or row['종가'] <= row['MA20']: reasons.append("MA20 하회")
         else: 
-            if row['순위'] > 50: reasons.append("순위50위초과")
-            if not (0.5 <= row['RS(90)'] <= 1.5): reasons.append(f"RS범위초과({row['RS(90)']:.2f})")
-            if not (-5.0 <= row['이격도'] <= 5.0): reasons.append(f"이격도초과({row['이격도']:+.1f}%)")
-        if t in sold_info and row['종가'] <= sold_info[t]: reasons.append("최근매도 쿨다운")
-        return '', ", ".join(reasons) if reasons else "선순위밀림"
+            if row['순위'] > 50: reasons.append("순위 50위 초과")
+            if not (0.5 <= row['RS(90)'] <= 1.5): reasons.append(f"RS 범위 초과")
+            if not (-5.0 <= row['이격도'] <= 5.0): reasons.append(f"이격도 초과")
+        if t in sold_info and row['종가'] <= sold_info[t]: reasons.append("최근 매도 쿨다운")
+        return '', ", ".join(reasons) if reasons else "선순위 밀림"
 
     status_reason = df_final.apply(assign_status_and_reason, axis=1)
     df_final['매매상태'] = [x[0] for x in status_reason]
