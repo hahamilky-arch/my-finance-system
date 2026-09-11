@@ -397,7 +397,6 @@ if df_display is not None:
                             st.warning("종목코드, 매도가, 수량을 확인하세요.")
 
         st.info(f"""
-                st.info(f"""
         📌 **하이브리드 듀얼 알파 매매 전략 시스템 가이드 (Ultimate)**
         * **시장 필터**: 지수 종가 기준 MA20 3일 연속 하회 시 신규 매수 전면 중지 (MA20 하회 시 보유 종목 최대 3개로 비중 축소)
         * **리밸런싱 주기**: `{rebalance_cycle}`
