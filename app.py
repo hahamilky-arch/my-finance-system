@@ -27,9 +27,13 @@ st.markdown("""
 def scroll_to_chart():
     components.html("<script>setTimeout(function(){const el=window.parent.document.getElementById('chart-section');if(el)el.scrollIntoView({behavior:'smooth'});},100);</script>", height=0)
 
+# ATR 기반 변동성 권장 매수 수량 계산기
 def calc_buy_qty_atr(ack, qk, atr_v):
     acc = st.session_state.get(ack, 0.0)
-    if atr_v > 0: st.session_state[qk] = float(int((acc * 0.02) / (2 * atr_v)))
+    if atr_v > 0 and acc > 0:
+        # 계좌 자산 2% 손실 한도 기준 ATR 권장 수량
+        atr_qty = float(int((acc * 0.02) / (2 * atr_v)))
+        st.session_state[qk] = max(1.0, atr_qty)
 
 def apply_styles(df):
     df_s = pd.DataFrame('', index=df.index, columns=df.columns)
@@ -74,7 +78,8 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
             else:
                 reason_desc = f"듀얼 알파 매매 전략 조건 충족 (상위 {top_n_cfg}개 분산)"
                 target_pct = (100.0 / top_n_cfg) if top_n_cfg > 0 else 0.0
-                position_info = f"<br><span style='font-size: 0.85em; color: #1b5e20; font-weight: bold;'>📊 목표 비중: {target_pct:.1f}% | 추천 매수 금액: {fmt_str}</span>"
+                atr_val = row.get('atr', 0.0)
+                position_info = f"<br><span style='font-size: 0.85em; color: #1b5e20; font-weight: bold;'>📊 추천 분산 금액: {fmt_str} (목표 비중 {target_pct:.1f}%) | ATR: {atr_val:,.1f}</span>"
 
             c1.markdown(f"""
             <div style="line-height: 1.6; margin-top: 4px;">
@@ -98,8 +103,15 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                     p_key, q_key, acc_key = f"p_{key_prefix}_{ticker}", f"q_{key_prefix}_{ticker}", f"acc_{key_prefix}_{ticker}"
                     input_price = st.number_input(f"{button_label}가", value=float(row['종가']), key=p_key)
                     if button_label == '매수':
-                        st.number_input("운용계좌 총액", value=account_total, step=1000000.0, key=acc_key, on_change=calc_buy_qty_atr, args=(acc_key, q_key, row.get('atr', 0)))
+                        st.number_input("운용계좌 총액", value=account_total, step=1000000.0, key=acc_key)
                         calc_qty = max(1.0, (target_amount / input_price) if input_price > 0 else 1.0)
+                        
+                        # ATR 기반 자금관리 매수 수량 버튼 추가
+                        atr_v = float(row.get('atr', 0.0))
+                        if atr_v > 0 and input_price > 0:
+                            atr_suggest_qty = max(1.0, float(int((account_total * 0.02) / (2 * atr_v))))
+                            st.caption(f"💡 자금관리(ATR 변동성) 추천 수량: {atr_suggest_qty:,.0f}주")
+                            
                         input_qty = st.number_input("매수수량", value=float(int(calc_qty)) if market_type=="KR" else calc_qty, min_value=0.0, key=q_key)
                     else:
                         matched_h = holdings_df[holdings_df['ticker'].str.strip().str.upper() == ticker]
@@ -158,9 +170,15 @@ with st.sidebar:
     
     st.divider()
 
+    st.markdown("### 🛡️ 리스크 및 자금 관리")
     cap_key = "us_capital" if market_type == "US" else "kr_capital"
     default_cap = st.session_state.get(cap_key, 6000000.0 if market_type == "US" else 20000000.0)
     account_total_input = st.number_input(f"💰 [{market_type}] 총 운용 자금", value=float(default_cap), step=500000.0, key=f"cap_input_{market_type}")
+
+    # 리스크 파라미터 표시
+    max_risk_per_stock = account_total_input * 0.02
+    risk_fmt = f"${max_risk_per_stock:,.2f}" if market_type == "US" else f"{max_risk_per_stock:,.0f}원"
+    st.caption(f"🔒 **단일 종목 최대 허용 손실 (2% Rule)**: {risk_fmt}")
 
     with st.expander("💾 설정값 DB 저장 / 초기화", expanded=False):
         config_pwd = st.text_input("매매 비밀번호 입력", type="password", key="pwd_config")
@@ -318,6 +336,7 @@ if df_display is not None:
                         risk_amt = eval_val * (abs(sl_cfg) / 100.0)
                         total_risk_amount += risk_amt
                         
+                        # 2% 손실 규칙 위반 검사
                         stock_risk_pct = (risk_amt / account_total_input) * 100 if account_total_input > 0 else 0.0
                         if stock_risk_pct > 2.0:
                             risk_violations.append(f"{ticker} ({stock_risk_pct:.1f}%)")
@@ -337,16 +356,17 @@ if df_display is not None:
                     
                     total_risk_pct = (total_risk_amount / account_total_input) * 100 if account_total_input > 0 else 0.0
                     
-                    st.markdown("###### 🛡️ 포트폴리오 총 리스크 노출도")
+                    st.markdown("###### 🛡️ 포트폴리오 자금 관리 및 리스크 노출도")
                     risk_col1, risk_col2 = st.columns([3, 1])
                     with risk_col1:
                         st.progress(min(total_risk_pct / 100.0, 1.0))
                     with risk_col2:
-                        st.markdown(f"**최대 손실 노출: {total_risk_pct:.2f}%**")
+                        st.markdown(f"**총 리스크 노출: {total_risk_pct:.2f}%**")
                     
-                    st.caption(f"※ 설정된 손절선({sl_cfg}%) 도달 시 포트폴리오의 예상 최대 손실액은 약 {total_risk_amount:,.0f}원입니다.")
+                    risk_amt_fmt = f"${total_risk_amount:,.2f}" if market_type == "US" else f"{total_risk_amount:,.0f}원"
+                    st.caption(f"※ 전 종목 손절선({sl_cfg}%) 도달 시 포트폴리오 예상 최대 손실금액: **{risk_amt_fmt}**")
                     if risk_violations:
-                        st.warning(f"단일 종목 최대 허용 손실 2.0% 초과 종목: {', '.join(risk_violations)}")
+                        st.warning(f"⚠️ 단일 종목 최대 허용 손실(계좌 대비 2.0%) 초과 종목: {', '.join(risk_violations)}")
                         
                     st.write("")
                     df_h = pd.DataFrame(holdings_list)
@@ -401,6 +421,7 @@ if df_display is not None:
         st.info(f"""
         📌 **하이브리드 듀얼 알파 매매 전략 시스템 가이드 (Ultimate)**
         * **시장 필터**: 지수 종가 기준 MA20 3일 연속 하회 시 신규 매수 전면 중지 (MA20 하회 시 보유 종목 최대 3개로 비중 축소)
+        * **자금 관리 룰**: 단일 종목 손실 한도 계좌 자산 대비 최대 2% 제한 & ATR 변동성 수량 산출
         * **리밸런싱 주기**: {rebalance_cycle}
         * **강세장 매수 조건**: 모멘텀 순위 **상위 30위 이내**, RS(90) > 0, 종가 > MA20
         * **약세장 매수 조건**: 모멘텀 순위 **상위 50위 이내**, RS(90) 0.5~1.5 구간, 이격도 -5% ~ +5%
