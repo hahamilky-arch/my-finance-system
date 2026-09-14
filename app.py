@@ -60,7 +60,7 @@ def apply_styles(df):
                 elif rank <= 30: df_s.loc[idx, :] += 'background-color: rgba(189, 215, 238, 0.4);' 
     return df_s
 
-def display_trade_list(data, title, button_label, key_prefix, target_date, is_latest_date, market_type, holdings_df, top_n_cfg, account_total=0.0):
+def display_trade_list(data, title, button_label, key_prefix, target_date, is_latest_date, market_type, holdings_df, top_n_cfg, account_total=0.0, strategy_engine_mode="short_term"):
     with st.expander(f"🚨 {title} ({len(data)}개)", expanded=True):
         if data.empty:
             st.write(f"해당되는 {button_label} 종목이 없습니다.")
@@ -73,10 +73,16 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
             c1, c2 = st.columns([4, 1])
             
             if '매도' in title:
-                reason_desc = f"추세선 이탈, 손절 임계값 혹은 타임스탑 조건 도달"
+                if strategy_engine_mode == "short_term":
+                    reason_desc = f"목표 수익률(+15%) 도달, 손절(-5%) 또는 14일 타임스탑 청산"
+                else:
+                    reason_desc = f"추세선 이탈, 손절 임계값 혹은 타임스탑 조건 도달"
                 position_info = ""
             else:
-                reason_desc = f"듀얼 알파 매매 전략 조건 충족 (상위 {top_n_cfg}개 분산)"
+                if strategy_engine_mode == "short_term":
+                    reason_desc = f"단기 타점 조건 충족 (Rank≤170, 이격도 -5~+7%, Momentum≥0.9)"
+                else:
+                    reason_desc = f"Ultimate 듀얼 모멘텀 조건 충족 (상위 {top_n_cfg}개 분산)"
                 target_pct = (100.0 / top_n_cfg) if top_n_cfg > 0 else 0.0
                 atr_val = row.get('atr', 0.0)
                 position_info = f"<br><span style='font-size: 0.85em; color: #1b5e20; font-weight: bold;'>📊 추천 분산 금액: {fmt_str} (목표 비중 {target_pct:.1f}%) | ATR: {atr_val:,.1f}</span>"
@@ -130,18 +136,31 @@ if 'db_settings_loaded' not in st.session_state:
         res = supabase.table("strategy_settings").select("*").eq("id", 1).execute()
         if res.data:
             db_cfg = res.data[0]
-            st.session_state['bull_top_n'] = int(db_cfg.get('bull_top_n', 5))
-            st.session_state['bull_sl'] = float(db_cfg.get('bull_sl', -10.0))
-            st.session_state['bear_top_n'] = int(db_cfg.get('bear_top_n', 3)) 
-            st.session_state['bear_sl'] = float(db_cfg.get('bear_sl', -6.0))
+            st.session_state['bull_top_n'] = int(db_cfg.get('bull_top_n', 4))
+            st.session_state['bull_sl'] = float(db_cfg.get('bull_sl', -5.0))
+            st.session_state['bear_top_n'] = int(db_cfg.get('bear_top_n', 4)) 
+            st.session_state['bear_sl'] = float(db_cfg.get('bear_sl', -5.0))
             st.session_state['kr_capital'] = float(db_cfg.get('kr_capital', 20000000.0))
             st.session_state['us_capital'] = float(db_cfg.get('us_capital', 6000000.0))
+            st.session_state['strategy_engine_mode'] = db_cfg.get('strategy_engine_mode', 'short_term')
     except Exception:
         pass
     st.session_state['db_settings_loaded'] = True
 
 with st.sidebar:
     st.markdown("### ⚙️ 알파 매매전략 설정")
+    
+    # 🌟 전략 엔진 스위칭 옵션
+    strategy_engine_mode = st.radio(
+        "💡 전략 엔진 선택",
+        ["🚀 단기 타점 모멘텀 (15%+ 랠리)", "🌐 Ultimate 듀얼 모멘텀 (추세)"],
+        index=0 if st.session_state.get('strategy_engine_mode', 'short_term') == 'short_term' else 1
+    )
+    current_engine_key = "short_term" if "단기" in strategy_engine_mode else "ultimate_dual"
+    st.session_state['strategy_engine_mode'] = current_engine_key
+    
+    st.divider()
+
     market_type = st.radio("Market", ["KR", "US"], horizontal=True)
     all_dates = get_available_dates()
     selected_date = st.date_input("Date", value=pd.to_datetime(all_dates[0]) if all_dates else None)
@@ -152,28 +171,34 @@ with st.sidebar:
     is_bull = True if strategy_mode == "상승장 세팅 (Bull)" else (False if strategy_mode == "하락장 세팅 (Bear)" else market_safe)
     rebalance_cycle = st.selectbox("리밸런싱 주기", ["상시 (빈자리 즉시 채우기)", "주기 (매주 수요일)"])
 
-    if is_bull:
-        st.success("🟢 상승장 모드 (Bull Market)")
-        top_n_cfg = st.number_input("편입 종목 수", value=st.session_state.get('bull_top_n', 5))
-        sl_cfg = st.number_input("손절 임계값 (%)", value=st.session_state.get('bull_sl', -10.0))
-        rank_exit_limit = 60
+    if current_engine_key == "short_term":
+        st.info("🚀 단기 타점 모드: 15% 목표익절 / -5% 손절 / 14일 타임컷")
+        top_n_cfg = st.number_input("편입 종목 수 (슬롯)", value=st.session_state.get('bull_top_n', 4))
+        sl_cfg = st.number_input("고정 손절 임계값 (%)", value=st.session_state.get('bull_sl', -5.0))
+        rank_exit_limit = 170
     else:
-        st.error("🔴 하락장 모드 (Bear Market)")
-        top_n_cfg = st.number_input("편입 종목 수", value=st.session_state.get('bear_top_n', 3))
-        sl_cfg = st.number_input("손절 임계값 (%)", value=st.session_state.get('bear_sl', -6.0))
-        rank_exit_limit = 30
+        if is_bull:
+            st.success("🟢 상승장 모드 (Bull Market)")
+            top_n_cfg = st.number_input("편입 종목 수", value=st.session_state.get('bull_top_n', 5))
+            sl_cfg = st.number_input("손절 임계값 (%)", value=st.session_state.get('bull_sl', -10.0))
+            rank_exit_limit = 60
+        else:
+            st.error("🔴 하락장 모드 (Bear Market)")
+            top_n_cfg = st.number_input("편입 종목 수", value=st.session_state.get('bear_top_n', 3))
+            sl_cfg = st.number_input("손절 임계값 (%)", value=st.session_state.get('bear_sl', -6.0))
+            rank_exit_limit = 30
 
     if stop_new_buy: 
         st.warning("⚠️ MA20 3일 연속 하회 감지: 신규 매수 중지")
     elif reduce_holdings:
-        st.warning("⚠️ MA20 하회 감지: 보유 종목 비중 축소 (최대 3개)")
+        st.warning("⚠️ MA20 하회 감지: 보유 종목 비중 축소")
     
     st.divider()
 
     st.markdown("### 🛡️ 리스크 및 자금 관리")
     cap_key = "us_capital" if market_type == "US" else "kr_capital"
     default_cap = st.session_state.get(cap_key, 6000000.0 if market_type == "US" else 20000000.0)
-    account_total_input = st.number_input(f"💰 [{market_type}] 총 운용 자금", value=float(default_cap), step=500000.0, key=f"cap_input_{market_type}")
+    account_total_input = st.number_input(f"💰 [{market_type}] 총 운용 자금", value=float(default_cap), step=1000000.0, key=f"cap_input_{market_type}")
 
     # 리스크 파라미터 표시
     max_risk_per_stock = account_total_input * 0.02
@@ -187,24 +212,21 @@ with st.sidebar:
             if st.button("설정 저장", use_container_width=True):
                 if config_pwd == st.secrets.get("TRADE_PASSWORD", "1234"):
                     st.session_state[cap_key] = account_total_input
-                    if is_bull:
-                        st.session_state['bull_top_n'] = top_n_cfg
-                        st.session_state['bull_sl'] = sl_cfg
-                    else:
-                        st.session_state['bear_top_n'] = top_n_cfg
-                        st.session_state['bear_sl'] = sl_cfg
+                    st.session_state['bull_top_n'] = top_n_cfg
+                    st.session_state['bull_sl'] = sl_cfg
                     settings_data = {
                         "id": 1,
-                        "bull_top_n": int(st.session_state.get('bull_top_n', 5)),
-                        "bull_sl": float(st.session_state.get('bull_sl', -10.0)),
+                        "bull_top_n": int(top_n_cfg),
+                        "bull_sl": float(sl_cfg),
                         "bear_top_n": int(st.session_state.get('bear_top_n', 3)),
                         "bear_sl": float(st.session_state.get('bear_sl', -6.0)),
                         "kr_capital": float(st.session_state.get('kr_capital', 20000000.0)),
-                        "us_capital": float(st.session_state.get('us_capital', 6000000.0))
+                        "us_capital": float(st.session_state.get('us_capital', 6000000.0)),
+                        "strategy_engine_mode": current_engine_key
                     }
                     try:
                         supabase.table("strategy_settings").upsert(settings_data).execute()
-                        st.success("✅ 전략 및 자금이 DB에 저장되었습니다.")
+                        st.success("✅ 전략 및 자율 설정이 DB에 저장되었습니다.")
                     except Exception as e:
                         st.error(f"❌ DB 저장 실패: {e}")
                 else:
@@ -213,8 +235,8 @@ with st.sidebar:
             if st.button("🔄 기본값 초기화", use_container_width=True):
                 if config_pwd == st.secrets.get("TRADE_PASSWORD", "1234"):
                     default_settings = {
-                        "id": 1, "bull_top_n": 5, "bull_sl": -10.0, "bear_top_n": 3, "bear_sl": -6.0,
-                        "kr_capital": 20000000.0, "us_capital": 6000000.0
+                        "id": 1, "bull_top_n": 4, "bull_sl": -5.0, "bear_top_n": 3, "bear_sl": -6.0,
+                        "kr_capital": 20000000.0, "us_capital": 6000000.0, "strategy_engine_mode": "short_term"
                     }
                     try:
                         supabase.table("strategy_settings").upsert(default_settings).execute()
@@ -237,7 +259,7 @@ if df_display is not None:
         st.markdown("###### 📊 시장 및 시그널 요약")
         
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("현재 시장 모드", "🟢 강세장 (Bull)" if is_bull else "🔴 약세장 (Bear)")
+        c1.metric("현재 전략 모드", "🚀 단기 타점 모드" if current_engine_key == "short_term" else ("🟢 강세장" if is_bull else "🔴 약세장"))
         c2.metric("신규 매수 상태", "🛑 중지 (MA20 3일하회)" if stop_new_buy else ("⚠️ 비중축소 (MA20하회)" if reduce_holdings else "✅ 허용"))
         
         buy_cnt = len(df_display[df_display['매매상태'] == '매수추천'])
@@ -386,8 +408,8 @@ if df_display is not None:
 
             df_rebal = df_display[df_display['매매상태'].isin(['매도필요', '매수추천'])]
             
-            display_trade_list(df_rebal[df_rebal['매매상태'] == '매도필요'], "시스템 매도 필요 종목", "매도", "sys_s", target_date_str, is_latest_date, market_type, holdings_db, top_n_cfg, account_total_input)
-            display_trade_list(df_rebal[df_rebal['매매상태'] == '매수추천'], "시스템 매수 추천 종목", "매수", "sys_b", target_date_str, is_latest_date, market_type, holdings_db, top_n_cfg, account_total_input)
+            display_trade_list(df_rebal[df_rebal['매매상태'] == '매도필요'], "시스템 매도 필요 종목", "매도", "sys_s", target_date_str, is_latest_date, market_type, holdings_db, top_n_cfg, account_total_input, current_engine_key)
+            display_trade_list(df_rebal[df_rebal['매매상태'] == '매수추천'], "시스템 매수 추천 종목", "매수", "sys_b", target_date_str, is_latest_date, market_type, holdings_db, top_n_cfg, account_total_input, current_engine_key)
 
             st.markdown("---")
             col_m_left, col_m_right = st.columns(2)
@@ -418,20 +440,29 @@ if df_display is not None:
                         else:
                             st.warning("종목코드, 매도가, 수량을 확인하세요.")
 
-        st.info(f"""
-        📌 **하이브리드 듀얼 알파 매매 전략 시스템 가이드 (Ultimate)**
-        * **시장 필터**: 지수 종가 기준 MA20 3일 연속 하회 시 신규 매수 전면 중지 (MA20 하회 시 보유 종목 최대 3개로 비중 축소)
-        * **자금 관리 룰**: 단일 종목 손실 한도 계좌 자산 대비 최대 2% 제한 & ATR 변동성 수량 산출
-        * **리밸런싱 주기**: {rebalance_cycle}
-        * **강세장 매수 조건**: 모멘텀 순위 **상위 30위 이내**, RS(90) > 0, 종가 > MA20
-        * **약세장 매수 조건**: 모멘텀 순위 **상위 50위 이내**, RS(90) 0.5~1.5 구간, 이격도 -5% ~ +5%
-        * **보유 종목 수**: 조건 충족 상위 **{top_n_cfg}개** 분산 투자 (시장 경보 시 최대 3개 제한)
-        * **매도 조건** (하나라도 충족 시 익일 매도):
-            1. 종가 < MA20 하향 이탈 혹은, 순위 이탈 ({rank_exit_limit}위 밖으로 밀림)
-            2. 고정 손절선 이탈 ({sl_cfg}%)
-            3. **타임 스탑**: 보유일 10일 이상 & 수익률 +3% 미만 시 자동 청산
-        * **쿨다운 룰**: 매도 후 3거래일 신규 편입 금지 (단, 종가가 직전 매도가를 재돌파하면 즉시 쿨다운 해제)
-        """)
+        if current_engine_key == "short_term":
+            st.info(f"""
+            📌 **단기 타점 모멘텀 매매 전략 가이드 (15%+ 랠리 타점)**
+            * **초기 자본 세팅**: 2,000만 원 (4개 슬롯 분할 / 종목당 500만 원)
+            * **매수 타점 조건**: 모멘텀 순위 **Rank 170위 이내**, 이격도 **-5% ~ +7%**, 가중 모멘텀 **+0.9 이상**
+            * **목표 익절 (Take Profit)**: **+15% 도달 시 즉시 청산**
+            * **손절 한도 (Stop Loss)**: **-5% 도달 시 즉시 손절**
+            * **시간 손절 (Time Stop)**: **보유일 14일 경과 시 미달성 종목 교체 매도**
+            """)
+        else:
+            st.info(f"""
+            📌 **하이브리드 듀얼 알파 매매 전략 시스템 가이드 (Ultimate)**
+            * **시장 필터**: 지수 종가 기준 MA20 3일 연속 하회 시 신규 매수 전면 중지 (MA20 하회 시 보유 종목 최대 3개로 비중 축소)
+            * **자금 관리 룰**: 단일 종목 손실 한도 계좌 자산 대비 최대 2% 제한 & ATR 변동성 수량 산출
+            * **리밸런싱 주기**: {rebalance_cycle}
+            * **강세장 매수 조건**: 모멘텀 순위 **상위 30위 이내**, RS(90) > 0, 종가 > MA20
+            * **약세장 매수 조건**: 모멘텀 순위 **상위 50위 이내**, RS(90) 0.5~1.5 구간, 이격도 -5% ~ +5%
+            * **보유 종목 수**: 조건 충족 상위 **{top_n_cfg}개** 분산 투자 (시장 경보 시 최대 3개 제한)
+            * **매도 조건** (하나라도 충족 시 익일 매도):
+                1. 종가 < MA20 하향 이탈 혹은, 순위 이탈 ({rank_exit_limit}위 밖으로 밀림)
+                2. 고정 손절선 이탈 ({sl_cfg}%)
+                3. **타임 스탑**: 보유일 10일 이상 & 수익률 +3% 미만 시 자동 청산
+            """)
 
     with tab5:
         st.markdown(f"##### 📊 {market_type} 시장 성과 분석")
