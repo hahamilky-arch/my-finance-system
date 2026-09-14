@@ -77,16 +77,16 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
 
         if button_label == '매수':
             primary_data = data.iloc[:top_n_cfg]
-            # 슬롯 만석 여부와 무관하게 170위 이내 조건 만족 종목 중 후순위 예비 2개 항상 추출
+            # 슬롯 만석 여부와 상관없이 항상 후순위 2개 추출
             backup_data = data.iloc[top_n_cfg:top_n_cfg + 2]
             
             if is_slot_full:
-                st.warning(f"⚠️ 현재 포트폴리오 슬롯이 만석입니다 ({current_holdings_count}/{top_n_cfg}개 보유 중). 하단의 후순위 예비 종목을 미체결/대체 매수용으로 활용하세요.")
+                st.warning(f"⚠️ 현재 포트폴리오 슬롯이 만석입니다 ({current_holdings_count}/{top_n_cfg}개 보유 중). 하단의 후순위 예비 종목을 대체/대기 매수용으로 참고하세요.")
         else:
             primary_data = data
             backup_data = pd.DataFrame()
 
-        # 1. 주추천 종목 목록
+        # 1. 주추천 종목 목록 (상위 top_n_cfg 개)
         for _, row in primary_data.iterrows():
             ticker = row['ticker']
             c1, c2 = st.columns([4, 1])
@@ -99,18 +99,19 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                 position_info = ""
             else:
                 if strategy_engine_mode == "short_term":
-                    reason_desc = f"단기 타점 조건 충족 (Rank≤170, 이격도 -5~+7%, Momentum≥0.9)"
+                    reason_desc = f"단기 타점 조건 충족 (Rank≤200, 이격도 -5~+7%, Momentum≥0.9)"
                 else:
                     reason_desc = f"Ultimate 듀얼 모멘텀 조건 충족 (상위 {top_n_cfg}개 분산)"
                 target_pct = (100.0 / top_n_cfg) if top_n_cfg > 0 else 0.0
                 atr_val = row.get('atr', 0.0)
                 position_info = f"<br><span style='font-size: 0.85em; color: #1b5e20; font-weight: bold;'>📊 추천 분산 금액: {fmt_str} (목표 비중 {target_pct:.1f}%) | ATR: {atr_val:,.1f}</span>"
 
+            rank_val = int(row.get('순위', 0)) if pd.notna(row.get('순위')) else '-'
             c1.markdown(f"""
             <div style="line-height: 1.6; margin-top: 4px;">
                 <strong style="font-size: 1.1em; color: #111111;">{row['종목명']}</strong> 
                 <span style="font-size: 0.8em; color: #888888; margin-left: 4px;">({ticker})</span>
-                <span style="font-size: 0.8em; color: #555555; margin-left: 6px;">[순위: {int(row.get('순위', 0)) if pd.notna(row.get('순위')) else '-'}]</span>
+                <span style="font-size: 0.8em; color: #1565c0; font-weight: bold; margin-left: 6px;">[순위: {rank_val}위]</span>
                 <br>
                 <span style="font-size: 0.85em; color: #d62728; font-weight: bold;">
                     📌 사유: {reason_desc}
@@ -148,7 +149,7 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
             else:
                 c2.markdown("<div style='color:#999999; font-size:0.85em; margin-top:8px; text-align:right;'>과거일 매매불가</div>", unsafe_allow_html=True)
 
-        # 2. 후순위 예비 추천 2개 노출
+        # 2. 슬롯 만석 시에도 항상 후순위 예비 추천 2개 표시
         if not backup_data.empty:
             st.markdown("---")
             st.markdown("###### 💡 후순위 예비 추천 종목 (슬롯 만석/미체결 시 교체 매수용)")
@@ -156,7 +157,8 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                 ticker = row['ticker']
                 c1, c2 = st.columns([4, 1])
                 
-                reason_desc = f"후순위 조건 충족 (Rank≤170위 대기/대체용 예비 {backup_idx}순위)"
+                rank_val = int(row.get('순위', 0)) if pd.notna(row.get('순위')) else '-'
+                reason_desc = f"후순위 조건 충족 (200위 이내 예비 {backup_idx}순위 대체 종목)"
                 target_pct = (100.0 / top_n_cfg) if top_n_cfg > 0 else 0.0
                 atr_val = row.get('atr', 0.0)
                 position_info = f"<br><span style='font-size: 0.85em; color: #856404; font-weight: bold;'>📊 예비 분산 금액: {fmt_str} | ATR: {atr_val:,.1f}</span>"
@@ -165,7 +167,7 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                 <div style="line-height: 1.6; margin-top: 4px; background-color: #fffde7; padding: 8px 12px; border-radius: 6px; border-left: 4px solid #fbc02d;">
                     <strong style="font-size: 1.05em; color: #111111;">{row['종목명']}</strong> 
                     <span style="font-size: 0.8em; color: #888888; margin-left: 4px;">({ticker})</span>
-                    <span class="backup-tag">💡 예비 {backup_idx}순위 (순위: {int(row.get('순위', 0)) if pd.notna(row.get('순위')) else '-'})</span>
+                    <span class="backup-tag">💡 예비 {backup_idx}순위 [순위: {rank_val}위]</span>
                     <br>
                     <span style="font-size: 0.85em; color: #e65100; font-weight: bold;">
                         📌 사유: {reason_desc}
@@ -234,10 +236,10 @@ with st.sidebar:
     rebalance_cycle = st.selectbox("리밸런싱 주기", ["상시 (빈자리 즉시 채우기)", "주기 (매주 수요일)"])
 
     if current_engine_key == "short_term":
-        st.info("🚀 단기 타점 모드: 15% 목표익절 / -5% 손절 / 14일 타임컷")
+        st.info("🚀 단기 타점 모드: 상위 200위 / 15% 목표익절 / -5% 손절 / 14일 타임컷")
         top_n_cfg = st.number_input("편입 종목 수 (슬롯)", value=st.session_state.get('bull_top_n', 4))
         sl_cfg = st.number_input("고정 손절 임계값 (%)", value=st.session_state.get('bull_sl', -5.0))
-        rank_exit_limit = 170
+        rank_exit_limit = 200
     else:
         if is_bull:
             st.success("🟢 상승장 모드 (Bull Market)")
@@ -330,12 +332,12 @@ if df_display is not None:
         
         st.write("")
         
-        st.markdown("###### 📋 알파 시그널 전체 목록")
+        st.markdown("###### 📋 알파 시그널 전체 목록 (상위 200위)")
         filter_opt = st.radio("빠른 필터", ["전체보기", "🔴 매수 추천 종목만", "🔵 매도 필요 종목만", "🟢 현재 보유 종목만"], horizontal=True, label_visibility="collapsed")
         
         col_order = ['순위', '변동', '매매상태', '종목명', '이격도', 'MOT', 'RS(90)', 'RS(10)', 'MA20', '제외사유', '종가', '상승금액', '상승률', 'ticker'] 
-        # 🌟 100위 제한(head(100)) 제거 -> 전체 필터링 종목 노출
-        df_target = df_display[col_order].copy()
+        # 🌟 상위 200위까지 필터링 적용
+        df_target = df_display.head(200)[col_order].copy()
         
         if filter_opt == "🔴 매수 추천 종목만":
             df_target = df_target[df_target['매매상태'] == '매수추천']
@@ -506,8 +508,8 @@ if df_display is not None:
             📌 **단기 타점 모멘텀 매매 전략 가이드 (15%+ 랠리 타점)**
             * **초기 자본 세팅**: 2,000만 원 (4개 슬롯 분할 / 종목당 500만 원)
             * **주추천 종목**: 슬롯 개수({top_n_cfg}개)에 맞춰 실시간 선별
-            * **후순위 예비 추천**: 170위 이내 조건 만족 종목 중 **예비 2개 종목** 상시 노출
-            * **매수 타점 조건**: 모멘텀 순위 **Rank 170위 이내**, 이격도 **-5% ~ +7%**, 가중 모멘텀 **+0.9 이상**
+            * **후순위 예비 추천**: 상위 200위 조건 만족 종목 중 **예비 2개 종목** 상시 노출
+            * **매수 타점 조건**: 모멘텀 순위 **Rank 200위 이내**, 이격도 **-5% ~ +7%**, 가중 모멘텀 **+0.9 이상**
             * **목표 익절 (Take Profit)**: **+15% 도달 시 즉시 청산**
             * **손절 한도 (Stop Loss)**: **-5% 도달 시 즉시 손절**
             * **시간 손절 (Time Stop)**: **보유일 14일 경과 시 미달성 종목 교체 매도**
@@ -683,15 +685,15 @@ if df_display is not None:
         scroll_to_chart()
         st.session_state['trigger_scroll'] = False 
 
-    # 170위 전체 선택 목록 지원
-    all_tickers = df_display['ticker'].tolist()
-    if st.session_state.get('selected_ticker_from_table') and st.session_state['selected_ticker_from_table'] not in all_tickers:
-        all_tickers.append(st.session_state['selected_ticker_from_table'])
+    # 🌟 상위 200위 전체 종목을 하단 차트 선택 박스와 연동
+    top200_tickers = df_display.head(200)['ticker'].tolist()
+    if st.session_state.get('selected_ticker_from_table') and st.session_state['selected_ticker_from_table'] not in top200_tickers:
+        top200_tickers.append(st.session_state['selected_ticker_from_table'])
         
     ticker_name_map = dict(zip(df_display['ticker'], df_display['종목명']))
-    default_ticker = st.session_state.get('selected_ticker_from_table', all_tickers[0] if all_tickers else None)
+    default_ticker = st.session_state.get('selected_ticker_from_table', top200_tickers[0] if top200_tickers else None)
     
-    sel_ticker = st.selectbox("분석할 종목 선택", options=all_tickers, index=all_tickers.index(default_ticker) if default_ticker in all_tickers else 0, format_func=lambda x: ticker_name_map.get(x, x))
+    sel_ticker = st.selectbox("분석할 종목 선택 (상위 200위)", options=top200_tickers, index=top200_tickers.index(default_ticker) if default_ticker in top200_tickers else 0, format_func=lambda x: f"[{x}] {ticker_name_map.get(x, x)}")
     if sel_ticker:
         draw_integrated_chart(sel_ticker, market_type, ticker_name_map)
 else:
