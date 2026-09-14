@@ -31,13 +31,6 @@ st.markdown("""
 def scroll_to_chart():
     components.html("<script>setTimeout(function(){const el=window.parent.document.getElementById('chart-section');if(el)el.scrollIntoView({behavior:'smooth'});},100);</script>", height=0)
 
-# ATR 기반 변동성 권장 매수 수량 계산기
-def calc_buy_qty_atr(ack, qk, atr_v):
-    acc = st.session_state.get(ack, 0.0)
-    if atr_v > 0 and acc > 0:
-        atr_qty = float(int((acc * 0.02) / (2 * atr_v)))
-        st.session_state[qk] = max(1.0, atr_qty)
-
 def apply_styles(df):
     df_s = pd.DataFrame('', index=df.index, columns=df.columns)
     for col in ['변동', '상승금액', '상승률']:
@@ -63,7 +56,7 @@ def apply_styles(df):
                 elif rank <= 30: df_s.loc[idx, :] += 'background-color: rgba(189, 215, 238, 0.4);' 
     return df_s
 
-def display_trade_list(data, title, button_label, key_prefix, target_date, is_latest_date, market_type, holdings_df, top_n_cfg, account_total=0.0, strategy_engine_mode="short_term"):
+def display_trade_list(data, title, button_label, key_prefix, target_date, is_latest_date, market_type, holdings_df, top_n_cfg, account_total=0.0, strategy_engine_mode="strat3_top7"):
     with st.expander(f"🚨 {title} ({len(data)}개)", expanded=True):
         if data.empty:
             st.write(f"해당되는 {button_label} 종목이 없습니다.")
@@ -85,7 +78,6 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
             primary_data = data
             backup_data = pd.DataFrame()
 
-        # 1. 주추천 종목 목록
         for _, row in primary_data.iterrows():
             ticker = row['ticker']
             c1, c2 = st.columns([4, 1])
@@ -152,7 +144,6 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
             else:
                 c2.markdown("<div style='color:#999999; font-size:0.85em; margin-top:8px; text-align:right;'>과거일 매매불가</div>", unsafe_allow_html=True)
 
-        # 2. 후순위 예비 추천 종목
         if not backup_data.empty:
             st.markdown("---")
             st.markdown("###### 💡 후순위 예비 추천 종목 (슬롯 만석/미체결 시 교체 매수용)")
@@ -251,23 +242,23 @@ with st.sidebar:
 
     if current_engine_key == "strat3_top7":
         st.success("🔥 전략 3 모드: Top 7 / Rank≤15 / ATR 2.5x손절 / 트레일링스톱")
-        top_n_cfg = st.number_input("편입 종목 수 (슬롯)", value=st.session_state.get('bull_top_n', 7))
+        top_n_cfg = st.number_input("편입 종목 수 (슬롯)", value=7, min_value=1, max_value=15)
         sl_cfg = st.number_input("손절 임계값 (ATR 기준)", value=-2.5)
         rank_exit_limit = 15
     elif current_engine_key == "short_term":
         st.info("🚀 단기 타점 모드: 상위 200위 / 15% 목표익절 / -5% 손절 / 14일 타임컷")
-        top_n_cfg = st.number_input("편입 종목 수 (슬롯)", value=st.session_state.get('bull_top_n', 4))
+        top_n_cfg = st.number_input("편입 종목 수 (슬롯)", value=st.session_state.get('bull_top_n', 4), min_value=1, max_value=15)
         sl_cfg = st.number_input("고정 손절 임계값 (%)", value=st.session_state.get('bull_sl', -5.0))
         rank_exit_limit = 200
     else:
         if is_bull:
             st.success("🟢 상승장 모드 (Bull Market)")
-            top_n_cfg = st.number_input("편입 종목 수", value=st.session_state.get('bull_top_n', 5))
+            top_n_cfg = st.number_input("편입 종목 수", value=st.session_state.get('bull_top_n', 5), min_value=1, max_value=15)
             sl_cfg = st.number_input("손절 임계값 (%)", value=st.session_state.get('bull_sl', -10.0))
             rank_exit_limit = 60
         else:
             st.error("🔴 하락장 모드 (Bear Market)")
-            top_n_cfg = st.number_input("편입 종목 수", value=st.session_state.get('bear_top_n', 3))
+            top_n_cfg = st.number_input("편입 종목 수", value=st.session_state.get('bear_top_n', 3), min_value=1, max_value=15)
             sl_cfg = st.number_input("손절 임계값 (%)", value=st.session_state.get('bear_sl', -6.0))
             rank_exit_limit = 30
 
