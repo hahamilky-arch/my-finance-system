@@ -20,6 +20,10 @@ st.markdown("""
         font-weight: bold; box-shadow: 0 4px 15px rgba(0,0,0,0.2);
         cursor: pointer; z-index: 99999; text-decoration: none;
     }
+    .backup-tag {
+        background-color: #fff3cd; color: #856404; font-size: 0.8em; font-weight: bold;
+        padding: 2px 8px; border-radius: 10px; border: 1px solid #ffeeba; margin-left: 6px;
+    }
     </style>
     <a href="#top-section" class="floating-btn-left"><span>⬆️</span> <span>상단 표로 이동</span></a>
 """, unsafe_allow_html=True)
@@ -31,7 +35,6 @@ def scroll_to_chart():
 def calc_buy_qty_atr(ack, qk, atr_v):
     acc = st.session_state.get(ack, 0.0)
     if atr_v > 0 and acc > 0:
-        # 계좌 자산 2% 손실 한도 기준 ATR 권장 수량
         atr_qty = float(int((acc * 0.02) / (2 * atr_v)))
         st.session_state[qk] = max(1.0, atr_qty)
 
@@ -65,10 +68,20 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
         if data.empty:
             st.write(f"해당되는 {button_label} 종목이 없습니다.")
             return
+        
         target_amount = account_total * ((100.0 / top_n_cfg) / 100.0) if top_n_cfg > 0 else 0.0
         fmt_str = f"${target_amount:,.2f}" if market_type == "US" else f"{target_amount:,.0f}원"
         
-        for _, row in data.iterrows():
+        # 🌟 매수 추천 시: 주추천 종목(top_n_cfg 개)과 후순위 예비 추천(최대 2개) 분리
+        if button_label == '매수':
+            primary_data = data.iloc[:top_n_cfg]
+            backup_data = data.iloc[top_n_cfg:top_n_cfg + 2]  # 후순위 2개 추출
+        else:
+            primary_data = data
+            backup_data = pd.DataFrame()
+
+        # 1. 주추천 종목 출력
+        for _, row in primary_data.iterrows():
             ticker = row['ticker']
             c1, c2 = st.columns([4, 1])
             
@@ -112,7 +125,6 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                         st.number_input("운용계좌 총액", value=account_total, step=1000000.0, key=acc_key)
                         calc_qty = max(1.0, (target_amount / input_price) if input_price > 0 else 1.0)
                         
-                        # ATR 기반 자금관리 매수 수량 버튼 추가
                         atr_v = float(row.get('atr', 0.0))
                         if atr_v > 0 and input_price > 0:
                             atr_suggest_qty = max(1.0, float(int((account_total * 0.02) / (2 * atr_v))))
@@ -128,6 +140,50 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                         update_holdings(ticker, 'SELL' if '매도' in title else 'BUY', input_price, target_date, input_qty, market_type)
             else:
                 c2.markdown("<div style='color:#999999; font-size:0.85em; margin-top:8px; text-align:right;'>과거일 매매불가</div>", unsafe_allow_html=True)
+
+        # 🌟 2. 슬롯 초과 시 후순위 예비 추천 2개 표시 (매수 추천에만 적용)
+        if not backup_data.empty:
+            st.markdown("---")
+            st.markdown("###### 💡 후순위 예비 추천 종목 (슬롯 꽉 찼거나 미체결 시 대체용)")
+            for backup_idx, (_, row) in enumerate(backup_data.iterrows(), 1):
+                ticker = row['ticker']
+                c1, c2 = st.columns([4, 1])
+                
+                reason_desc = f"후순위 조건 충족 (예비 {backup_idx}순위 대체 종목)"
+                target_pct = (100.0 / top_n_cfg) if top_n_cfg > 0 else 0.0
+                atr_val = row.get('atr', 0.0)
+                position_info = f"<br><span style='font-size: 0.85em; color: #856404; font-weight: bold;'>📊 예비 분산 금액: {fmt_str} | ATR: {atr_val:,.1f}</span>"
+
+                c1.markdown(f"""
+                <div style="line-height: 1.6; margin-top: 4px; background-color: #fffde7; padding: 8px 12px; border-radius: 6px; border-left: 4px solid #fbc02d;">
+                    <strong style="font-size: 1.05em; color: #111111;">{row['종목명']}</strong> 
+                    <span style="font-size: 0.8em; color: #888888; margin-left: 4px;">({ticker})</span>
+                    <span class="backup-tag">💡 예비 {backup_idx}순위</span>
+                    <br>
+                    <span style="font-size: 0.85em; color: #e65100; font-weight: bold;">
+                        📌 사유: {reason_desc}
+                    </span>
+                    {position_info}
+                    <br>
+                    <span style="font-size: 0.85em; color: #444444;">
+                        MOT: {row['MOT']:.2f} | RS(90): {row['RS(90)']:.2f} | 이격도: {row['이격도']:+.2f}%
+                    </span>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                if is_latest_date:
+                    with c2.popover(f"예비매수"):
+                        st.write(f"**[예비 {backup_idx}순위] {row['종목명']}**")
+                        p_key, q_key, acc_key = f"p_bk_{key_prefix}_{ticker}", f"q_bk_{key_prefix}_{ticker}", f"acc_bk_{key_prefix}_{ticker}"
+                        input_price = st.number_input(f"매수가", value=float(row['종가']), key=p_key)
+                        st.number_input("운용계좌 총액", value=account_total, step=1000000.0, key=acc_key)
+                        calc_qty = max(1.0, (target_amount / input_price) if input_price > 0 else 1.0)
+                        input_qty = st.number_input("매수수량", value=float(int(calc_qty)) if market_type=="KR" else calc_qty, min_value=0.0, key=q_key)
+                            
+                        if st.button("예비 매수 실행", key=f"btn_bk_{key_prefix}_{ticker}"):
+                            update_holdings(ticker, 'BUY', input_price, target_date, input_qty, market_type)
+                else:
+                    c2.markdown("<div style='color:#999999; font-size:0.85em; margin-top:8px; text-align:right;'>과거일 매매불가</div>", unsafe_allow_html=True)
 
 st.markdown("##### 📈 Hybrid Dual Alpha Dashboard")
 
@@ -226,7 +282,7 @@ with st.sidebar:
                     }
                     try:
                         supabase.table("strategy_settings").upsert(settings_data).execute()
-                        st.success("✅ 전략 및 자율 설정이 DB에 저장되었습니다.")
+                        st.success("✅ 전략 및 자원 설정이 DB에 저장되었습니다.")
                     except Exception as e:
                         st.error(f"❌ DB 저장 실패: {e}")
                 else:
@@ -358,7 +414,6 @@ if df_display is not None:
                         risk_amt = eval_val * (abs(sl_cfg) / 100.0)
                         total_risk_amount += risk_amt
                         
-                        # 2% 손실 규칙 위반 검사
                         stock_risk_pct = (risk_amt / account_total_input) * 100 if account_total_input > 0 else 0.0
                         if stock_risk_pct > 2.0:
                             risk_violations.append(f"{ticker} ({stock_risk_pct:.1f}%)")
@@ -409,7 +464,7 @@ if df_display is not None:
             df_rebal = df_display[df_display['매매상태'].isin(['매도필요', '매수추천'])]
             
             display_trade_list(df_rebal[df_rebal['매매상태'] == '매도필요'], "시스템 매도 필요 종목", "매도", "sys_s", target_date_str, is_latest_date, market_type, holdings_db, top_n_cfg, account_total_input, current_engine_key)
-            display_trade_list(df_rebal[df_rebal['매매상태'] == '매수추천'], "시스템 매수 추천 종목", "매수", "sys_b", target_date_str, is_latest_date, market_type, holdings_db, top_n_cfg, account_total_input, current_engine_key)
+            display_trade_list(df_rebal[df_rebal['매매상태'] == '매수추천'], "시스템 매수 추천 종목 (주추천 + 예비추천 2개)", "매수", "sys_b", target_date_str, is_latest_date, market_type, holdings_db, top_n_cfg, account_total_input, current_engine_key)
 
             st.markdown("---")
             col_m_left, col_m_right = st.columns(2)
@@ -444,6 +499,8 @@ if df_display is not None:
             st.info(f"""
             📌 **단기 타점 모멘텀 매매 전략 가이드 (15%+ 랠리 타점)**
             * **초기 자본 세팅**: 2,000만 원 (4개 슬롯 분할 / 종목당 500만 원)
+            * **주추천 종목**: 슬롯 개수({top_n_cfg}개)에 맞춰 실시간 선별
+            * **후순위 예비 추천**: 주추천 슬롯이 꽉 찼거나 미체결 시 대체 가능한 **예비 2개 종목** 하단 노란색 표기
             * **매수 타점 조건**: 모멘텀 순위 **Rank 170위 이내**, 이격도 **-5% ~ +7%**, 가중 모멘텀 **+0.9 이상**
             * **목표 익절 (Take Profit)**: **+15% 도달 시 즉시 청산**
             * **손절 한도 (Stop Loss)**: **-5% 도달 시 즉시 손절**
