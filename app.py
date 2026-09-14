@@ -91,24 +91,27 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                     reason_desc = f"추세선 이탈, 손절 임계값 혹은 타임스탑 조건 도달"
                 position_info = ""
             else:
-                rec_rank = int(row.get('매수추천순위', 0)) if pd.notna(row.get('매수추천순위')) else '-'
+                rec_rank = row.get('매수추천순위', '')
+                rec_rank_str = f"{rec_rank}위" if rec_rank != '' else '-'
                 if strategy_engine_mode == "strat3_top7":
-                    reason_desc = f"전략 3 진입 조건 충족 [매수추천순위: {rec_rank}위] (이격도 최소 우선)"
+                    reason_desc = f"전략 3 진입 조건 충족 [추천순위: {rec_rank_str}] (이격도 최소 우선)"
                 elif strategy_engine_mode == "short_term":
-                    reason_desc = f"단기 타점 조건 충족 [매수추천순위: {rec_rank}위] (Rank≤200)"
+                    reason_desc = f"단기 타점 조건 충족 [추천순위: {rec_rank_str}] (Rank≤200)"
                 else:
-                    reason_desc = f"Ultimate 듀얼 모멘텀 조건 충족 [매수추천순위: {rec_rank}위]"
+                    reason_desc = f"Ultimate 듀얼 모멘텀 조건 충족 [추천순위: {rec_rank_str}]"
                 target_pct = (100.0 / top_n_cfg) if top_n_cfg > 0 else 0.0
                 atr_val = row.get('atr', 0.0)
                 position_info = f"<br><span style='font-size: 0.85em; color: #1b5e20; font-weight: bold;'>📊 추천 분산 금액: {fmt_str} (목표 비중 {target_pct:.1f}%) | ATR: {atr_val:,.1f}</span>"
 
             rank_val = int(row.get('순위', 0)) if pd.notna(row.get('순위')) else '-'
-            rec_rank_val = int(row.get('매수추천순위', 0)) if pd.notna(row.get('매수추천순위')) else '-'
+            rec_rank_val = row.get('매수추천순위', '')
+            rec_rank_display = f"{rec_rank_val}위" if rec_rank_val != '' else '-'
+            
             c1.markdown(f"""
             <div style="line-height: 1.6; margin-top: 4px;">
                 <strong style="font-size: 1.1em; color: #111111;">{row['종목명']}</strong> 
                 <span style="font-size: 0.8em; color: #888888; margin-left: 4px;">({ticker})</span>
-                <span style="font-size: 0.8em; color: #1565c0; font-weight: bold; margin-left: 6px;">[순위: {rank_val}위 | 추천순위: {rec_rank_val}위]</span>
+                <span style="font-size: 0.8em; color: #1565c0; font-weight: bold; margin-left: 6px;">[모멘텀순위: {rank_val}위 | 매수추천순위: {rec_rank_display}]</span>
                 <br>
                 <span style="font-size: 0.85em; color: #d62728; font-weight: bold;">
                     📌 사유: {reason_desc}
@@ -154,8 +157,9 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                 c1, c2 = st.columns([4, 1])
                 
                 rank_val = int(row.get('순위', 0)) if pd.notna(row.get('순위')) else '-'
-                rec_rank_val = int(row.get('매수추천순위', 0)) if pd.notna(row.get('매수추천순위')) else '-'
-                reason_desc = f"후순위 조건 충족 [매수추천순위: {rec_rank_val}위] (예비 {backup_idx}순위 대체 종목)"
+                rec_rank_val = row.get('매수추천순위', '')
+                rec_rank_display = f"{rec_rank_val}위" if rec_rank_val != '' else '-'
+                reason_desc = f"후순위 조건 충족 [추천순위: {rec_rank_display}] (예비 {backup_idx}순위 대체 종목)"
                 target_pct = (100.0 / top_n_cfg) if top_n_cfg > 0 else 0.0
                 atr_val = row.get('atr', 0.0)
                 position_info = f"<br><span style='font-size: 0.85em; color: #856404; font-weight: bold;'>📊 예비 분산 금액: {fmt_str} | ATR: {atr_val:,.1f}</span>"
@@ -164,7 +168,7 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                 <div style="line-height: 1.6; margin-top: 4px; background-color: #fffde7; padding: 8px 12px; border-radius: 6px; border-left: 4px solid #fbc02d;">
                     <strong style="font-size: 1.05em; color: #111111;">{row['종목명']}</strong> 
                     <span style="font-size: 0.8em; color: #888888; margin-left: 4px;">({ticker})</span>
-                    <span class="backup-tag">💡 예비 {backup_idx}순위 [순위: {rank_val}위 | 추천순위: {rec_rank_val}위]</span>
+                    <span class="backup-tag">💡 예비 {backup_idx}순위 [모멘텀순위: {rank_val}위 | 매수추천순위: {rec_rank_display}]</span>
                     <br>
                     <span style="font-size: 0.85em; color: #e65100; font-weight: bold;">
                         📌 사유: {reason_desc}
@@ -521,6 +525,10 @@ if df_display is not None:
             * **운용 슬롯**: 최대 **{top_n_cfg}개** 균등 분산 (동적 복리 적용)
             * **레짐 필터**: KOSPI 종가 > MA20 상승장일 때만 매수, 하락 시 전량 현금화
             * **매수 조건**: 모멘텀 순위 **Rank ≤ 15**, RS(90) > 0, RS(10) > 0, 종가 > MA20 (이격도 최소 우선)
+            * **야간/애프터마켓 매수 규칙**:
+                1. **-1% 미만 하락**: 노이즈 구간, 계획대로 100% 체결
+                2. **-1% ~ -2.5% 하락**: 체결 강도 약화, **50% 분할 매수** 후 잔량은 익일 아침 체결
+                3. **-2.5% 초과 급락 / MA20 이탈**: 추세 훼손, **매수 보류(취소)** 후 예비 2~3위 종목 교체
             * **청산 룰**:
                 1. **손절**: 진입가 - 2.5 × ATR
                 2. **트레일링스톱**: 수익 +10% 도달 후 고점 대비 -5% 하락
