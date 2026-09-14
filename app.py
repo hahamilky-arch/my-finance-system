@@ -1,9 +1,11 @@
 import streamlit as st
 import pandas as pd
+from datetime import datetime
 from strategy import get_data
+from db import supabase, get_holdings_table, get_history_table, record_manual_buy, record_manual_sell
 
 st.set_page_config(
-    page_title="모멘텀 매매 시스템 대시보드",
+    page_title="모멘텀 매매 자동화 시스템",
     page_icon="📈",
     layout="wide"
 )
@@ -34,7 +36,7 @@ else:
 market_type = st.sidebar.radio("대상 시장", ["KR", "US"])
 total_capital = st.sidebar.number_input("현재 계좌 총 평가 자산 (원)", value=39682777, step=1000000, format="%d")
 top_n_slots = st.sidebar.number_input("최대 보유 슬롯 수", value=default_slots, min_value=1, max_value=15)
-target_date = st.sidebar.date_input("분석 기준일자")
+target_date = st.sidebar.date_input("분석 기준일자", value=datetime.strptime("2026-09-10", "%Y-%m-%d").date())
 
 # 시뮬레이션 환경 변수
 rebalance_cycle = st.sidebar.selectbox("리밸런싱 주기", ["상시 (빈자리 즉시 채우기)", "매주 수요일"])
@@ -119,10 +121,37 @@ if df_result is not None and not df_result.empty:
 
     st.markdown("---")
 
-    # C. 전체 종목 스크리닝 결과 테이블
+    # C. 현재 보유 포트폴리오 현황판 및 수동 매매 인터페이스
+    st.subheader("💼 현재 보유 포트폴리오 관리")
+    holdings_table_name = get_holdings_table(market_type)
+    try:
+        h_res = supabase.table(holdings_table_name).select("*").is_("sell_date", "null").execute()
+        current_holdings = pd.DataFrame(h_res.data) if h_res.data else pd.DataFrame()
+    except Exception:
+        current_holdings = pd.DataFrame()
+
+    if not current_holdings.empty:
+        st.dataframe(current_holdings, use_container_width=True)
+        
+        # 수동 매도 처리 영역
+        st.markdown("#### 🔄 수동 매도(청산) 처리")
+        sell_ticker = st.selectbox("청산할 종목 선택", current_holdings['ticker'].tolist(), key="manual_sell_select")
+        sell_price_input = st.number_input("실제 청산 가격", value=0.0, step=100.0)
+        if st.button("선택 종목 매도 확정"):
+            if sell_price_input > 0:
+                record_manual_sell(market_type, sell_ticker, target_date.strftime('%Y-%m-%d'), sell_price_input)
+                st.success(f"종목 {sell_ticker} 매도 처리가 완료되었습니다.")
+                st.rerun()
+            else:
+                st.error("올바른 청산 가격을 입력해주세요.")
+    else:
+        st.info("현재 보유 중인 포트폴리오 내역이 없습니다.")
+
+    st.markdown("---")
+
+    # D. 전체 종목 스크리닝 결과 테이블
     st.subheader("📊 전체 유니버스 모멘텀 스크리닝 결과")
     
-    # 필터링 탭 구성
     tab1, tab2, tab3 = st.tabs(["전체 보기", "매수 추천만", "보유/매도 종목"])
     
     with tab1:
