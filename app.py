@@ -72,13 +72,12 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
         target_amount = account_total * ((100.0 / top_n_cfg) / 100.0) if top_n_cfg > 0 else 0.0
         fmt_str = f"${target_amount:,.2f}" if market_type == "US" else f"{target_amount:,.0f}원"
         
-        # 🌟 슬롯 상태 확인 (현재 보유 중인 종목 수가 최대 슬롯에 도달했는지 검사)
         current_holdings_count = len(holdings_df) if not holdings_df.empty else 0
         is_slot_full = current_holdings_count >= top_n_cfg
 
         if button_label == '매수':
             primary_data = data.iloc[:top_n_cfg]
-            # 슬롯 만석 여부와 상관없이 항상 후순위 예비 2개 추출
+            # 슬롯 만석 여부와 무관하게 170위 이내 조건 만족 종목 중 후순위 예비 2개 항상 추출
             backup_data = data.iloc[top_n_cfg:top_n_cfg + 2]
             
             if is_slot_full:
@@ -87,7 +86,7 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
             primary_data = data
             backup_data = pd.DataFrame()
 
-        # 1. 주추천 종목 목록 출력
+        # 1. 주추천 종목 목록
         for _, row in primary_data.iterrows():
             ticker = row['ticker']
             c1, c2 = st.columns([4, 1])
@@ -111,6 +110,7 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
             <div style="line-height: 1.6; margin-top: 4px;">
                 <strong style="font-size: 1.1em; color: #111111;">{row['종목명']}</strong> 
                 <span style="font-size: 0.8em; color: #888888; margin-left: 4px;">({ticker})</span>
+                <span style="font-size: 0.8em; color: #555555; margin-left: 6px;">[순위: {int(row.get('순위', 0)) if pd.notna(row.get('순위')) else '-'}]</span>
                 <br>
                 <span style="font-size: 0.85em; color: #d62728; font-weight: bold;">
                     📌 사유: {reason_desc}
@@ -148,7 +148,7 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
             else:
                 c2.markdown("<div style='color:#999999; font-size:0.85em; margin-top:8px; text-align:right;'>과거일 매매불가</div>", unsafe_allow_html=True)
 
-        # 🌟 2. 슬롯이 꽉 차더라도 항상 후순위 예비 추천 2개 안내
+        # 2. 후순위 예비 추천 2개 노출
         if not backup_data.empty:
             st.markdown("---")
             st.markdown("###### 💡 후순위 예비 추천 종목 (슬롯 만석/미체결 시 교체 매수용)")
@@ -156,7 +156,7 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                 ticker = row['ticker']
                 c1, c2 = st.columns([4, 1])
                 
-                reason_desc = f"후순위 조건 충족 (슬롯 대기/대체용 예비 {backup_idx}순위)"
+                reason_desc = f"후순위 조건 충족 (Rank≤170위 대기/대체용 예비 {backup_idx}순위)"
                 target_pct = (100.0 / top_n_cfg) if top_n_cfg > 0 else 0.0
                 atr_val = row.get('atr', 0.0)
                 position_info = f"<br><span style='font-size: 0.85em; color: #856404; font-weight: bold;'>📊 예비 분산 금액: {fmt_str} | ATR: {atr_val:,.1f}</span>"
@@ -165,7 +165,7 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                 <div style="line-height: 1.6; margin-top: 4px; background-color: #fffde7; padding: 8px 12px; border-radius: 6px; border-left: 4px solid #fbc02d;">
                     <strong style="font-size: 1.05em; color: #111111;">{row['종목명']}</strong> 
                     <span style="font-size: 0.8em; color: #888888; margin-left: 4px;">({ticker})</span>
-                    <span class="backup-tag">💡 예비 {backup_idx}순위</span>
+                    <span class="backup-tag">💡 예비 {backup_idx}순위 (순위: {int(row.get('순위', 0)) if pd.notna(row.get('순위')) else '-'})</span>
                     <br>
                     <span style="font-size: 0.85em; color: #e65100; font-weight: bold;">
                         📌 사유: {reason_desc}
@@ -213,7 +213,6 @@ if 'db_settings_loaded' not in st.session_state:
 with st.sidebar:
     st.markdown("### ⚙️ 알파 매매전략 설정")
     
-    # 전략 엔진 스위칭 옵션
     strategy_engine_mode = st.radio(
         "💡 전략 엔진 선택",
         ["🚀 단기 타점 모멘텀 (15%+ 랠리)", "🌐 Ultimate 듀얼 모멘텀 (추세)"],
@@ -263,7 +262,6 @@ with st.sidebar:
     default_cap = st.session_state.get(cap_key, 6000000.0 if market_type == "US" else 20000000.0)
     account_total_input = st.number_input(f"💰 [{market_type}] 총 운용 자금", value=float(default_cap), step=1000000.0, key=f"cap_input_{market_type}")
 
-    # 리스크 파라미터 표시
     max_risk_per_stock = account_total_input * 0.02
     risk_fmt = f"${max_risk_per_stock:,.2f}" if market_type == "US" else f"{max_risk_per_stock:,.0f}원"
     st.caption(f"🔒 **단일 종목 최대 허용 손실 (2% Rule)**: {risk_fmt}")
@@ -336,7 +334,8 @@ if df_display is not None:
         filter_opt = st.radio("빠른 필터", ["전체보기", "🔴 매수 추천 종목만", "🔵 매도 필요 종목만", "🟢 현재 보유 종목만"], horizontal=True, label_visibility="collapsed")
         
         col_order = ['순위', '변동', '매매상태', '종목명', '이격도', 'MOT', 'RS(90)', 'RS(10)', 'MA20', '제외사유', '종가', '상승금액', '상승률', 'ticker'] 
-        df_target = df_display.head(100)[col_order].copy()
+        # 🌟 100위 제한(head(100)) 제거 -> 전체 필터링 종목 노출
+        df_target = df_display[col_order].copy()
         
         if filter_opt == "🔴 매수 추천 종목만":
             df_target = df_target[df_target['매매상태'] == '매수추천']
@@ -507,7 +506,7 @@ if df_display is not None:
             📌 **단기 타점 모멘텀 매매 전략 가이드 (15%+ 랠리 타점)**
             * **초기 자본 세팅**: 2,000만 원 (4개 슬롯 분할 / 종목당 500만 원)
             * **주추천 종목**: 슬롯 개수({top_n_cfg}개)에 맞춰 실시간 선별
-            * **후순위 예비 추천**: 슬롯 만석 여부와 관계없이 항상 **예비 2개 종목** 노란색 구역으로 표시
+            * **후순위 예비 추천**: 170위 이내 조건 만족 종목 중 **예비 2개 종목** 상시 노출
             * **매수 타점 조건**: 모멘텀 순위 **Rank 170위 이내**, 이격도 **-5% ~ +7%**, 가중 모멘텀 **+0.9 이상**
             * **목표 익절 (Take Profit)**: **+15% 도달 시 즉시 청산**
             * **손절 한도 (Stop Loss)**: **-5% 도달 시 즉시 손절**
@@ -684,14 +683,15 @@ if df_display is not None:
         scroll_to_chart()
         st.session_state['trigger_scroll'] = False 
 
-    top100_tickers = df_display.head(100)['ticker'].tolist()
-    if st.session_state.get('selected_ticker_from_table') and st.session_state['selected_ticker_from_table'] not in top100_tickers:
-        top100_tickers.append(st.session_state['selected_ticker_from_table'])
+    # 170위 전체 선택 목록 지원
+    all_tickers = df_display['ticker'].tolist()
+    if st.session_state.get('selected_ticker_from_table') and st.session_state['selected_ticker_from_table'] not in all_tickers:
+        all_tickers.append(st.session_state['selected_ticker_from_table'])
         
     ticker_name_map = dict(zip(df_display['ticker'], df_display['종목명']))
-    default_ticker = st.session_state.get('selected_ticker_from_table', top100_tickers[0] if top100_tickers else None)
+    default_ticker = st.session_state.get('selected_ticker_from_table', all_tickers[0] if all_tickers else None)
     
-    sel_ticker = st.selectbox("분석할 종목 선택", options=top100_tickers, index=top100_tickers.index(default_ticker) if default_ticker in top100_tickers else 0, format_func=lambda x: ticker_name_map.get(x, x))
+    sel_ticker = st.selectbox("분석할 종목 선택", options=all_tickers, index=all_tickers.index(default_ticker) if default_ticker in all_tickers else 0, format_func=lambda x: ticker_name_map.get(x, x))
     if sel_ticker:
         draw_integrated_chart(sel_ticker, market_type, ticker_name_map)
 else:
