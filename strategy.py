@@ -86,20 +86,15 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_c
                 profit_rate_pos = ((c_price / buy_price) - 1) * 100 if buy_price > 0 else 0.0
 
                 if strategy_engine_mode == "strat3_top7":
-                    # [전략 3 룰]
-                    # 1) 레짐 전환 시 현금화 청산
                     if stop_new_buy or not is_bull_mode:
                         sell_list.add(ticker_upper)
                         continue
-                    # 2) ATR 손절 (진입가 - 2.5 * ATR)
                     if c_price <= (buy_price - 2.5 * entry_atr):
                         sell_list.add(ticker_upper)
                         continue
-                    # 3) 트레일링 스탑 (+10% 달성 후 고점 대비 -5% 하락)
                     if highest_price >= buy_price * 1.10 and c_price <= highest_price * 0.95:
                         sell_list.add(ticker_upper)
                         continue
-                    # 4) MA20 이탈
                     if c_price < ma20:
                         sell_list.add(ticker_upper)
                         continue
@@ -113,16 +108,16 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_c
                         sell_list.add(ticker_upper)
                         continue
 
-    # 4. 슬롯 및 매수 추천 종목 결정
+    # 4. 슬롯 및 매수 추천 종목 결정 (매수추천순위 매핑 포함)
     effective_max_slots = 7 if strategy_engine_mode == "strat3_top7" else (min(top_n_cfg, 3) if reduce_holdings else top_n_cfg)
     slots_available = int(effective_max_slots) - len([t for t in my_holdings_clean if t not in sell_list])
     
-    total_needed = max(0, slots_available) + 2  # 주추천 + 예비추천 2개
+    total_needed = max(0, slots_available) + 2
     buy_list = set()
+    buy_rank_map = {}
     
     if cycle_passed and (not stop_new_buy) and is_bull_mode:
         if strategy_engine_mode == "strat3_top7":
-            # [전략 3 매수 조건]: Rank <= 15, RS(90)>0, RS(10)>0, 종가>MA20
             cond = (
                 (df_final['순위'] <= 15) &
                 (df_final['RS(90)'] > 0) &
@@ -130,7 +125,6 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_c
                 (df_final['MA20'] > 0) &
                 (df_final['종가'] > df_final['MA20'])
             )
-            # 눌림목 이격도가 작은 순 정렬 (전략 3 핵심 매수 순위)
             candidates = df_final[cond].sort_values(by='이격도', ascending=True)
         elif strategy_engine_mode == "strat2_short":
             cond = (df_final['순위'] <= 200) & (df_final['MOT'] >= 0.9) & (df_final['이격도'] >= -5.0) & (df_final['이격도'] <= 7.0)
@@ -139,18 +133,19 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_c
             cond = (df_final['순위'] <= 30) & (df_final['RS(90)'] > 0) & (df_final['MA20'] > 0) & (df_final['종가'] > df_final['MA20'])
             candidates = df_final[cond].sort_values(by='순위', ascending=True)
 
-        for idx, row in candidates.iterrows():
+        for rank_idx, (idx, row) in enumerate(candidates.iterrows(), 1):
             if len(buy_list) >= total_needed: break
             ticker_upper = str(row['ticker']).strip().upper()
             if ticker_upper in my_holdings_clean or (ticker_upper in sold_info and row['종가'] <= sold_info[ticker_upper]): continue
             buy_list.add(ticker_upper)
+            buy_rank_map[ticker_upper] = rank_idx
 
-    # 5. 상태 및 제외 사유 부여
+    # 5. 상태 및 매수추천순위 부여
     def assign_status_and_reason(row):
         t = str(row['ticker']).strip().upper()
-        if t in sell_list: return '매도필요', '레짐전환/트레일링스탑/손절'
-        if t in my_holdings_clean: return '보유중', '기보유'
-        if t in buy_list: return '매수추천', '조건충족'
+        if t in sell_list: return '매도필요', '레짐전환/트레일링스톱/손절', None
+        if t in my_holdings_clean: return '보유중', '기보유', None
+        if t in buy_list: return '매수추천', '조건충족', buy_rank_map.get(t, None)
         
         reasons = []
         if stop_new_buy: reasons.append("시장경보(KOSPI < MA20)")
@@ -162,15 +157,16 @@ def get_data(target_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_c
             if row['RS(90)'] <= 0: reasons.append("RS(90) <= 0")
             if row['RS(10)'] <= 0: reasons.append("RS(10) <= 0")
             if row['MA20'] <= 0 or row['종가'] <= row['MA20']: reasons.append("MA20 하회")
-        elif strategy_engine_mode == "strat2_short":
+        elif strategy_engine_mode == "short_term":
             if row['순위'] > 200: reasons.append("순위 200위 초과")
             if row['MOT'] < 0.9: reasons.append("MOT < 0.9")
             if not (-5.0 <= row['이격도'] <= 7.0): reasons.append("이격도 범위 초과")
             
         if t in sold_info and row['종가'] <= sold_info[t]: reasons.append("매도 쿨다운")
-        return '', ", ".join(reasons) if reasons else "선순위 밀림"
+        return '', ", ".join(reasons) if reasons else "선순위 밀림", None
 
     status_reason = df_final.apply(assign_status_and_reason, axis=1)
     df_final['매매상태'] = [x[0] for x in status_reason]
     df_final['제외사유'] = [x[1] for x in status_reason]
+    df_final['매수추천순위'] = [x[2] for x in status_reason]
     return df_final.sort_values('순위')
