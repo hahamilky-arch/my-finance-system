@@ -101,7 +101,7 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                     reason_desc = f"Ultimate 듀얼 모멘텀 조건 충족 [추천순위: {rec_rank_str}]"
                 target_pct = (100.0 / top_n_cfg) if top_n_cfg > 0 else 0.0
                 atr_val = row.get('atr', 0.0)
-                position_info = f"<br><span style='font-size: 0.85em; color: #1b5e20; font-weight: bold;'>📊 추천 분산 금액: {fmt_str} (목표 비중 {target_pct:.1f}%) | ATR: {atr_val:,.1f}</span>"
+                position_info = f"<br><span style='font-size: 0.85em; color: #1b5e20; font-weight: bold;'>📊 추천 분산 금액: {fmt_str} (목표 비중 {target_pct:.1f}%) | ATR: {atr_val:,.2f if market_type=='US' else atr_val:,.0f}</span>"
 
             rank_val = int(row.get('순위', 0)) if pd.notna(row.get('순위')) else '-'
             rec_rank_val = row.get('매수추천순위', '')
@@ -130,15 +130,15 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                     p_key, q_key, acc_key = f"p_{key_prefix}_{ticker}", f"q_{key_prefix}_{ticker}", f"acc_{key_prefix}_{ticker}"
                     input_price = st.number_input(f"{button_label}가", value=float(row['종가']), key=p_key)
                     if button_label == '매수':
-                        st.number_input("운용계좌 총액", value=account_total, step=1000000.0, key=acc_key)
+                        st.number_input("운용계좌 총액", value=account_total, step=100.0 if market_type=="US" else 1000000.0, key=acc_key)
                         calc_qty = max(1.0, (target_amount / input_price) if input_price > 0 else 1.0)
                         
                         atr_v = float(row.get('atr', 0.0))
                         if atr_v > 0 and input_price > 0:
                             atr_suggest_qty = max(1.0, float(int((account_total * 0.02) / (2 * atr_v))))
-                            st.caption(f"💡 자금관리(ATR 변동성) 추천 수량: {atr_suggest_qty:,.0f}주")
+                            st.caption(f"💡 자금관리(ATR 변동성) 추천 수량: {atr_suggest_qty:,.2f if market_type=='US' else atr_suggest_qty:,.0f}주")
                             
-                        input_qty = st.number_input("매수수량", value=float(int(calc_qty)) if market_type=="KR" else calc_qty, min_value=0.0, key=q_key)
+                        input_qty = st.number_input("매수수량", value=calc_qty if market_type=="US" else float(int(calc_qty)), min_value=0.0, key=q_key)
                     else:
                         matched_h = holdings_df[holdings_df['ticker'].str.strip().str.upper() == ticker]
                         def_qty = float(matched_h.iloc[0].get('quantity', 1.0)) if not matched_h.empty else 1.0
@@ -162,7 +162,7 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                 reason_desc = f"후순위 조건 충족 [추천순위: {rec_rank_display}] (예비 {backup_idx}순위 대체 종목)"
                 target_pct = (100.0 / top_n_cfg) if top_n_cfg > 0 else 0.0
                 atr_val = row.get('atr', 0.0)
-                position_info = f"<br><span style='font-size: 0.85em; color: #856404; font-weight: bold;'>📊 예비 분산 금액: {fmt_str} | ATR: {atr_val:,.1f}</span>"
+                position_info = f"<br><span style='font-size: 0.85em; color: #856404; font-weight: bold;'>📊 예비 분산 금액: {fmt_str} | ATR: {atr_val:,.2f if market_type=='US' else atr_val:,.0f}</span>"
 
                 c1.markdown(f"""
                 <div style="line-height: 1.6; margin-top: 4px; background-color: #fffde7; padding: 8px 12px; border-radius: 6px; border-left: 4px solid #fbc02d;">
@@ -186,9 +186,9 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                         st.write(f"**[예비 {backup_idx}순위] {row['종목명']}**")
                         p_key, q_key, acc_key = f"p_bk_{key_prefix}_{ticker}", f"q_bk_{key_prefix}_{ticker}", f"acc_bk_{key_prefix}_{ticker}"
                         input_price = st.number_input(f"매수가", value=float(row['종가']), key=p_key)
-                        st.number_input("운용계좌 총액", value=account_total, step=1000000.0, key=acc_key)
+                        st.number_input("운용계좌 총액", value=account_total, step=100.0 if market_type=="US" else 1000000.0, key=acc_key)
                         calc_qty = max(1.0, (target_amount / input_price) if input_price > 0 else 1.0)
-                        input_qty = st.number_input("매수수량", value=float(int(calc_qty)) if market_type=="KR" else calc_qty, min_value=0.0, key=q_key)
+                        input_qty = st.number_input("매수수량", value=calc_qty if market_type=="US" else float(int(calc_qty)), min_value=0.0, key=q_key)
                             
                         if st.button("예비 매수 실행", key=f"btn_bk_{key_prefix}_{ticker}"):
                             update_holdings(ticker, 'BUY', input_price, target_date, input_qty, market_type)
@@ -204,7 +204,7 @@ if 'db_settings_loaded' not in st.session_state:
         if res.data:
             db_cfg = res.data[0]
             st.session_state['kr_capital'] = float(db_cfg.get('kr_capital', 20000000.0))
-            st.session_state['us_capital'] = float(db_cfg.get('us_capital', 6000000.0))
+            st.session_state['us_capital'] = float(db_cfg.get('us_capital', 6000.0))
             st.session_state['bull_top_n'] = int(db_cfg.get('bull_top_n', 7))
             st.session_state['bull_sl'] = float(db_cfg.get('bull_sl', -5.0))
             st.session_state['bear_top_n'] = int(db_cfg.get('bear_top_n', 4)) 
@@ -274,46 +274,11 @@ with st.sidebar:
         st.warning("⚠️ MA20 3일 연속 하회 감지: 신규 매수 중지")
     elif reduce_holdings:
         st.warning("⚠️ MA20 하회 감지: 보유 종목 비중 축소")
-    
-    st.divider()
 
-    st.markdown("### 💰 운용 자금 관리 및 DB 수정")
-    cap_key = "us_capital" if market_type == "US" else "kr_capital"
-    default_cap = st.session_state.get(cap_key, 6000000.0 if market_type == "US" else 20000000.0)
-    
-    account_total_input = st.number_input(
-        f"[{market_type}] 총 운용 자금 설정", 
-        value=float(default_cap), 
-        step=1000000.0 if market_type == "KR" else 100.0, 
-        key=f"cap_input_{market_type}"
-    )
-
-    max_risk_per_stock = account_total_input * 0.02
-    risk_fmt = f"${max_risk_per_stock:,.2f}" if market_type == "US" else f"{max_risk_per_stock:,.0f}원"
-    st.caption(f"🔒 **단일 종목 최대 허용 손실 (2% Rule)**: {risk_fmt}")
-
-    # 비밀번호 확인을 통한 운용자금 전용 DB 저장 폼
-    with st.expander("🔑 운용자금 변경 (비밀번호 인증 필요)", expanded=False):
-        cap_pwd = st.text_input("매매 비밀번호 입력", type="password", key=f"pwd_cap_{market_type}")
-        if st.button("운용자금 변경 저장", use_container_width=True, type="primary"):
-            if cap_pwd == st.secrets.get("TRADE_PASSWORD", "1234"):
-                st.session_state[cap_key] = account_total_input
-                
-                # DB 업데이트 준비 (운용자금만 세팅 변경)
-                try:
-                    res_existing = supabase.table("strategy_settings").select("*").eq("id", 1).execute()
-                    existing_data = res_existing.data[0] if res_existing.data else {}
-                    
-                    existing_data["id"] = 1
-                    existing_data[cap_key] = float(account_total_input)
-                    existing_data["strategy_engine_mode"] = current_engine_key
-                    
-                    supabase.table("strategy_settings").upsert(existing_data).execute()
-                    st.success(f"✅ [{market_type}] 운용자금이 {account_total_input:,.0f}으로 성공적으로 변경되었습니다.")
-                except Exception as e:
-                    st.error(f"❌ DB 저장 실패: {e}")
-            else:
-                st.error("❌ 비밀번호가 일치하지 않습니다.")
+# 현재 설정된 운용 자금 세팅 (KR 정수 콤마, US 소수점2자리 콤마)
+cap_key = "us_capital" if market_type == "US" else "kr_capital"
+default_cap = st.session_state.get(cap_key, 6000.0 if market_type == "US" else 20000000.0)
+account_total_input = float(default_cap)
 
 df_display = get_data(selected_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_cycle, is_bull, stop_new_buy, reduce_holdings, strategy_engine_mode=current_engine_key)
 
@@ -352,12 +317,16 @@ if df_display is not None:
         if df_target.empty:
             st.info("해당되는 종목이 없습니다.")
         else:
+            fmt_dict = {
+                '이격도': lambda x: f"{x:+.2f}%" if x != 0 else "-", 
+                'MOT': '{:.2f}', 'RS(90)': '{:.2f}', 'RS(10)': '{:.2f}',
+                'MA20': '{:,.2f}' if market_type=='US' else '{:,.0f}',
+                '종가': '{:,.2f}' if market_type=='US' else '{:,.0f}',
+                '상승금액': '{:+,.2f}' if market_type=='US' else '{:+,.0f}',
+                '상승률': '{:+.2f}%'
+            }
             event = st.dataframe(
-                df_target.style.apply(apply_styles, axis=None).format({
-                    '이격도': lambda x: f"{x:+.2f}%" if x != 0 else "-", 
-                    'MOT': '{:.2f}', 'RS(90)': '{:.2f}', 'RS(10)': '{:.2f}',
-                    '종가': '{:,.2f}', 'MA20': '{:,.2f}', '상승금액': '{:+,.2f}', '상승률': '{:+.2f}%'
-                }), 
+                df_target.style.apply(apply_styles, axis=None).format(fmt_dict), 
                 hide_index=True, use_container_width=True, on_select="rerun", selection_mode="single-row"
             )
             if event and event.get("selection", {}).get("rows"):
@@ -365,10 +334,10 @@ if df_display is not None:
                 st.session_state['trigger_scroll'] = True
 
     with tab4:
-        st.markdown("##### 📋 시스템 매매 지시서")
+        st.markdown("##### 🚀 시스템 매매 지시서 & 알파 시그널 자금 설정")
         
         if not st.session_state.get('trade_authenticated', False):
-            st.info("🔒 실제 매매 신호 및 보유 종목 확인을 위해 비밀번호를 입력해 주십시오.")
+            st.info("🔒 실제 매매 신호 및 운용자금 설정을 위해 비밀번호를 입력해 주십시오.")
             col_pwd1, col_pwd2 = st.columns([3, 1])
             with col_pwd1:
                 input_pwd_4 = st.text_input("매매 비밀번호", type="password", key="pwd_tab4", label_visibility="collapsed")
@@ -386,6 +355,43 @@ if df_display is not None:
                     st.session_state['trade_authenticated'] = False
                     st.rerun()
 
+            # 알파 시그널 탭 내부로 이동된 운용 자금 변경 및 DB 저장 폼
+            with st.expander(f"💰 [{market_type}] 총 운용 자금 설정 / DB 저장", expanded=True):
+                col_cap1, col_cap2 = st.columns([3, 1])
+                with col_cap1:
+                    new_capital_input = st.number_input(
+                        f"[{market_type}] 총 운용 자금 설정", 
+                        value=account_total_input, 
+                        step=100.0 if market_type == "US" else 1000000.0,
+                        format="%.2f" if market_type == "US" else "%.0f",
+                        key=f"tab4_cap_input_{market_type}"
+                    )
+                with col_cap2:
+                    st.write("")
+                    st.write("")
+                    if st.button("운용 자금 저장", key=f"btn_save_cap_{market_type}", use_container_width=True, type="primary"):
+                        st.session_state[cap_key] = new_capital_input
+                        try:
+                            res_existing = supabase.table("strategy_settings").select("*").eq("id", 1).execute()
+                            existing_data = res_existing.data[0] if res_existing.data else {}
+                            
+                            existing_data["id"] = 1
+                            existing_data[cap_key] = float(new_capital_input)
+                            existing_data["strategy_engine_mode"] = current_engine_key
+                            
+                            supabase.table("strategy_settings").upsert(existing_data).execute()
+                            cap_disp = f"${new_capital_input:,.2f}" if market_type == "US" else f"{new_capital_input:,.0f}원"
+                            st.success(f"✅ [{market_type}] 총 운용자금이 {cap_disp}으로 성공적으로 업데이트되었습니다.")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"❌ DB 저장 실패: {e}")
+
+                max_risk_per_stock = new_capital_input * 0.02
+                risk_fmt = f"${max_risk_per_stock:,.2f}" if market_type == "US" else f"{max_risk_per_stock:,.0f}원"
+                st.caption(f"🔒 **단일 종목 최대 허용 손실 (2% Rule)**: {risk_fmt}")
+                account_total_input = new_capital_input
+
+            st.write("")
             current_table_name = get_holdings_table(market_type)
             try:
                 holdings_res = supabase.table(current_table_name).select("*").is_("sell_date", "null").execute()
@@ -463,10 +469,12 @@ if df_display is not None:
                     
                     df_h = df_h[['종목명', '종목코드', '수량', '평단가', '현재가', '수익률(%)', '비중(%)', '평가금액', '상태']]
                     
+                    price_fmt_str = '{:,.2f}' if market_type == "US" else '{:,.0f}'
                     st.dataframe(
                         df_h.style.format({
-                            '수량': '{:,.2f}', '평단가': '{:,.2f}', '현재가': '{:,.2f}',
-                            '수익률(%)': '{:+.2f}%', '비중(%)': '{:.1f}%', '평가금액': '{:,.2f}'
+                            '수량': '{:,.2f}' if market_type == "US" else '{:,.0f}', 
+                            '평단가': price_fmt_str, '현재가': price_fmt_str,
+                            '수익률(%)': '{:+.2f}%', '비중(%)': '{:.1f}%', '평가금액': price_fmt_str
                         }).map(lambda x: 'color: red; font-weight: bold;' if x == '🚨 손절 이탈' else '', subset=['상태'])
                           .map(lambda x: 'color: red;' if float(x) > 0 else 'color: blue;', subset=['수익률(%)']),
                         hide_index=True, use_container_width=True
@@ -484,8 +492,8 @@ if df_display is not None:
                 with st.container(border=True):
                     m_ticker = st.text_input("종목코드 (Ticker)", key="m_ticker").strip().upper()
                     c1, c2 = st.columns(2)
-                    m_price = c1.number_input("매수가", min_value=0.0, value=0.0, step=100.0, key="m_price")
-                    m_qty = c2.number_input("매수 수량", min_value=0.0, value=1.0, step=1.0, format="%.6f", key="m_qty")
+                    m_price = c1.number_input("매수가", min_value=0.0, value=0.0, step=0.01 if market_type=="US" else 100.0, format="%.2f" if market_type=="US" else "%.0f", key="m_price")
+                    m_qty = c2.number_input("매수 수량", min_value=0.0, value=1.0, step=0.01 if market_type=="US" else 1.0, format="%.2f" if market_type=="US" else "%.0f", key="m_qty")
                     m_date = st.date_input("매수일", value=selected_date, key="m_date")
                     if st.button("수동 매수 실행", use_container_width=True, type="primary"):
                         if m_ticker and m_price > 0 and m_qty > 0:
@@ -497,8 +505,8 @@ if df_display is not None:
                 with st.container(border=True):
                     ms_ticker = st.text_input("매도 종목코드", key="ms_ticker").strip().upper()
                     c1, c2 = st.columns(2)
-                    ms_price = c1.number_input("매도가", min_value=0.0, value=0.0, step=100.0, key="ms_price")
-                    ms_qty = c2.number_input("매도 수량", min_value=0.0, value=1.0, step=1.0, format="%.6f", key="ms_qty")
+                    ms_price = c1.number_input("매도가", min_value=0.0, value=0.0, step=0.01 if market_type=="US" else 100.0, format="%.2f" if market_type=="US" else "%.0f", key="ms_price")
+                    ms_qty = c2.number_input("매도 수량", min_value=0.0, value=1.0, step=0.01 if market_type=="US" else 1.0, format="%.2f" if market_type=="US" else "%.0f", key="ms_qty")
                     ms_date = st.date_input("매도일", value=selected_date, key="ms_date")
                     if st.button("수동 매도 실행", use_container_width=True, type="secondary"):
                         if ms_ticker and ms_price > 0 and ms_qty > 0:
@@ -692,7 +700,8 @@ if df_display is not None:
                     
                     st.dataframe(
                         df_hist_sorted[disp_cols].style.format({
-                            'buy_price': price_fmt, 'sell_price': price_fmt, 'quantity': '{:,.2f}',
+                            'buy_price': price_fmt, 'sell_price': price_fmt, 
+                            'quantity': '{:,.2f}' if market_type=="US" else '{:,.0f}',
                             'profit_amount': profit_fmt, 'profit_rate': '{:+.2f}%', '보유일수': '{:.0f}일'
                         }), hide_index=True, use_container_width=True
                     )
