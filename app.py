@@ -55,6 +55,7 @@ def analyze_stock_with_gemini(ticker, stock_name, row_data):
         return "⚠️ 오늘 사용할 수 있는 Gemini API 호출 한도를 모두 소진했습니다."
 
     model = genai.GenerativeModel('gemini-3.5-flash')
+
     
     prompt = f"""
     당신은 퀀트 및 주식 펀더멘털 분석 전문가입니다.
