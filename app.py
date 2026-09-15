@@ -1,10 +1,10 @@
 import streamlit as st
 import pandas as pd
 import streamlit.components.v1 as components
-import google.generativeai as genai
 from db import supabase, get_holdings_table, update_holdings, get_market_regime, get_available_dates
 from strategy import get_data
 from charts import draw_integrated_chart, draw_attribution_charts
+from gemini_analyzer import analyze_stock_with_gemini, get_remaining_quota, MAX_DAILY_QUOTA
 
 st.set_page_config(layout="wide")
 
@@ -29,62 +29,6 @@ st.markdown("""
     <a href="#top-section" class="floating-btn-left"><span>⬆️</span> <span>위로</span></a>
 """, unsafe_allow_html=True)
 
-# -----------------------------------------------------------------------------
-# Google Gemini API 연동 및 사용량 관리 설정
-# -----------------------------------------------------------------------------
-GEMINI_KEY = st.secrets.get("GEMINI_API_KEY", "")
-if GEMINI_KEY:
-    genai.configure(api_key=GEMINI_KEY)
-
-MAX_DAILY_QUOTA = 250  # Gemini 2.5 Flash Free Tier 일일 호출 제한 기준
-
-if 'gemini_api_count' not in st.session_state:
-    st.session_state['gemini_api_count'] = 0
-
-def get_remaining_quota():
-    used = st.session_state['gemini_api_count']
-    remaining = max(0, MAX_DAILY_QUOTA - used)
-    return used, remaining
-
-def analyze_stock_with_gemini(ticker, stock_name, row_data):
-    if not GEMINI_KEY:
-        return "❌ `secrets.toml` 또는 Streamlit Cloud Secrets에 `GEMINI_API_KEY`가 설정되지 않았습니다."
-    
-    used, remaining = get_remaining_quota()
-    if remaining <= 0:
-        return "⚠️ 오늘 사용할 수 있는 Gemini API 호출 한도를 모두 소진했습니다."
-
-    model = genai.GenerativeModel('gemini-3.5-flash')
-
-    
-    prompt = f"""
-    당신은 퀀트 및 주식 펀더멘털 분석 전문가입니다.
-    아래 제공된 종목 정보와 지표 수치를 바탕으로 {stock_name}({ticker})의 기본적 분석(Fundamental Analysis) 요약을 간결하고 명확하게 작성해 주세요.
-
-    [종목 정보]
-    - 종목명: {stock_name} ({ticker})
-    - 현재 종가: {row_data.get('종가', '-')}
-    - 모멘텀 점수(MOT): {row_data.get('MOT', '-')}
-    - 상대강도 RS(90): {row_data.get('RS(90)', '-')}
-    - 20일 이격도: {row_data.get('이격도', '-')}
-    - ATR 변동성: {row_data.get('atr', '-')}
-
-    [요청 사항]
-    1. 해당 기업의 주요 사업 영역 및 최근 기업 모멘텀
-    2. 기술적/퀀트 지표(MOT, RS)와 연계된 펀더멘털 강점 및 리스크 요인
-    3. 투자 시 주의 깊게 관찰해야 할 관전 포인트 3가지 요약
-    """
-
-    try:
-        response = model.generate_content(prompt)
-        st.session_state['gemini_api_count'] += 1
-        return response.text
-    except Exception as e:
-        return f"❌ Gemini API 분석 요청 중 오류가 발생했습니다: {e}"
-
-# -----------------------------------------------------------------------------
-# 헬퍼 함수
-# -----------------------------------------------------------------------------
 def scroll_to_chart():
     components.html("<script>setTimeout(function(){const el=window.parent.document.getElementById('chart-section');if(el)el.scrollIntoView({behavior:'smooth'});},100);</script>", height=0)
 
@@ -240,9 +184,6 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                 else:
                     c2.markdown("<div style='color:#999999; font-size:0.85em; margin-top:8px; text-align:right;'>과거일 매매불가</div>", unsafe_allow_html=True)
 
-# -----------------------------------------------------------------------------
-# 대시보드 메인 레이아웃
-# -----------------------------------------------------------------------------
 st.markdown("##### 📈 Quant Alpha Strategy")
 
 if 'db_settings_loaded' not in st.session_state:
@@ -553,38 +494,6 @@ if df_display is not None:
             display_trade_list(df_rebal[df_rebal['매매상태'] == '매도필요'], "시스템 매도 필요 종목", "매도", "sys_s", target_date_str, is_latest_date, market_type, holdings_db, top_n_cfg, account_total_input, current_engine_key)
             display_trade_list(df_rebal[df_rebal['매매상태'] == '매수추천'], "시스템 매수 추천 종목 (주추천 + 예비추천 2개)", "매수", "sys_b", target_date_str, is_latest_date, market_type, holdings_db, top_n_cfg, account_total_input, current_engine_key)
 
-            # -----------------------------------------------------------------
-            # Google Gemini AI 종목 분석 섹션 추가
-            # -----------------------------------------------------------------
-            st.markdown("---")
-            with st.expander("🤖 Google Gemini AI 종목 기본적 분석", expanded=True):
-                used_cnt, remain_cnt = get_remaining_quota()
-                col_g1, col_g2 = st.columns([3, 1])
-                with col_g1:
-                    st.caption("선택한 종목의 정량 지표와 사업 펀더멘털을 AI로 실시간 분석합니다.")
-                with col_g2:
-                    st.metric("Gemini 잔여 사용량", f"{remain_cnt}/{MAX_DAILY_QUOTA}회")
-
-                ticker_options = df_display['ticker'].tolist()
-                name_dict = dict(zip(df_display['ticker'], df_display['종목명']))
-                
-                selected_ai_ticker = st.selectbox(
-                    "분석 대상 종목 선택",
-                    options=ticker_options,
-                    format_func=lambda x: f"[{x}] {name_dict.get(x, x)}",
-                    key="ai_stock_select"
-                )
-
-                if st.button("✨ Gemini 기본적 분석 요청", type="primary", use_container_width=True, key="btn_run_gemini"):
-                    target_row = df_display[df_display['ticker'] == selected_ai_ticker].iloc[0]
-                    target_name = target_row['종목명']
-                    
-                    with st.spinner(f"🤖 '{target_name}({selected_ai_ticker})' 분석 진행 중..."):
-                        ai_result = analyze_stock_with_gemini(selected_ai_ticker, target_name, target_row)
-                    
-                    st.success("✅ 분석 완료")
-                    st.markdown(ai_result)
-
             st.markdown("---")
             col_m_left, col_m_right = st.columns(2)
             with col_m_left:
@@ -613,6 +522,47 @@ if df_display is not None:
                             update_holdings(ms_ticker, 'SELL', ms_price, ms_date, ms_qty, market_type)
                         else:
                             st.warning("종목코드, 매도가, 수량을 확인하세요.")
+
+            # gemini_analyzer 모듈 분리 적용 파트
+            st.markdown("---")
+            st.markdown("##### 🤖 Google Gemini AI 종목 분석")
+
+            used_cnt, remain_cnt = get_remaining_quota()
+            col_q1, col_q2 = st.columns([3, 1])
+            with col_q1:
+                st.caption("선택한 종목의 수치 지표와 분석 옵션에 따라 AI가 맞춤 리포트를 생성합니다.")
+            with col_q2:
+                st.metric("Gemini 잔여 사용량", f"{remain_cnt}/{MAX_DAILY_QUOTA}회")
+
+            col_sel1, col_sel2 = st.columns([1, 1])
+            with col_sel1:
+                selected_target_ticker = st.selectbox(
+                    "분석할 종목 선택", 
+                    options=df_display['ticker'].tolist(),
+                    format_func=lambda x: f"[{x}] {dict(zip(df_display['ticker'], df_display['종목명'])).get(x, x)}"
+                )
+
+            with col_sel2:
+                analysis_option = st.selectbox(
+                    "분석 요청할 항목 선택",
+                    [
+                        "📋 종합 기본적 분석",
+                        "🏢 사업 구조 및 수익 모델",
+                        "📊 퀀트 지표 기반 밸류에이션",
+                        "⚠️ 주요 리스크 및 억제 요인",
+                        "🎯 단기/중기 매매 시나리오"
+                    ]
+                )
+
+            if st.button("✨ Gemini 분석 실행", type="primary", use_container_width=True):
+                target_row = df_display[df_display['ticker'] == selected_target_ticker].iloc[0]
+                stock_nm = target_row['종목명']
+                
+                with st.spinner(f"🤖 '{stock_nm}' 종목의 [{analysis_option}] 분석을 진행 중입니다..."):
+                    analysis_result = analyze_stock_with_gemini(selected_target_ticker, stock_nm, target_row, analysis_option)
+                    
+                st.success("✅ 분석 완료")
+                st.markdown(analysis_result)
 
         if current_engine_key == "strat3_top7":
             st.info(f"""
