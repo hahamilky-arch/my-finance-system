@@ -25,7 +25,7 @@ st.markdown("""
         padding: 2px 8px; border-radius: 10px; border: 1px solid #ffeeba; margin-left: 6px;
     }
     </style>
-    <a href="#top-section" class="floating-btn-left"><span>⬆️</span> <span>상단 표로 이동</span></a>
+    <a href="#top-section" class="floating-btn-left"><span>⬆️</span> <span>위로</span></a>
 """, unsafe_allow_html=True)
 
 def scroll_to_chart():
@@ -219,8 +219,8 @@ with st.sidebar:
     strategy_engine_mode = st.radio(
         "💡 전략 엔진 선택",
         [
-            "🔥 전략 3: Top 7 레짐+ATR (누적 +98.4%)",
-            "🚀 단기 타점 모멘텀 (15%+ 랠리)", 
+            "🔥 전략 3: Top 7 레짐+ATR (KR)",
+            "🚀 단기 타점 모멘텀 (15%+ 랠리 / US)", 
             "🌐 Ultimate 듀얼 모멘텀 (추세)"
         ],
         index=0 if st.session_state.get('strategy_engine_mode', 'strat3_top7') == 'strat3_top7' else (1 if st.session_state.get('strategy_engine_mode') == 'short_term' else 2)
