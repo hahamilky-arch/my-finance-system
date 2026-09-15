@@ -8,11 +8,10 @@ if GEMINI_KEY:
 
 MAX_DAILY_QUOTA = 250
 
-if 'gemini_api_count' not in st.session_state:
-    st.session_state['gemini_api_count'] = 0
-
 def get_remaining_quota():
-    """Gemini API 일일 잔여 사용량 계산"""
+    """Gemini API 일일 잔여 사용량 계산 (KeyError 방지 안전 초기화)"""
+    if 'gemini_api_count' not in st.session_state:
+        st.session_state['gemini_api_count'] = 0
     used = st.session_state['gemini_api_count']
     remaining = max(0, MAX_DAILY_QUOTA - used)
     return used, remaining
