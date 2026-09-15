@@ -25,7 +25,7 @@ st.markdown("""
         padding: 2px 8px; border-radius: 10px; border: 1px solid #ffeeba; margin-left: 6px;
     }
     </style>
-    <a href="#top-section" class="floating-btn-left"><span>⬆️</span> <span>위로</span></a>
+    <a href="#top-section" class="floating-btn-left"><span>⬆️</span> <span>상단 표로 이동</span></a>
 """, unsafe_allow_html=True)
 
 def scroll_to_chart():
@@ -197,17 +197,18 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
 
 st.markdown("##### 📈 Hybrid Dual Alpha Dashboard")
 
+# DB 초기 설정 로드
 if 'db_settings_loaded' not in st.session_state:
     try:
         res = supabase.table("strategy_settings").select("*").eq("id", 1).execute()
         if res.data:
             db_cfg = res.data[0]
+            st.session_state['kr_capital'] = float(db_cfg.get('kr_capital', 20000000.0))
+            st.session_state['us_capital'] = float(db_cfg.get('us_capital', 6000000.0))
             st.session_state['bull_top_n'] = int(db_cfg.get('bull_top_n', 7))
             st.session_state['bull_sl'] = float(db_cfg.get('bull_sl', -5.0))
             st.session_state['bear_top_n'] = int(db_cfg.get('bear_top_n', 4)) 
             st.session_state['bear_sl'] = float(db_cfg.get('bear_sl', -5.0))
-            st.session_state['kr_capital'] = float(db_cfg.get('kr_capital', 20000000.0))
-            st.session_state['us_capital'] = float(db_cfg.get('us_capital', 6000000.0))
             st.session_state['strategy_engine_mode'] = db_cfg.get('strategy_engine_mode', 'strat3_top7')
     except Exception:
         pass
@@ -219,8 +220,8 @@ with st.sidebar:
     strategy_engine_mode = st.radio(
         "💡 전략 엔진 선택",
         [
-            "🔥 전략 3: Top 7 레짐+ATR (KR)",
-            "🚀 단기 타점 모멘텀 (15%+ 랠리 / US)", 
+            "🔥 전략 3: Top 7 레짐+ATR (누적 +98.4%)",
+            "🚀 단기 타점 모멘텀 (15%+ 랠리)", 
             "🌐 Ultimate 듀얼 모멘텀 (추세)"
         ],
         index=0 if st.session_state.get('strategy_engine_mode', 'strat3_top7') == 'strat3_top7' else (1 if st.session_state.get('strategy_engine_mode') == 'short_term' else 2)
@@ -249,24 +250,24 @@ with st.sidebar:
 
     if current_engine_key == "strat3_top7":
         st.success("🔥 전략 3 모드: Top 7 / Rank≤15 / ATR 2.5x손절 / 트레일링스톱")
-        top_n_cfg = st.number_input("편입 종목 수 (슬롯)", value=7, min_value=1, max_value=15)
-        sl_cfg = st.number_input("손절 임계값 (ATR 기준)", value=-2.5)
+        top_n_cfg = 7
+        sl_cfg = -2.5
         rank_exit_limit = 15
     elif current_engine_key == "short_term":
         st.info("🚀 단기 타점 모드: 상위 200위 / 15% 목표익절 / -5% 손절 / 14일 타임컷")
-        top_n_cfg = st.number_input("편입 종목 수 (슬롯)", value=st.session_state.get('bull_top_n', 4), min_value=1, max_value=15)
-        sl_cfg = st.number_input("고정 손절 임계값 (%)", value=st.session_state.get('bull_sl', -5.0))
+        top_n_cfg = st.session_state.get('bull_top_n', 4)
+        sl_cfg = st.session_state.get('bull_sl', -5.0)
         rank_exit_limit = 200
     else:
         if is_bull:
             st.success("🟢 상승장 모드 (Bull Market)")
-            top_n_cfg = st.number_input("편입 종목 수", value=st.session_state.get('bull_top_n', 5), min_value=1, max_value=15)
-            sl_cfg = st.number_input("손절 임계값 (%)", value=st.session_state.get('bull_sl', -10.0))
+            top_n_cfg = st.session_state.get('bull_top_n', 5)
+            sl_cfg = st.session_state.get('bull_sl', -10.0)
             rank_exit_limit = 60
         else:
             st.error("🔴 하락장 모드 (Bear Market)")
-            top_n_cfg = st.number_input("편입 종목 수", value=st.session_state.get('bear_top_n', 3), min_value=1, max_value=15)
-            sl_cfg = st.number_input("손절 임계값 (%)", value=st.session_state.get('bear_sl', -6.0))
+            top_n_cfg = st.session_state.get('bear_top_n', 3)
+            sl_cfg = st.session_state.get('bear_sl', -6.0)
             rank_exit_limit = 30
 
     if stop_new_buy: 
@@ -276,57 +277,43 @@ with st.sidebar:
     
     st.divider()
 
-    st.markdown("### 🛡️ 리스크 및 자금 관리")
+    st.markdown("### 💰 운용 자금 관리 및 DB 수정")
     cap_key = "us_capital" if market_type == "US" else "kr_capital"
     default_cap = st.session_state.get(cap_key, 6000000.0 if market_type == "US" else 20000000.0)
-    account_total_input = st.number_input(f"💰 [{market_type}] 총 운용 자금", value=float(default_cap), step=1000000.0, key=f"cap_input_{market_type}")
+    
+    account_total_input = st.number_input(
+        f"[{market_type}] 총 운용 자금 설정", 
+        value=float(default_cap), 
+        step=1000000.0 if market_type == "KR" else 100.0, 
+        key=f"cap_input_{market_type}"
+    )
 
     max_risk_per_stock = account_total_input * 0.02
     risk_fmt = f"${max_risk_per_stock:,.2f}" if market_type == "US" else f"{max_risk_per_stock:,.0f}원"
     st.caption(f"🔒 **단일 종목 최대 허용 손실 (2% Rule)**: {risk_fmt}")
 
-    with st.expander("💾 설정값 DB 저장 / 초기화", expanded=False):
-        config_pwd = st.text_input("매매 비밀번호 입력", type="password", key="pwd_config")
-        col_btn1, col_btn2 = st.columns(2)
-        with col_btn1:
-            if st.button("설정 저장", use_container_width=True):
-                if config_pwd == st.secrets.get("TRADE_PASSWORD", "1234"):
-                    st.session_state[cap_key] = account_total_input
-                    st.session_state['bull_top_n'] = top_n_cfg
-                    st.session_state['bull_sl'] = sl_cfg
-                    settings_data = {
-                        "id": 1,
-                        "bull_top_n": int(top_n_cfg),
-                        "bull_sl": float(sl_cfg),
-                        "bear_top_n": int(st.session_state.get('bear_top_n', 3)),
-                        "bear_sl": float(st.session_state.get('bear_sl', -6.0)),
-                        "kr_capital": float(st.session_state.get('kr_capital', 20000000.0)),
-                        "us_capital": float(st.session_state.get('us_capital', 6000000.0)),
-                        "strategy_engine_mode": current_engine_key
-                    }
-                    try:
-                        supabase.table("strategy_settings").upsert(settings_data).execute()
-                        st.success("✅ 전략 및 설정이 DB에 저장되었습니다.")
-                    except Exception as e:
-                        st.error(f"❌ DB 저장 실패: {e}")
-                else:
-                    st.error("❌ 비밀번호 불일치")
-        with col_btn2:
-            if st.button("🔄 기본값 초기화", use_container_width=True):
-                if config_pwd == st.secrets.get("TRADE_PASSWORD", "1234"):
-                    default_settings = {
-                        "id": 1, "bull_top_n": 7, "bull_sl": -5.0, "bear_top_n": 3, "bear_sl": -6.0,
-                        "kr_capital": 20000000.0, "us_capital": 6000000.0, "strategy_engine_mode": "strat3_top7"
-                    }
-                    try:
-                        supabase.table("strategy_settings").upsert(default_settings).execute()
-                        st.session_state.update(default_settings)
-                        st.success("✅ 설정 초기화 완료")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"❌ 초기화 오류: {e}")
-                else:
-                    st.error("❌ 비밀번호 불일치")
+    # 비밀번호 확인을 통한 운용자금 전용 DB 저장 폼
+    with st.expander("🔑 운용자금 변경 (비밀번호 인증 필요)", expanded=False):
+        cap_pwd = st.text_input("매매 비밀번호 입력", type="password", key=f"pwd_cap_{market_type}")
+        if st.button("운용자금 변경 저장", use_container_width=True, type="primary"):
+            if cap_pwd == st.secrets.get("TRADE_PASSWORD", "1234"):
+                st.session_state[cap_key] = account_total_input
+                
+                # DB 업데이트 준비 (운용자금만 세팅 변경)
+                try:
+                    res_existing = supabase.table("strategy_settings").select("*").eq("id", 1).execute()
+                    existing_data = res_existing.data[0] if res_existing.data else {}
+                    
+                    existing_data["id"] = 1
+                    existing_data[cap_key] = float(account_total_input)
+                    existing_data["strategy_engine_mode"] = current_engine_key
+                    
+                    supabase.table("strategy_settings").upsert(existing_data).execute()
+                    st.success(f"✅ [{market_type}] 운용자금이 {account_total_input:,.0f}으로 성공적으로 변경되었습니다.")
+                except Exception as e:
+                    st.error(f"❌ DB 저장 실패: {e}")
+            else:
+                st.error("❌ 비밀번호가 일치하지 않습니다.")
 
 df_display = get_data(selected_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_cycle, is_bull, stop_new_buy, reduce_holdings, strategy_engine_mode=current_engine_key)
 
