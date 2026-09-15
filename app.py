@@ -25,7 +25,7 @@ st.markdown("""
         padding: 2px 8px; border-radius: 10px; border: 1px solid #ffeeba; margin-left: 6px;
     }
     </style>
-    <a href="#top-section" class="floating-btn-left"><span>⬆️</span> <span>상단 표로 이동</span></a>
+    <a href="#top-section" class="floating-btn-left"><span>⬆️</span> <span>위로</span></a>
 """, unsafe_allow_html=True)
 
 def scroll_to_chart():
@@ -83,7 +83,7 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
             c1, c2 = st.columns([4, 1])
             
             rank_val = int(row.get('순위', 0)) if pd.notna(row.get('순위')) else '-'
-            rec_rank_val = row.get('매수추천순위', '')
+            rec_rank_val = row.get('추천순위', row.get('매수추천순위', ''))
             rec_rank_display = f"{rec_rank_val}위" if rec_rank_val != '' else '-'
             
             if '매도' in title:
@@ -105,22 +105,17 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                 atr_val = row.get('atr', 0.0)
                 position_info = f"<br><span style='font-size: 0.85em; color: #1b5e20; font-weight: bold;'>📊 추천 분산 금액: {fmt_str} (목표 비중 {target_pct:.1f}%) | ATR: {atr_val:,.2f if market_type=='US' else atr_val:,.0f}</span>"
 
-            card_html = f"""
-            <div style="line-height: 1.6; margin-top: 4px;">
-                <strong style="font-size: 1.1em; color: #111111;">{row['종목명']}</strong> 
-                <span style="font-size: 0.8em; color: #888888; margin-left: 4px;">({ticker})</span>
-                <span style="font-size: 0.8em; color: #1565c0; font-weight: bold; margin-left: 6px;">[모멘텀순위: {rank_val}위 | 매수추천순위: {rec_rank_display}]</span>
-                <br>
-                <span style="font-size: 0.85em; color: #d62728; font-weight: bold;">
-                    📌 사유: {reason_desc}
-                </span>
-                {position_info}
-                <br>
-                <span style="font-size: 0.85em; color: #444444;">
-                    MOT: {row['MOT']:.2f} | RS(90): {row['RS(90)']:.2f} | 이격도: {row['이격도']:+.2f}%
-                </span>
-            </div>
-            """
+            # 마크다운 들여쓰기로 인한 코드 블록 노출 방지 처리 (줄 바꿈 공백 제거)
+            card_html = (
+                f"<div style='line-height: 1.6; margin-top: 4px;'>"
+                f"<strong style='font-size: 1.1em; color: #111111;'>{row['종목명']}</strong> "
+                f"<span style='font-size: 0.8em; color: #888888; margin-left: 4px;'>({ticker})</span> "
+                f"<span style='font-size: 0.8em; color: #1565c0; font-weight: bold; margin-left: 6px;'>[모멘텀순위: {rank_val}위 | 추천순위: {rec_rank_display}]</span>"
+                f"<br><span style='font-size: 0.85em; color: #d62728; font-weight: bold;'>📌 사유: {reason_desc}</span>"
+                f"{position_info}"
+                f"<br><span style='font-size: 0.85em; color: #444444;'>MOT: {row['MOT']:.2f} | RS(90): {row['RS(90)']:.2f} | 이격도: {row['이격도']:+.2f}%</span>"
+                f"</div>"
+            )
             c1.markdown(card_html, unsafe_allow_html=True)
             
             if is_latest_date:
@@ -156,29 +151,23 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                 c1, c2 = st.columns([4, 1])
                 
                 rank_val = int(row.get('순위', 0)) if pd.notna(row.get('순위')) else '-'
-                rec_rank_val = row.get('매수추천순위', '')
+                rec_rank_val = row.get('추천순위', row.get('매수추천순위', ''))
                 rec_rank_display = f"{rec_rank_val}위" if rec_rank_val != '' else '-'
                 reason_desc = f"후순위 조건 충족 [추천순위: {rec_rank_display}] (예비 {backup_idx}순위 대체 종목)"
                 target_pct = (100.0 / top_n_cfg) if top_n_cfg > 0 else 0.0
                 atr_val = row.get('atr', 0.0)
                 position_info = f"<br><span style='font-size: 0.85em; color: #856404; font-weight: bold;'>📊 예비 분산 금액: {fmt_str} | ATR: {atr_val:,.2f if market_type=='US' else atr_val:,.0f}</span>"
 
-                backup_html = f"""
-                <div style="line-height: 1.6; margin-top: 4px; background-color: #fffde7; padding: 8px 12px; border-radius: 6px; border-left: 4px solid #fbc02d;">
-                    <strong style="font-size: 1.05em; color: #111111;">{row['종목명']}</strong> 
-                    <span style="font-size: 0.8em; color: #888888; margin-left: 4px;">({ticker})</span>
-                    <span class="backup-tag">💡 예비 {backup_idx}순위 [모멘텀순위: {rank_val}위 | 매수추천순위: {rec_rank_display}]</span>
-                    <br>
-                    <span style="font-size: 0.85em; color: #e65100; font-weight: bold;">
-                        📌 사유: {reason_desc}
-                    </span>
-                    {position_info}
-                    <br>
-                    <span style="font-size: 0.85em; color: #444444;">
-                        MOT: {row['MOT']:.2f} | RS(90): {row['RS(90)']:.2f} | 이격도: {row['이격도']:+.2f}%
-                    </span>
-                </div>
-                """
+                backup_html = (
+                    f"<div style='line-height: 1.6; margin-top: 4px; background-color: #fffde7; padding: 8px 12px; border-radius: 6px; border-left: 4px solid #fbc02d;'>"
+                    f"<strong style='font-size: 1.05em; color: #111111;'>{row['종목명']}</strong> "
+                    f"<span style='font-size: 0.8em; color: #888888; margin-left: 4px;'>({ticker})</span> "
+                    f"<span class='backup-tag'>💡 예비 {backup_idx}순위 [모멘텀순위: {rank_val}위 | 추천순위: {rec_rank_display}]</span>"
+                    f"<br><span style='font-size: 0.85em; color: #e65100; font-weight: bold;'>📌 사유: {reason_desc}</span>"
+                    f"{position_info}"
+                    f"<br><span style='font-size: 0.85em; color: #444444;'>MOT: {row['MOT']:.2f} | RS(90): {row['RS(90)']:.2f} | 이격도: {row['이격도']:+.2f}%</span>"
+                    f"</div>"
+                )
                 c1.markdown(backup_html, unsafe_allow_html=True)
                 
                 if is_latest_date:
@@ -195,7 +184,8 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                 else:
                     c2.markdown("<div style='color:#999999; font-size:0.85em; margin-top:8px; text-align:right;'>과거일 매매불가</div>", unsafe_allow_html=True)
 
-st.markdown("##### 📈 Hybrid Dual Alpha Dashboard")
+# 1. 대시보드 제목 변경
+st.markdown("##### 📈 Quant Alpha Strategy")
 
 # DB 초기 설정 로드
 if 'db_settings_loaded' not in st.session_state:
@@ -279,7 +269,6 @@ with st.sidebar:
         
     st.divider()
 
-    # KR 및 US 시장의 실시간 매수 추천 종목 수 집계 및 사이드바 표출
     try:
         df_kr_chk = get_data(selected_date, all_dates, "KR", top_n_cfg, sl_cfg, rebalance_cycle, is_bull, stop_new_buy, reduce_holdings, strategy_engine_mode=current_engine_key)
         kr_buy_count = len(df_kr_chk[df_kr_chk['매매상태'] == '매수추천']) if df_kr_chk is not None else 0
@@ -303,6 +292,10 @@ account_total_input = float(default_cap)
 df_display = get_data(selected_date, all_dates, market_type, top_n_cfg, sl_cfg, rebalance_cycle, is_bull, stop_new_buy, reduce_holdings, strategy_engine_mode=current_engine_key)
 
 if df_display is not None:
+    # 컬럼명 변경 (매수추천순위 -> 추천순위)
+    if '매수추천순위' in df_display.columns:
+        df_display = df_display.rename(columns={'매수추천순위': '추천순위'})
+
     is_latest_date = (target_date_str == max(all_dates)) if all_dates and target_date_str else False
     
     tab1, tab4, tab5 = st.tabs(["Overview", "🚀 알파 시그널", "📊 성과 분석"])
@@ -324,7 +317,8 @@ if df_display is not None:
         st.markdown("###### 📋 알파 시그널 전체 목록 (상위 200위)")
         filter_opt = st.radio("빠른 필터", ["전체보기", "🔴 매수 추천 종목만", "🔵 매도 필요 종목만", "🟢 현재 보유 종목만"], horizontal=True, label_visibility="collapsed")
         
-        col_order = ['순위', '매수추천순위', '변동', '매매상태', '종목명', '이격도', 'MOT', 'RS(90)', 'RS(10)', 'MA20', '제외사유', '종가', '상승금액', '상승률', 'ticker'] 
+        # 3. 매수추천순위 -> 추천순위 적용
+        col_order = ['순위', '추천순위', '변동', '매매상태', '종목명', '이격도', 'MOT', 'RS(90)', 'RS(10)', 'MA20', '제외사유', '종가', '상승금액', '상승률', 'ticker'] 
         df_target = df_display.head(200)[col_order].copy()
         
         if filter_opt == "🔴 매수 추천 종목만":
