@@ -82,6 +82,10 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
             ticker = row['ticker']
             c1, c2 = st.columns([4, 1])
             
+            rank_val = int(row.get('순위', 0)) if pd.notna(row.get('순위')) else '-'
+            rec_rank_val = row.get('매수추천순위', '')
+            rec_rank_display = f"{rec_rank_val}위" if rec_rank_val != '' else '-'
+            
             if '매도' in title:
                 if strategy_engine_mode == "strat3_top7":
                     reason_desc = f"레짐전환 현금화, ATR손절(-2.5x) 또는 트레일링스톱 도달"
@@ -91,23 +95,17 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                     reason_desc = f"추세선 이탈, 손절 임계값 혹은 타임스탑 조건 도달"
                 position_info = ""
             else:
-                rec_rank = row.get('매수추천순위', '')
-                rec_rank_str = f"{rec_rank}위" if rec_rank != '' else '-'
                 if strategy_engine_mode == "strat3_top7":
-                    reason_desc = f"전략 3 진입 조건 충족 [추천순위: {rec_rank_str}] (이격도 최소 우선)"
+                    reason_desc = f"전략 3 진입 조건 충족 [추천순위: {rec_rank_display}] (이격도 최소 우선)"
                 elif strategy_engine_mode == "short_term":
-                    reason_desc = f"단기 타점 조건 충족 [추천순위: {rec_rank_str}] (Rank≤200)"
+                    reason_desc = f"단기 타점 조건 충족 [추천순위: {rec_rank_display}] (Rank≤200)"
                 else:
-                    reason_desc = f"Ultimate 듀얼 모멘텀 조건 충족 [추천순위: {rec_rank_str}]"
+                    reason_desc = f"Ultimate 듀얼 모멘텀 조건 충족 [추천순위: {rec_rank_display}]"
                 target_pct = (100.0 / top_n_cfg) if top_n_cfg > 0 else 0.0
                 atr_val = row.get('atr', 0.0)
                 position_info = f"<br><span style='font-size: 0.85em; color: #1b5e20; font-weight: bold;'>📊 추천 분산 금액: {fmt_str} (목표 비중 {target_pct:.1f}%) | ATR: {atr_val:,.2f if market_type=='US' else atr_val:,.0f}</span>"
 
-            rank_val = int(row.get('순위', 0)) if pd.notna(row.get('순위')) else '-'
-            rec_rank_val = row.get('매수추천순위', '')
-            rec_rank_display = f"{rec_rank_val}위" if rec_rank_val != '' else '-'
-            
-            c1.markdown(f"""
+            card_html = f"""
             <div style="line-height: 1.6; margin-top: 4px;">
                 <strong style="font-size: 1.1em; color: #111111;">{row['종목명']}</strong> 
                 <span style="font-size: 0.8em; color: #888888; margin-left: 4px;">({ticker})</span>
@@ -122,7 +120,8 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                     MOT: {row['MOT']:.2f} | RS(90): {row['RS(90)']:.2f} | 이격도: {row['이격도']:+.2f}%
                 </span>
             </div>
-            """, unsafe_allow_html=True)
+            """
+            c1.markdown(card_html, unsafe_allow_html=True)
             
             if is_latest_date:
                 with c2.popover(button_label):
@@ -140,7 +139,7 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                             
                         input_qty = st.number_input("매수수량", value=calc_qty if market_type=="US" else float(int(calc_qty)), min_value=0.0, key=q_key)
                     else:
-                        matched_h = holdings_df[holdings_df['ticker'].str.strip().str.upper() == ticker]
+                        matched_h = holdings_df[holdings_df['ticker'].astype(str).str.strip().str.upper() == ticker.strip().upper()] if not holdings_df.empty else pd.DataFrame()
                         def_qty = float(matched_h.iloc[0].get('quantity', 1.0)) if not matched_h.empty else 1.0
                         input_qty = st.number_input("매도수량", value=def_qty, min_value=0.0, key=q_key)
                         
@@ -164,7 +163,7 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                 atr_val = row.get('atr', 0.0)
                 position_info = f"<br><span style='font-size: 0.85em; color: #856404; font-weight: bold;'>📊 예비 분산 금액: {fmt_str} | ATR: {atr_val:,.2f if market_type=='US' else atr_val:,.0f}</span>"
 
-                c1.markdown(f"""
+                backup_html = f"""
                 <div style="line-height: 1.6; margin-top: 4px; background-color: #fffde7; padding: 8px 12px; border-radius: 6px; border-left: 4px solid #fbc02d;">
                     <strong style="font-size: 1.05em; color: #111111;">{row['종목명']}</strong> 
                     <span style="font-size: 0.8em; color: #888888; margin-left: 4px;">({ticker})</span>
@@ -179,7 +178,8 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                         MOT: {row['MOT']:.2f} | RS(90): {row['RS(90)']:.2f} | 이격도: {row['이격도']:+.2f}%
                     </span>
                 </div>
-                """, unsafe_allow_html=True)
+                """
+                c1.markdown(backup_html, unsafe_allow_html=True)
                 
                 if is_latest_date:
                     with c2.popover(f"예비매수"):
@@ -195,7 +195,7 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                 else:
                     c2.markdown("<div style='color:#999999; font-size:0.85em; margin-top:8px; text-align:right;'>과거일 매매불가</div>", unsafe_allow_html=True)
 
-st.markdown("##### 📈 Dashboard")
+st.markdown("##### 📈 Hybrid Dual Alpha Dashboard")
 
 # DB 초기 설정 로드
 if 'db_settings_loaded' not in st.session_state:
@@ -214,13 +214,16 @@ if 'db_settings_loaded' not in st.session_state:
         pass
     st.session_state['db_settings_loaded'] = True
 
+all_dates = get_available_dates()
+latest_date_default = pd.to_datetime(all_dates[0]) if all_dates else None
+
 with st.sidebar:
     st.markdown("### ⚙️ 알파 매매전략 설정")
     
     strategy_engine_mode = st.radio(
         "💡 전략 엔진 선택",
         [
-            "🔥 전략 3: Top 7 레짐+ATR (누적 +98.4%)",
+            "🔥 전략 3: Top 7 레짐+ATR",
             "🚀 단기 타점 모멘텀 (15%+ 랠리)", 
             "🌐 Ultimate 듀얼 모멘텀 (추세)"
         ],
@@ -239,8 +242,7 @@ with st.sidebar:
     st.divider()
 
     market_type = st.radio("Market", ["KR", "US"], horizontal=True)
-    all_dates = get_available_dates()
-    selected_date = st.date_input("Date", value=pd.to_datetime(all_dates[0]) if all_dates else None)
+    selected_date = st.date_input("Date", value=latest_date_default)
     target_date_str = pd.to_datetime(selected_date).strftime('%Y-%m-%d') if selected_date else ""
     
     market_safe, stop_new_buy, reduce_holdings = get_market_regime(market_type, target_date_str)
@@ -274,8 +276,26 @@ with st.sidebar:
         st.warning("⚠️ MA20 3일 연속 하회 감지: 신규 매수 중지")
     elif reduce_holdings:
         st.warning("⚠️ MA20 하회 감지: 보유 종목 비중 축소")
+        
+    st.divider()
 
-# 현재 설정된 운용 자금 세팅 (KR 정수 콤마, US 소수점2자리 콤마)
+    # KR 및 US 시장의 실시간 매수 추천 종목 수 집계 및 사이드바 표출
+    try:
+        df_kr_chk = get_data(selected_date, all_dates, "KR", top_n_cfg, sl_cfg, rebalance_cycle, is_bull, stop_new_buy, reduce_holdings, strategy_engine_mode=current_engine_key)
+        kr_buy_count = len(df_kr_chk[df_kr_chk['매매상태'] == '매수추천']) if df_kr_chk is not None else 0
+    except Exception:
+        kr_buy_count = 0
+
+    try:
+        df_us_chk = get_data(selected_date, all_dates, "US", top_n_cfg, sl_cfg, rebalance_cycle, is_bull, stop_new_buy, reduce_holdings, strategy_engine_mode=current_engine_key)
+        us_buy_count = len(df_us_chk[df_us_chk['매매상태'] == '매수추천']) if df_us_chk is not None else 0
+    except Exception:
+        us_buy_count = 0
+
+    col_side_kr, col_side_us = st.columns(2)
+    col_side_kr.metric("KR추천", f"{kr_buy_count}개")
+    col_side_us.metric("US추천", f"{us_buy_count}개")
+
 cap_key = "us_capital" if market_type == "US" else "kr_capital"
 default_cap = st.session_state.get(cap_key, 6000.0 if market_type == "US" else 20000000.0)
 account_total_input = float(default_cap)
@@ -355,7 +375,6 @@ if df_display is not None:
                     st.session_state['trade_authenticated'] = False
                     st.rerun()
 
-            # 알파 시그널 탭 내부로 이동된 운용 자금 변경 및 DB 저장 폼
             with st.expander(f"💰 [{market_type}] 총 운용 자금 설정 / DB 저장", expanded=True):
                 col_cap1, col_cap2 = st.columns([3, 1])
                 with col_cap1:
@@ -516,7 +535,7 @@ if df_display is not None:
 
         if current_engine_key == "strat3_top7":
             st.info(f"""
-            📌 **전략 3 (Top 7 레짐+ATR 트레일링) 가이드 (누적 +98.4%)**
+            📌 **전략 3 (Top 7 레짐+ATR 트레일링) 가이드**
             * **운용 슬롯**: 최대 **{top_n_cfg}개** 균등 분산 (동적 복리 적용)
             * **레짐 필터**: KOSPI 종가 > MA20 상승장일 때만 매수, 하락 시 전량 현금화
             * **매수 조건**: 모멘텀 순위 **Rank ≤ 15**, RS(90) > 0, RS(10) > 0, 종가 > MA20 (이격도 최소 우선)
