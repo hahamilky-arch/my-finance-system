@@ -195,7 +195,7 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                 else:
                     c2.markdown("<div style='color:#999999; font-size:0.85em; margin-top:8px; text-align:right;'>과거일 매매불가</div>", unsafe_allow_html=True)
 
-st.markdown("##### 📈 Hybrid Dual Alpha Dashboard")
+st.markdown("##### 📈 Dashboard")
 
 # DB 초기 설정 로드
 if 'db_settings_loaded' not in st.session_state:
