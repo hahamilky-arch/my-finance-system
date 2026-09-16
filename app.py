@@ -5,6 +5,7 @@ from db import supabase, get_holdings_table, update_holdings, get_market_regime,
 from strategy import get_data
 from charts import draw_integrated_chart, draw_attribution_charts
 from gemini_analyzer import analyze_stock_with_gemini, get_remaining_quota, MAX_DAILY_QUOTA
+from ocr_parser import process_and_save_ocr
 
 st.set_page_config(layout="wide")
 
@@ -295,7 +296,8 @@ if df_display is not None:
 
     is_latest_date = (target_date_str == max(all_dates)) if all_dates and target_date_str else False
     
-    tab1, tab4, tab5 = st.tabs(["Overview", "🚀 알파 시그널", "📊 성과 분석"])
+    # 🌟 수급 OCR 입고 탭 추가 (총 4개 탭)
+    tab1, tab4, tab_ocr, tab5 = st.tabs(["Overview", "🚀 알파 시그널", "📸 수급 OCR 입고", "📊 성과 분석"])
     
     with tab1:
         st.markdown("###### 📊 시장 및 시그널 요약")
@@ -309,8 +311,71 @@ if df_display is not None:
         c3.metric("오늘의 매수 추천", f"{buy_cnt} 종목")
         c4.metric("오늘의 매도 필요", f"{sell_cnt} 종목")
         
-        st.write("")
+        # 💡 [신규] 실시간 수급 스냅샷 및 주도주 모멘텀 분석 시각화
+        st.markdown("---")
+        st.markdown("##### 💵 수급 스냅샷 & 메인 자금 유입 현황 (돈의 흐름)")
         
+        try:
+            liq_res = supabase.table("daily_top_liquidity").select("*").order("trade_date", desc=True).limit(200).execute()
+            df_liq_all = pd.DataFrame(liq_res.data) if liq_res.data else pd.DataFrame()
+        except Exception:
+            df_liq_all = pd.DataFrame()
+
+        if not df_liq_all.empty:
+            df_liq_all['trade_date_str'] = df_liq_all['trade_date'].astype(str)
+            available_liq_dates = sorted(df_liq_all['trade_date_str'].unique(), reverse=True)
+            
+            latest_liq_date = available_liq_dates[0]
+            df_latest_liq = df_liq_all[df_liq_all['trade_date_str'] == latest_liq_date].sort_values('rank')
+            
+            st.caption(f"📅 최근 저장된 수급 스냅샷 일자: **{latest_liq_date}** (총 {len(df_latest_liq)}개 종목 포착)")
+            
+            st.markdown("###### 🔥 당일 외인/기관 쌍끌이 상위 Top 4")
+            m_cols = st.columns(4)
+            for i, (_, r) in enumerate(df_latest_liq.head(4).iterrows()):
+                with m_cols[i]:
+                    net_tot_val = float(r.get('net_total', 0.0))
+                    chg_val = float(r.get('change_rate', 0.0))
+                    st.metric(
+                        label=f"{r['rank']}위 {r['name']}", 
+                        value=f"{r['close_price']:,.0f}원", 
+                        delta=f"{chg_val:+.2f}% (합계 {net_tot_val:,.0f})"
+                    )
+            
+            st.write("")
+            col_left_liq, col_right_liq = st.columns([1, 1])
+            
+            with col_left_liq:
+                st.markdown("###### 🏆 최근 수급 상위 빈번 노출 종목 (주도 매집주)")
+                freq_df = df_liq_all.groupby('name').agg(
+                    노출횟수=('trade_date', 'nunique'),
+                    최근순위=('rank', 'min'),
+                    평균등락률=('change_rate', 'mean')
+                ).reset_index().sort_values(by=['노출횟수', '최근순위'], ascending=[False, True]).head(10)
+                
+                st.dataframe(
+                    freq_df.style.format({'평균등락률': '{:+.2f}%'}), 
+                    hide_index=True, use_container_width=True
+                )
+                st.caption("💡 최근 수급 상위권에 여러 번 빈번하게 노출된 종목일수록 기관/외인의 지속 매집 가능성이 높습니다.")
+
+            with col_right_liq:
+                st.markdown(f"###### 📋 {latest_liq_date} 수급 상세 데이터")
+                disp_liq_cols = ['rank', 'name', 'close_price', 'change_rate', 'net_total', 'foreign_net', 'inst_net', 'volume_power']
+                disp_liq = df_latest_liq[disp_liq_cols].copy()
+                disp_liq = disp_liq.rename(columns={'rank': '순위', 'name': '종목명', 'close_price': '현재가', 'change_rate': '등락률', 'net_total': '합계', 'foreign_net': '외인', 'inst_net': '기관', 'volume_power': '거래강도'})
+                
+                st.dataframe(
+                    disp_liq.style.format({
+                        '현재가': '{:,.0f}', '등락률': '{:+.2f}%', 
+                        '합계': '{:,.0f}', '외인': '{:,.0f}', '기관': '{:,.0f}', '거래강도': '{:.2f}'
+                    }).map(lambda x: 'color: red;' if float(x) > 0 else 'color: blue;', subset=['등락률']),
+                    hide_index=True, use_container_width=True
+                )
+        else:
+            st.info("💡 아직 저장된 수급 스냅샷 데이터가 없습니다. `📸 수급 OCR 입고` 탭에서 스크린샷을 등록해 주세요.")
+
+        st.write("")
         st.markdown("###### 📋 알파 시그널 전체 목록 (상위 200위)")
         filter_opt = st.radio("빠른 필터", ["전체보기", "🔴 매수 추천 종목만", "🔵 매도 필요 종목만", "🟢 현재 보유 종목만"], horizontal=True, label_visibility="collapsed")
         
@@ -523,7 +588,6 @@ if df_display is not None:
                         else:
                             st.warning("종목코드, 매도가, 수량을 확인하세요.")
 
-            # gemini_analyzer 모듈 분리 적용 파트
             st.markdown("---")
             st.markdown("##### 🤖 Google Gemini AI 종목 분석")
 
@@ -605,6 +669,51 @@ if df_display is not None:
                 2. 고정 손절선 이탈 ({sl_cfg}%)
                 3. **타임 스탑**: 보유일 10일 이상 & 수익률 +3% 미만 시 자동 청산
             """)
+
+    # ----------------------------------------------------
+    # TAB OCR: 📸 수급 스크린샷 OCR 입고 (비밀번호 인증 적용)
+    # ----------------------------------------------------
+    with tab_ocr:
+        st.markdown("##### 📸 수급 스크린샷 OCR 자동 추출 및 DB 입고")
+        
+        if not st.session_state.get('trade_authenticated', False):
+            st.info("🔒 수급 데이터를 등록 및 입고하려면 매매 비밀번호를 입력해 주십시오.")
+            col_pwd1, col_pwd2 = st.columns([3, 1])
+            with col_pwd1:
+                input_pwd_ocr = st.text_input("매매 비밀번호", type="password", key="pwd_tab_ocr", label_visibility="collapsed")
+            with col_pwd2:
+                if st.button("잠금 해제", key="btn_unlock_ocr", use_container_width=True):
+                    if input_pwd_ocr == st.secrets.get("TRADE_PASSWORD", "1234"):
+                        st.session_state['trade_authenticated'] = True
+                        st.rerun()
+                    else:
+                        st.error("비밀번호가 일치하지 않습니다.")
+        else:
+            col_header1, col_header2 = st.columns([5, 1])
+            with col_header2:
+                if st.button("🔒 다시 잠금", key="btn_lock_ocr", use_container_width=True):
+                    st.session_state['trade_authenticated'] = False
+                    st.rerun()
+
+            st.caption("증권사 앱의 '국내 실시간 수급' 캡처 이미지를 업로드하면 OCR로 종목명 및 수급 수치를 읽어 DB에 즉시 적재합니다.")
+            
+            ocr_date = st.date_input("수급 스냅샷 수집 일자 선택", value=selected_date, key="ocr_target_date")
+            ocr_date_str = pd.to_datetime(ocr_date).strftime('%Y-%m-%d')
+            
+            uploaded_img = st.file_uploader("수급 스크린샷 이미지 선택 (PNG, JPG)", type=["png", "jpg", "jpeg"], key="ocr_uploader")
+            
+            if uploaded_img is not None:
+                st.image(uploaded_img, caption="업로드된 스크린샷 미리보기", width=400)
+                
+                if st.button("🚀 OCR 읽기 및 DB 스냅샷 저장 실행", type="primary", use_container_width=True):
+                    with st.spinner(f"🔍 '{ocr_date_str}' 자로 스크린샷 OCR 파싱 및 DB 저장 진행 중..."):
+                        success, message = process_and_save_ocr(uploaded_img, ocr_date_str)
+                        
+                    if success:
+                        st.success(message)
+                        st.balloons()
+                    else:
+                        st.error(message)
 
     with tab5:
         st.markdown(f"##### 📊 {market_type} 시장 성과 분석")
