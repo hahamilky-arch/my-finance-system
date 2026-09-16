@@ -6,3 +6,6 @@ plotly
 scipy
 yfinance
 google-generativeai
+easyocr
+opencv-python-headless
+pillow
