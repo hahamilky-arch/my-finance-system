@@ -297,123 +297,141 @@ if df_display is not None:
     
     tab1, tab4, tab5 = st.tabs(["Overview", "🚀 알파 시그널", "📊 성과 분석"])
     
+    # ----------------------------------------------------
+    # TAB 1: OVERVIEW (비밀번호 인증 + 폴딩 기능 적용)
+    # ----------------------------------------------------
     with tab1:
-        st.markdown("###### 📊 시장 및 시그널 요약")
-        
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("현재 전략 모드", "🔥 전략 3 (Top 7)" if current_engine_key == "strat3_top7" else ("🚀 단기 타점 모드" if current_engine_key == "short_term" else ("🟢 강세장" if is_bull else "🔴 약세장")))
-        c2.metric("신규 매수 상태", "🛑 중지 (MA20 3일하회)" if stop_new_buy else ("⚠️ 비중축소 (MA20하회)" if reduce_holdings else "✅ 허용"))
-        
-        buy_cnt = len(df_display[df_display['매매상태'] == '매수추천'])
-        sell_cnt = len(df_display[df_display['매매상태'] == '매도필요'])
-        c3.metric("오늘의 매수 추천", f"{buy_cnt} 종목")
-        c4.metric("오늘의 매도 필요", f"{sell_cnt} 종목")
-        
-        # 💡 [신규 추가] DB 저장 수급 스냅샷 시각화 섹션
-        st.markdown("---")
-        st.markdown("##### 💵 실시간 수급 스냅샷 & 돈의 흐름 모니터링")
-        
-        try:
-            liq_res = supabase.table("daily_top_liquidity").select("*").order("trade_date", desc=True).limit(200).execute()
-            df_liq_all = pd.DataFrame(liq_res.data) if liq_res.data else pd.DataFrame()
-        except Exception:
-            df_liq_all = pd.DataFrame()
+        if not st.session_state.get('trade_authenticated', False):
+            st.info("🔒 시장 대시보드 및 시그널 조회를 위해 비밀번호를 입력해 주십시오.")
+            col_pwd1, col_pwd2 = st.columns([3, 1])
+            with col_pwd1:
+                input_pwd_1 = st.text_input("매매 비밀번호", type="password", key="pwd_tab1", label_visibility="collapsed")
+            with col_pwd2:
+                if st.button("잠금 해제", key="btn_unlock_tab1", use_container_width=True):
+                    if input_pwd_1 == st.secrets.get("TRADE_PASSWORD", "1234"):
+                        st.session_state['trade_authenticated'] = True
+                        st.rerun()
+                    else:
+                        st.error("비밀번호가 일치하지 않습니다.")
+        else:
+            col_header1, col_header2 = st.columns([5, 1])
+            with col_header2:
+                if st.button("🔒 다시 잠금", key="btn_lock_tab1", use_container_width=True):
+                    st.session_state['trade_authenticated'] = False
+                    st.rerun()
 
-        if not df_liq_all.empty:
-            df_liq_all['trade_date_str'] = df_liq_all['trade_date'].astype(str)
-            available_liq_dates = sorted(df_liq_all['trade_date_str'].unique(), reverse=True)
+            st.markdown("###### 📊 시장 및 시그널 요약")
             
-            # 일자 선택 드롭다운 (가장 최근 일자가 기본값)
-            sel_liq_date = st.selectbox("📅 수급 스냅샷 데이터 조회 일자", options=available_liq_dates, index=0)
-            df_target_liq = df_liq_all[df_liq_all['trade_date_str'] == sel_liq_date].sort_values('rank')
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("현재 전략 모드", "🔥 전략 3 (Top 7)" if current_engine_key == "strat3_top7" else ("🚀 단기 타점 모드" if current_engine_key == "short_term" else ("🟢 강세장" if is_bull else "🔴 약세장")))
+            c2.metric("신규 매수 상태", "🛑 중지 (MA20 3일하회)" if stop_new_buy else ("⚠️ 비중축소 (MA20하회)" if reduce_holdings else "✅ 허용"))
             
-            # 1. 당일 외인/기관 쌍끌이 상위 TOP 4 카드
-            st.markdown(f"###### 🔥 {sel_liq_date} 수급 최상위 TOP 4 종목")
-            m_cols = st.columns(4)
-            for i, (_, r) in enumerate(df_target_liq.head(4).iterrows()):
-                with m_cols[i]:
-                    net_tot_val = float(r.get('net_total', 0.0))
-                    chg_val = float(r.get('change_rate', 0.0))
-                    close_p = float(r.get('close_price', 0.0))
-                    st.metric(
-                        label=f"{r['rank']}위 {r['name']}", 
-                        value=f"{close_p:,.0f}원", 
-                        delta=f"{chg_val:+.2f}% (합계 {net_tot_val:,.0f})"
-                    )
+            buy_cnt = len(df_display[df_display['매매상태'] == '매수추천'])
+            sell_cnt = len(df_display[df_display['매매상태'] == '매도필요'])
+            c3.metric("오늘의 매수 추천", f"{buy_cnt} 종목")
+            c4.metric("오늘의 매도 필요", f"{sell_cnt} 종목")
             
+            # 💡 [폴딩 1] 수급 스냅샷 & 돈의 흐름 모니터링 영역 (Default: 열림)
+            with st.expander("💵 실시간 수급 스냅샷 & 돈의 흐름 모니터링", expanded=True):
+                try:
+                    liq_res = supabase.table("daily_top_liquidity").select("*").order("trade_date", desc=True).limit(200).execute()
+                    df_liq_all = pd.DataFrame(liq_res.data) if liq_res.data else pd.DataFrame()
+                except Exception:
+                    df_liq_all = pd.DataFrame()
+
+                if not df_liq_all.empty:
+                    df_liq_all['trade_date_str'] = df_liq_all['trade_date'].astype(str)
+                    available_liq_dates = sorted(df_liq_all['trade_date_str'].unique(), reverse=True)
+                    
+                    sel_liq_date = st.selectbox("📅 수급 스냅샷 데이터 조회 일자", options=available_liq_dates, index=0)
+                    df_target_liq = df_liq_all[df_liq_all['trade_date_str'] == sel_liq_date].sort_values('rank')
+                    
+                    st.markdown(f"###### 🔥 {sel_liq_date} 수급 최상위 TOP 4 종목")
+                    m_cols = st.columns(4)
+                    for i, (_, r) in enumerate(df_target_liq.head(4).iterrows()):
+                        with m_cols[i]:
+                            net_tot_val = float(r.get('net_total', 0.0))
+                            chg_val = float(r.get('change_rate', 0.0))
+                            close_p = float(r.get('close_price', 0.0))
+                            st.metric(
+                                label=f"{r['rank']}위 {r['name']}", 
+                                value=f"{close_p:,.0f}원", 
+                                delta=f"{chg_val:+.2f}% (합계 {net_tot_val:,.0f})"
+                            )
+                    
+                    st.write("")
+                    col_left_liq, col_right_liq = st.columns([1, 1.2])
+                    
+                    with col_left_liq:
+                        st.markdown("###### 🏆 최근 수급 상위권 빈번 노출 종목 (주도 매집주)")
+                        freq_df = df_liq_all.groupby('name').agg(
+                            노출횟수=('trade_date', 'nunique'),
+                            최근순위=('rank', 'min'),
+                            평균등락률=('change_rate', 'mean')
+                        ).reset_index().sort_values(by=['노출횟수', '최근순위'], ascending=[False, True]).head(10)
+                        
+                        st.dataframe(
+                            freq_df.style.format({'평균등락률': '{:+.2f}%'}), 
+                            hide_index=True, use_container_width=True
+                        )
+                        st.caption("💡 일자별 수급 상위에 자주 등장한 종목일수록 메인 세력의 지속적 매집 가능성이 높습니다.")
+
+                    with col_right_liq:
+                        st.markdown(f"###### 📋 {sel_liq_date} 수급 상세 데이터")
+                        disp_liq_cols = ['rank', 'name', 'close_price', 'change_rate', 'net_total', 'foreign_net', 'inst_net', 'large_volume', 'volume_power']
+                        disp_liq = df_target_liq[disp_liq_cols].copy()
+                        disp_liq = disp_liq.rename(columns={
+                            'rank': '순위', 'name': '종목명', 'close_price': '현재가', 
+                            'change_rate': '등락률', 'net_total': '합계(A+B)', 
+                            'foreign_net': '외인(A)', 'inst_net': '기관(B)', 
+                            'large_volume': '대량체결', 'volume_power': '거래강도'
+                        })
+                        
+                        st.dataframe(
+                            disp_liq.style.format({
+                                '현재가': '{:,.0f}', '등락률': '{:+.2f}%', 
+                                '합계(A+B)': '{:,.0f}', '외인(A)': '{:,.0f}', '기관(B)': '{:,.0f}', 
+                                '대량체결': '{:,.0f}', '거래강도': '{:.2f}'
+                            }).map(lambda x: 'color: red;' if float(x) > 0 else 'color: blue;', subset=['등락률']),
+                            hide_index=True, use_container_width=True
+                        )
+                else:
+                    st.info("💡 아직 DB에 수급 스냅샷 데이터가 없습니다. SQL 쿼리로 입력한 데이터가 있으면 여기에 즉시 노출됩니다.")
+
             st.write("")
-            col_left_liq, col_right_liq = st.columns([1, 1.2])
             
-            # 2. 최근 스냅샷 종합 '자주 노출된 주도 매집주'
-            with col_left_liq:
-                st.markdown("###### 🏆 최근 수급 상위권 빈번 노출 종목 (주도 매집주)")
-                freq_df = df_liq_all.groupby('name').agg(
-                    노출횟수=('trade_date', 'nunique'),
-                    최근순위=('rank', 'min'),
-                    평균등락률=('change_rate', 'mean')
-                ).reset_index().sort_values(by=['노출횟수', '최근순위'], ascending=[False, True]).head(10)
+            # 💡 [폴딩 2] 모멘텀 순위 및 알파 시그널 전체 목록 영역 (Default: 열림)
+            with st.expander("📋 알파 시그널 전체 목록 (모멘텀 순위 상위 200위)", expanded=True):
+                filter_opt = st.radio("빠른 필터", ["전체보기", "🔴 매수 추천 종목만", "🔵 매도 필요 종목만", "🟢 현재 보유 종목만"], horizontal=True, label_visibility="collapsed")
                 
-                st.dataframe(
-                    freq_df.style.format({'평균등락률': '{:+.2f}%'}), 
-                    hide_index=True, use_container_width=True
-                )
-                st.caption("💡 일자별 수급 상위에 자주 등장한 종목일수록 메인 세력의 지속적 매집 가능성이 높습니다.")
-
-            # 3. 당일 수급 상세표
-            with col_right_liq:
-                st.markdown(f"###### 📋 {sel_liq_date} 수급 상세 데이터")
-                disp_liq_cols = ['rank', 'name', 'close_price', 'change_rate', 'net_total', 'foreign_net', 'inst_net', 'large_volume', 'volume_power']
-                disp_liq = df_target_liq[disp_liq_cols].copy()
-                disp_liq = disp_liq.rename(columns={
-                    'rank': '순위', 'name': '종목명', 'close_price': '현재가', 
-                    'change_rate': '등락률', 'net_total': '합계(A+B)', 
-                    'foreign_net': '외인(A)', 'inst_net': '기관(B)', 
-                    'large_volume': '대량체결', 'volume_power': '거래강도'
-                })
+                col_order = ['순위', '추천순위', '변동', '매매상태', '종목명', '이격도', 'MOT', 'RS(90)', 'RS(10)', 'MA20', '제외사유', '종가', '상승금액', '상승률', 'ticker'] 
+                df_target = df_display.head(200)[col_order].copy()
                 
-                st.dataframe(
-                    disp_liq.style.format({
-                        '현재가': '{:,.0f}', '등락률': '{:+.2f}%', 
-                        '합계(A+B)': '{:,.0f}', '외인(A)': '{:,.0f}', '기관(B)': '{:,.0f}', 
-                        '대량체결': '{:,.0f}', '거래강도': '{:.2f}'
-                    }).map(lambda x: 'color: red;' if float(x) > 0 else 'color: blue;', subset=['등락률']),
-                    hide_index=True, use_container_width=True
-                )
-        else:
-            st.info("💡 아직 DB에 수급 스냅샷 데이터가 없습니다. SQL 쿼리로 입력한 데이터가 있으면 여기에 즉시 노출됩니다.")
-
-        st.write("")
-        st.markdown("###### 📋 알파 시그널 전체 목록 (상위 200위)")
-        filter_opt = st.radio("빠른 필터", ["전체보기", "🔴 매수 추천 종목만", "🔵 매도 필요 종목만", "🟢 현재 보유 종목만"], horizontal=True, label_visibility="collapsed")
-        
-        col_order = ['순위', '추천순위', '변동', '매매상태', '종목명', '이격도', 'MOT', 'RS(90)', 'RS(10)', 'MA20', '제외사유', '종가', '상승금액', '상승률', 'ticker'] 
-        df_target = df_display.head(200)[col_order].copy()
-        
-        if filter_opt == "🔴 매수 추천 종목만":
-            df_target = df_target[df_target['매매상태'] == '매수추천']
-        elif filter_opt == "🔵 매도 필요 종목만":
-            df_target = df_target[df_target['매매상태'] == '매도필요']
-        elif filter_opt == "🟢 현재 보유 종목만":
-            df_target = df_target[df_target['매매상태'] == '보유중']
-        
-        if df_target.empty:
-            st.info("해당되는 종목이 없습니다.")
-        else:
-            fmt_dict = {
-                '이격도': lambda x: f"{x:+.2f}%" if x != 0 else "-", 
-                'MOT': '{:.2f}', 'RS(90)': '{:.2f}', 'RS(10)': '{:.2f}',
-                'MA20': '{:,.2f}' if market_type=='US' else '{:,.0f}',
-                '종가': '{:,.2f}' if market_type=='US' else '{:,.0f}',
-                '상승금액': '{:+,.2f}' if market_type=='US' else '{:+,.0f}',
-                '상승률': '{:+.2f}%'
-            }
-            event = st.dataframe(
-                df_target.style.apply(apply_styles, axis=None).format(fmt_dict), 
-                hide_index=True, use_container_width=True, on_select="rerun", selection_mode="single-row"
-            )
-            if event and event.get("selection", {}).get("rows"):
-                st.session_state['selected_ticker_from_table'] = df_target.iloc[event["selection"]["rows"][0]]['ticker']
-                st.session_state['trigger_scroll'] = True
+                if filter_opt == "🔴 매수 추천 종목만":
+                    df_target = df_target[df_target['매매상태'] == '매수추천']
+                elif filter_opt == "🔵 매도 필요 종목만":
+                    df_target = df_target[df_target['매매상태'] == '매도필요']
+                elif filter_opt == "🟢 현재 보유 종목만":
+                    df_target = df_target[df_target['매매상태'] == '보유중']
+                
+                if df_target.empty:
+                    st.info("해당되는 종목이 없습니다.")
+                else:
+                    fmt_dict = {
+                        '이격도': lambda x: f"{x:+.2f}%" if x != 0 else "-", 
+                        'MOT': '{:.2f}', 'RS(90)': '{:.2f}', 'RS(10)': '{:.2f}',
+                        'MA20': '{:,.2f}' if market_type=='US' else '{:,.0f}',
+                        '종가': '{:,.2f}' if market_type=='US' else '{:,.0f}',
+                        '상승금액': '{:+,.2f}' if market_type=='US' else '{:+,.0f}',
+                        '상승률': '{:+.2f}%'
+                    }
+                    event = st.dataframe(
+                        df_target.style.apply(apply_styles, axis=None).format(fmt_dict), 
+                        hide_index=True, use_container_width=True, on_select="rerun", selection_mode="single-row"
+                    )
+                    if event and event.get("selection", {}).get("rows"):
+                        st.session_state['selected_ticker_from_table'] = df_target.iloc[event["selection"]["rows"][0]]['ticker']
+                        st.session_state['trigger_scroll'] = True
 
     with tab4:
         st.markdown("##### 🚀 시스템 매매 지시서 & 알파 시그널 자금 설정")
@@ -827,22 +845,23 @@ if df_display is not None:
                         }), hide_index=True, use_container_width=True
                     )
 
+    # 💡 [폴딩 3] 하단 통합 추이 차트 영역 (Default: 열림)
     st.divider()
     st.markdown("<div id='chart-section'></div>", unsafe_allow_html=True)
-    st.markdown("##### 📉 통합 추이 차트")
-    if st.session_state.get('trigger_scroll'):
-        scroll_to_chart()
-        st.session_state['trigger_scroll'] = False 
+    with st.expander("📉 개별 종목 통합 추이 차트 모니터링", expanded=True):
+        if st.session_state.get('trigger_scroll'):
+            scroll_to_chart()
+            st.session_state['trigger_scroll'] = False 
 
-    top200_tickers = df_display.head(200)['ticker'].tolist()
-    if st.session_state.get('selected_ticker_from_table') and st.session_state['selected_ticker_from_table'] not in top200_tickers:
-        top200_tickers.append(st.session_state['selected_ticker_from_table'])
+        top200_tickers = df_display.head(200)['ticker'].tolist()
+        if st.session_state.get('selected_ticker_from_table') and st.session_state['selected_ticker_from_table'] not in top200_tickers:
+            top200_tickers.append(st.session_state['selected_ticker_from_table'])
+            
+        ticker_name_map = dict(zip(df_display['ticker'], df_display['종목명']))
+        default_ticker = st.session_state.get('selected_ticker_from_table', top200_tickers[0] if top200_tickers else None)
         
-    ticker_name_map = dict(zip(df_display['ticker'], df_display['종목명']))
-    default_ticker = st.session_state.get('selected_ticker_from_table', top200_tickers[0] if top200_tickers else None)
-    
-    sel_ticker = st.selectbox("분석할 종목 선택 (상위 200위)", options=top200_tickers, index=top200_tickers.index(default_ticker) if default_ticker in top200_tickers else 0, format_func=lambda x: f"[{x}] {ticker_name_map.get(x, x)}")
-    if sel_ticker:
-        draw_integrated_chart(sel_ticker, market_type, ticker_name_map)
+        sel_ticker = st.selectbox("분석할 종목 선택 (상위 200위)", options=top200_tickers, index=top200_tickers.index(default_ticker) if default_ticker in top200_tickers else 0, format_func=lambda x: f"[{x}] {ticker_name_map.get(x, x)}")
+        if sel_ticker:
+            draw_integrated_chart(sel_ticker, market_type, ticker_name_map)
 else:
     st.warning("데이터를 불러오는 중입니다. (또는 선택한 날짜에 데이터가 없습니다.)")
