@@ -52,7 +52,6 @@ def apply_styles(df):
             df_s.loc[df[col] > 0, col] += 'color: #d62728; font-weight: bold;'
             df_s.loc[df[col] <= 0, col] += 'color: #bbbbbb;'
             
-    # 순위 기본 색상 적용
     if '순위' in df.columns:
         for idx, rank in df['순위'].items():
             if pd.notna(rank):
@@ -60,7 +59,6 @@ def apply_styles(df):
                 elif rank <= 20: df_s.loc[idx, :] += 'background-color: rgba(198, 239, 206, 0.4);' 
                 elif rank <= 30: df_s.loc[idx, :] += 'background-color: rgba(189, 215, 238, 0.4);' 
 
-    # 🔥 수급 데이터와 일치하는 종목 강조 표시 (최우선 하이라이트)
     if '수급' in df.columns:
         matched_mask = df['수급'] == '🔥 수급일치'
         df_s.loc[matched_mask, :] += 'background-color: rgba(200, 230, 201, 0.7); font-weight: bold;'
@@ -225,7 +223,7 @@ with st.sidebar:
     
     st.divider()
 
-    # 💡 [요구사항 1] KR / US에 따른 전략 엔진 기본값 설정 (KR -> Top 7, US -> 단기 15%)
+    # KR -> 전략3(Top7), US -> 단기 15% 기본 설정
     default_engine_idx = 1 if market_type == "US" else 0
 
     strategy_engine_mode = st.radio(
@@ -311,9 +309,6 @@ if df_display is not None:
     
     tab1, tab4, tab5 = st.tabs(["Overview", "🚀 알파 시그널", "📊 성과 분석"])
     
-    # ----------------------------------------------------
-    # TAB 1: OVERVIEW (비밀번호 인증 + KR 전용 수급 달력 + 가독성 높은 순위표)
-    # ----------------------------------------------------
     with tab1:
         if not st.session_state.get('trade_authenticated', False):
             st.info("🔒 시장 대시보드 및 시그널 조회를 위해 비밀번호를 입력해 주십시오.")
@@ -347,9 +342,9 @@ if df_display is not None:
             
             matched_liq_stock_names = set()
             
-            # 💡 [요구사항 2] US 시장일 때 수급 스냅샷 영역 자동 미노출 (KR일 때만 노출)
+            # 💡 [개선] KR 일때만 간결해진 수급 스냅샷 노출
             if market_type == "KR":
-                with st.expander("💵 실시간 수급 스냅샷 & 돈의 흐름 모니터링", expanded=True):
+                with st.expander("💵 실시간 수급 스냅샷", expanded=True):
                     try:
                         liq_res = supabase.table("daily_top_liquidity").select("*").order("trade_date", desc=True).limit(300).execute()
                         df_liq_all = pd.DataFrame(liq_res.data) if liq_res.data else pd.DataFrame()
@@ -361,7 +356,7 @@ if df_display is not None:
                         available_liq_dates = sorted(df_liq_all['trade_date_str'].unique(), reverse=True)
                         latest_available_date = pd.to_datetime(available_liq_dates[0]).date() if available_liq_dates else selected_date
                         
-                        sel_liq_date_input = st.date_input("📅 수급 스냅샷 데이터 조회 일자 선택", value=latest_available_date, key="sel_liq_date_calendar")
+                        sel_liq_date_input = st.date_input("조회일자", value=latest_available_date, key="sel_liq_date_calendar")
                         sel_liq_date_str = pd.to_datetime(sel_liq_date_input).strftime('%Y-%m-%d')
                         
                         df_target_liq = df_liq_all[df_liq_all['trade_date_str'] == sel_liq_date_str].sort_values('rank')
@@ -369,7 +364,7 @@ if df_display is not None:
                         if not df_target_liq.empty:
                             matched_liq_stock_names = set(df_target_liq['name'].astype(str).str.strip().tolist())
 
-                            st.markdown(f"###### 🔥 {sel_liq_date_str} 수급 최상위 TOP 4 종목")
+                            st.markdown(f"###### 🔥 {sel_liq_date_str} 수급 TOP 4")
                             m_cols = st.columns(4)
                             for i, (_, r) in enumerate(df_target_liq.head(4).iterrows()):
                                 with m_cols[i]:
@@ -386,21 +381,21 @@ if df_display is not None:
                             col_left_liq, col_right_liq = st.columns([1, 1.2])
                             
                             with col_left_liq:
-                                st.markdown("###### 🏆 최근 수급 상위권 빈번 노출 종목 (주도 매집주)")
+                                st.markdown("###### 🏆 수급 자주 노출 종목 (누적)")
                                 freq_df = df_liq_all.groupby('name').agg(
                                     노출횟수=('trade_date', 'nunique'),
                                     최근순위=('rank', 'min'),
                                     평균등락률=('change_rate', 'mean')
                                 ).reset_index().sort_values(by=['노출횟수', '최근순위'], ascending=[False, True]).head(10)
+                                freq_df = freq_df.rename(columns={'name': '종목명'})
                                 
                                 st.dataframe(
                                     freq_df.style.format({'평균등락률': '{:+.2f}%'}), 
                                     hide_index=True, use_container_width=True
                                 )
-                                st.caption("💡 수급 상위권에 여러 번 빈번하게 노출된 종목일수록 주포 매집 가능성이 높습니다.")
 
                             with col_right_liq:
-                                st.markdown(f"###### 📋 {sel_liq_date_str} 수급 상세 데이터")
+                                st.markdown(f"###### 📋 당일 수급 상세")
                                 disp_liq_cols = ['rank', 'name', 'close_price', 'change_rate', 'net_total', 'foreign_net', 'inst_net', 'large_volume', 'volume_power']
                                 disp_liq = df_target_liq[disp_liq_cols].copy()
                                 disp_liq = disp_liq.rename(columns={
@@ -419,23 +414,22 @@ if df_display is not None:
                                     hide_index=True, use_container_width=True
                                 )
                         else:
-                            st.warning(f"⚠️ {sel_liq_date_str} 날짜에 저장된 수급 스냅샷 데이터가 없습니다. 다른 날짜를 선택해 주세요.")
+                            st.warning(f"⚠️ {sel_liq_date_str} 데이터가 없습니다.")
                     else:
-                        st.info("💡 아직 DB에 수급 스냅샷 데이터가 없습니다. SQL 쿼리로 입력된 수급 데이터가 있으면 자동 표시됩니다.")
+                        st.info("💡 저장된 수급 데이터가 없습니다.")
 
             st.write("")
             
-            # 💡 [요구사항 3] 모멘텀 순위표 헤더 축약 및 폭 최적화 설정
+            # 💡 [수정] 표 헤더 명칭 적용 방식 변경 (column_config 이용해 깔끔하게 매핑)
             with st.expander("📋 알파 시그널 전체 목록 (모멘텀 순위 상위 200위)", expanded=True):
                 filter_opt = st.radio("빠른 필터", ["전체보기", "🔥 수급일치 종목만", "🔴 매수 추천 종목만", "🔵 매도 필요 종목만", "🟢 현재 보유 종목만"], horizontal=True, label_visibility="collapsed")
                 
                 df_target = df_display.head(200).copy()
                 df_target['수급포착'] = df_target['종목명'].apply(lambda nm: '🔥 수급일치' if str(nm).strip() in matched_liq_stock_names else '-')
                 
-                # 열 이름 슬림화 & 가독성 증대
                 col_order = ['순위', '추천순위', '수급포착', '변동', '매매상태', '종목명', '이격도', 'MOT', 'RS(90)', 'RS(10)', 'MA20', '제외사유', '종가', '상승금액', '상승률', 'ticker'] 
                 df_target = df_target[col_order].rename(columns={
-                    '추천순위': '추천<br>순위',
+                    '추천순위': '추천순위',
                     '수급포착': '수급',
                     '매매상태': '상태',
                     '이격도': '이격(%)'
@@ -462,10 +456,10 @@ if df_display is not None:
                         '상승률': '{:+.2f}%'
                     }
                     
-                    # 좁은 열 폭 지정으로 컴팩트 시각화
+                    # column_config를 이용해 표 헤더 이름 깔끔 매핑 및 너비 축소
                     column_config_cfg = {
                         "순위": st.column_config.NumberColumn("순위", width="small"),
-                        "추천<br>순위": st.column_config.TextColumn("추천<br>순위", width="small"),
+                        "추천순위": st.column_config.TextColumn("추천", width="small"),
                         "수급": st.column_config.TextColumn("수급", width="small"),
                         "변동": st.column_config.TextColumn("변동", width="small"),
                         "상태": st.column_config.TextColumn("상태", width="small"),
@@ -729,7 +723,7 @@ if df_display is not None:
             * **매수 타점 조건**: 모멘텀 순위 **Rank 200위 이내**, 이격도 **-5% ~ +7%**, 가중 모멘텀 **+0.9 이상**
             * **목표 익절 (Take Profit)**: **+15% 도달 시 즉시 청산**
             * **손절 한도 (Stop Loss)**: **-5% 도달 시 즉시 손절**
-            * **시간 손절 (Time Stop)**: **보유일 14일 경과 시 미달성 종목 교체 매도**
+            * **시간 손절 (Time Stop)**: **보유일 14일 경과 시 미달성 종목 경과 청산**
             """)
         else:
             st.info(f"""
@@ -896,7 +890,6 @@ if df_display is not None:
                         }), hide_index=True, use_container_width=True
                     )
 
-    # 💡 [폴딩 3] 하단 통합 추이 차트 영역
     st.divider()
     st.markdown("<div id='chart-section'></div>", unsafe_allow_html=True)
     with st.expander("📉 개별 종목 통합 추이 차트 모니터링", expanded=True):
