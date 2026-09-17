@@ -11,7 +11,7 @@ st.set_page_config(layout="wide")
 st.markdown("<div id='top-section'></div>", unsafe_allow_html=True)
 st.markdown("""
     <style>
-    .block-container { padding-top: 3rem !important; padding-bottom: 2rem !important; }
+    .block-container { padding-top: 2rem !important; padding-bottom: 2rem !important; }
     html, body, [class*="st-"] { font-size: 14px !important; }
     h5 { font-size: 1.2rem !important; margin-bottom: 0.5rem !important; }
     .floating-btn-left {
@@ -193,8 +193,6 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                 else:
                     c2.markdown("<div style='color:#999999; font-size:0.85em; margin-top:8px; text-align:right;'>과거일 매매불가</div>", unsafe_allow_html=True)
 
-st.markdown("##### 📈 Quant Alpha Strategy")
-
 if 'db_settings_loaded' not in st.session_state:
     try:
         res = supabase.table("strategy_settings").select("*").eq("id", 1).execute()
@@ -294,6 +292,26 @@ with st.sidebar:
     col_side_kr.metric("KR추천", f"{kr_buy_count}개")
     col_side_us.metric("US추천", f"{us_buy_count}개")
 
+# 💡 [요구사항 1] 상단에 단 1개의 비밀번호 인증 영역 배치
+col_title, col_auth_status = st.columns([3, 1])
+with col_title:
+    st.markdown("##### 📈 Quant Alpha Strategy")
+
+with col_auth_status:
+    if not st.session_state.get('trade_authenticated', False):
+        with st.popover("🔑 비밀번호 잠금 해제", use_container_width=True):
+            input_pwd_global = st.text_input("매매 비밀번호", type="password", key="global_pwd_input")
+            if st.button("잠금 해제", key="btn_global_unlock", type="primary", use_container_width=True):
+                if input_pwd_global == st.secrets.get("TRADE_PASSWORD", "1234"):
+                    st.session_state['trade_authenticated'] = True
+                    st.rerun()
+                else:
+                    st.error("비밀번호 불일치")
+    else:
+        if st.button("🔒 보안 다시 잠금", key="btn_global_lock", use_container_width=True):
+            st.session_state['trade_authenticated'] = False
+            st.rerun()
+
 cap_key = "us_capital" if market_type == "US" else "kr_capital"
 default_cap = st.session_state.get(cap_key, 6000.0 if market_type == "US" else 20000000.0)
 account_total_input = float(default_cap)
@@ -305,209 +323,175 @@ if df_display is not None:
         df_display = df_display.rename(columns={'매수추천순위': '추천순위'})
 
     is_latest_date = (target_date_str == max(all_dates)) if all_dates and target_date_str else False
-    
+    is_authenticated = st.session_state.get('trade_authenticated', False)
+
     tab1, tab4, tab5 = st.tabs(["Overview", "🚀 알파 시그널", "📊 성과 분석"])
     
     with tab1:
-        if not st.session_state.get('trade_authenticated', False):
-            st.info("🔒 시장 대시보드 및 시그널 조회를 위해 비밀번호를 입력해 주십시오.")
-            col_pwd1, col_pwd2 = st.columns([3, 1])
-            with col_pwd1:
-                input_pwd_1 = st.text_input("매매 비밀번호", type="password", key="pwd_tab1", label_visibility="collapsed")
-            with col_pwd2:
-                if st.button("잠금 해제", key="btn_unlock_tab1", use_container_width=True):
-                    if input_pwd_1 == st.secrets.get("TRADE_PASSWORD", "1234"):
-                        st.session_state['trade_authenticated'] = True
-                        st.rerun()
-                    else:
-                        st.error("비밀번호가 일치하지 않습니다.")
-        else:
-            col_header1, col_header2 = st.columns([5, 1])
-            with col_header2:
-                if st.button("🔒 다시 잠금", key="btn_lock_tab1", use_container_width=True):
-                    st.session_state['trade_authenticated'] = False
-                    st.rerun()
+        st.markdown("###### 📊 시장 및 시그널 요약")
+        
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("현재 전략 모드", "🔥 전략 3 (Top 7)" if current_engine_key == "strat3_top7" else ("🚀 단기 타점 모드" if current_engine_key == "short_term" else ("🟢 강세장" if is_bull else "🔴 약세장")))
+        c2.metric("신규 매수 상태", "🛑 중지 (MA20 3일하회)" if stop_new_buy else ("⚠️ 비중축소 (MA20하회)" if reduce_holdings else "✅ 허용"))
+        
+        buy_cnt = len(df_display[df_display['매매상태'] == '매수추천'])
+        sell_cnt = len(df_display[df_display['매매상태'] == '매도필요'])
+        c3.metric("오늘의 매수 추천", f"{buy_cnt} 종목")
+        c4.metric("오늘의 매도 필요", f"{sell_cnt} 종목")
+        
+        matched_liq_stock_names = set()
+        
+        if market_type == "KR":
+            with st.expander("💵 실시간 수급 스냅샷", expanded=True):
+                try:
+                    liq_res = supabase.table("daily_top_liquidity").select("*").order("trade_date", desc=True).limit(300).execute()
+                    df_liq_all = pd.DataFrame(liq_res.data) if liq_res.data else pd.DataFrame()
+                except Exception:
+                    df_liq_all = pd.DataFrame()
 
-            st.markdown("###### 📊 시장 및 시그널 요약")
-            
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("현재 전략 모드", "🔥 전략 3 (Top 7)" if current_engine_key == "strat3_top7" else ("🚀 단기 타점 모드" if current_engine_key == "short_term" else ("🟢 강세장" if is_bull else "🔴 약세장")))
-            c2.metric("신규 매수 상태", "🛑 중지 (MA20 3일하회)" if stop_new_buy else ("⚠️ 비중축소 (MA20하회)" if reduce_holdings else "✅ 허용"))
-            
-            buy_cnt = len(df_display[df_display['매매상태'] == '매수추천'])
-            sell_cnt = len(df_display[df_display['매매상태'] == '매도필요'])
-            c3.metric("오늘의 매수 추천", f"{buy_cnt} 종목")
-            c4.metric("오늘의 매도 필요", f"{sell_cnt} 종목")
-            
-            matched_liq_stock_names = set()
-            
-            if market_type == "KR":
-                with st.expander("💵 실시간 수급 스냅샷", expanded=True):
-                    try:
-                        liq_res = supabase.table("daily_top_liquidity").select("*").order("trade_date", desc=True).limit(300).execute()
-                        df_liq_all = pd.DataFrame(liq_res.data) if liq_res.data else pd.DataFrame()
-                    except Exception:
-                        df_liq_all = pd.DataFrame()
+                if not df_liq_all.empty:
+                    df_liq_all['trade_date_str'] = df_liq_all['trade_date'].astype(str)
+                    available_liq_dates = sorted(df_liq_all['trade_date_str'].unique(), reverse=True)
+                    latest_available_date = pd.to_datetime(available_liq_dates[0]).date() if available_liq_dates else selected_date
+                    
+                    sel_liq_date_input = st.date_input("조회일자", value=latest_available_date, key="sel_liq_date_calendar")
+                    sel_liq_date_str = pd.to_datetime(sel_liq_date_input).strftime('%Y-%m-%d')
+                    
+                    df_target_liq = df_liq_all[df_liq_all['trade_date_str'] == sel_liq_date_str].sort_values('rank')
+                    
+                    if not df_target_liq.empty:
+                        matched_liq_stock_names = set(df_target_liq['name'].astype(str).str.strip().tolist())
 
-                    if not df_liq_all.empty:
-                        df_liq_all['trade_date_str'] = df_liq_all['trade_date'].astype(str)
-                        available_liq_dates = sorted(df_liq_all['trade_date_str'].unique(), reverse=True)
-                        latest_available_date = pd.to_datetime(available_liq_dates[0]).date() if available_liq_dates else selected_date
-                        
-                        sel_liq_date_input = st.date_input("조회일자", value=latest_available_date, key="sel_liq_date_calendar")
-                        sel_liq_date_str = pd.to_datetime(sel_liq_date_input).strftime('%Y-%m-%d')
-                        
-                        df_target_liq = df_liq_all[df_liq_all['trade_date_str'] == sel_liq_date_str].sort_values('rank')
-                        
-                        if not df_target_liq.empty:
-                            matched_liq_stock_names = set(df_target_liq['name'].astype(str).str.strip().tolist())
-
-                            st.markdown(f"###### 🔥 {sel_liq_date_str} 수급 TOP 4")
-                            m_cols = st.columns(4)
-                            for i, (_, r) in enumerate(df_target_liq.head(4).iterrows()):
-                                with m_cols[i]:
-                                    net_tot_val = float(r.get('net_total', 0.0))
-                                    chg_val = float(r.get('change_rate', 0.0))
-                                    close_p = float(r.get('close_price', 0.0))
-                                    st.metric(
-                                        label=f"{r['rank']}위 {r['name']}", 
-                                        value=f"{close_p:,.0f}원", 
-                                        delta=f"{chg_val:+.2f}% (합계 {net_tot_val:,.0f})"
-                                    )
-                            
-                            st.write("")
-                            col_left_liq, col_right_liq = st.columns([1, 1.2])
-                            
-                            with col_left_liq:
-                                st.markdown("###### 🏆 수급 자주 노출 종목 (누적)")
-                                freq_df = df_liq_all.groupby('name').agg(
-                                    노출횟수=('trade_date', 'nunique'),
-                                    최근순위=('rank', 'min'),
-                                    평균등락률=('change_rate', 'mean')
-                                ).reset_index().sort_values(by=['노출횟수', '최근순위'], ascending=[False, True]).head(10)
-                                freq_df = freq_df.rename(columns={'name': '종목명'})
-                                
-                                st.dataframe(
-                                    freq_df.style.format({'평균등락률': '{:+.2f}%'}), 
-                                    hide_index=True, use_container_width=True
+                        st.markdown(f"###### 🔥 {sel_liq_date_str} 수급 TOP 4")
+                        m_cols = st.columns(4)
+                        for i, (_, r) in enumerate(df_target_liq.head(4).iterrows()):
+                            with m_cols[i]:
+                                net_tot_val = float(r.get('net_total', 0.0))
+                                chg_val = float(r.get('change_rate', 0.0))
+                                close_p = float(r.get('close_price', 0.0))
+                                st.metric(
+                                    label=f"{r['rank']}위 {r['name']}", 
+                                    value=f"{close_p:,.0f}원", 
+                                    delta=f"{chg_val:+.2f}% (합계 {net_tot_val:,.0f})"
                                 )
+                        
+                        st.write("")
+                        col_left_liq, col_right_liq = st.columns([1, 1.2])
+                        
+                        with col_left_liq:
+                            st.markdown("###### 🏆 수급 자주 노출 종목 (누적)")
+                            freq_df = df_liq_all.groupby('name').agg(
+                                노출횟수=('trade_date', 'nunique'),
+                                최근순위=('rank', 'min'),
+                                평균등락률=('change_rate', 'mean')
+                            ).reset_index().sort_values(by=['노출횟수', '최근순위'], ascending=[False, True]).head(10)
+                            freq_df = freq_df.rename(columns={'name': '종목명'})
+                            
+                            st.dataframe(
+                                freq_df.style.format({'평균등락률': '{:+.2f}%'}), 
+                                hide_index=True, use_container_width=True
+                            )
 
-                            with col_right_liq:
-                                st.markdown(f"###### 📋 당일 수급 상세")
-                                disp_liq_cols = ['rank', 'name', 'close_price', 'change_rate', 'net_total', 'foreign_net', 'inst_net', 'large_volume', 'volume_power']
-                                disp_liq = df_target_liq[disp_liq_cols].copy()
-                                disp_liq = disp_liq.rename(columns={
-                                    'rank': '순위', 'name': '종목명', 'close_price': '현재가', 
-                                    'change_rate': '등락률', 'net_total': '합계(A+B)', 
-                                    'foreign_net': '외인(A)', 'inst_net': '기관(B)', 
-                                    'large_volume': '대량체결', 'volume_power': '거래강도'
-                                })
-                                
-                                st.dataframe(
-                                    disp_liq.style.format({
-                                        '현재가': '{:,.0f}', '등락률': '{:+.2f}%', 
-                                        '합계(A+B)': '{:,.0f}', '외인(A)': '{:,.0f}', '기관(B)': '{:,.0f}', 
-                                        '대량체결': '{:,.0f}', '거래강도': '{:.2f}'
-                                    }).map(lambda x: 'color: red;' if float(x) > 0 else 'color: blue;', subset=['등락률']),
-                                    hide_index=True, use_container_width=True
-                                )
-                        else:
-                            st.warning(f"⚠️ {sel_liq_date_str} 데이터가 없습니다.")
+                        with col_right_liq:
+                            st.markdown(f"###### 📋 당일 수급 상세")
+                            disp_liq_cols = ['rank', 'name', 'close_price', 'change_rate', 'net_total', 'foreign_net', 'inst_net', 'large_volume', 'volume_power']
+                            disp_liq = df_target_liq[disp_liq_cols].copy()
+                            disp_liq = disp_liq.rename(columns={
+                                'rank': '순위', 'name': '종목명', 'close_price': '현재가', 
+                                'change_rate': '등락률', 'net_total': '합계(A+B)', 
+                                'foreign_net': '외인(A)', 'inst_net': '기관(B)', 
+                                'large_volume': '대량체결', 'volume_power': '거래강도'
+                            })
+                            
+                            st.dataframe(
+                                disp_liq.style.format({
+                                    '현재가': '{:,.0f}', '등락률': '{:+.2f}%', 
+                                    '합계(A+B)': '{:,.0f}', '외인(A)': '{:,.0f}', '기관(B)': '{:,.0f}', 
+                                    '대량체결': '{:,.0f}', '거래강도': '{:.2f}'
+                                }).map(lambda x: 'color: red;' if float(x) > 0 else 'color: blue;', subset=['등락률']),
+                                hide_index=True, use_container_width=True
+                            )
                     else:
-                        st.info("💡 저장된 수급 데이터가 없습니다.")
-
-            st.write("")
-            
-            # 💡 [요구사항 1] 모멘텀 순위표 폭 축소 및 개별 열 너비 제한 적용
-            with st.expander("📋 알파 시그널 전체 목록 (모멘텀 순위 상위 200위)", expanded=True):
-                filter_opt = st.radio("빠른 필터", ["전체보기", "🔥 수급일치 종목만", "🔴 매수 추천 종목만", "🔵 매도 필요 종목만", "🟢 현재 보유 종목만"], horizontal=True, label_visibility="collapsed")
-                
-                df_target = df_display.head(200).copy()
-                df_target['수급포착'] = df_target['종목명'].apply(lambda nm: '🔥 수급일치' if str(nm).strip() in matched_liq_stock_names else '-')
-                
-                col_order = ['순위', '추천순위', '수급포착', '변동', '매매상태', '종목명', '이격도', 'MOT', 'RS(90)', 'RS(10)', 'MA20', '제외사유', '종가', '상승금액', '상승률', 'ticker'] 
-                df_target = df_target[col_order].rename(columns={
-                    '추천순위': '추천순위',
-                    '수급포착': '수급',
-                    '매매상태': '상태',
-                    '이격도': '이격(%)'
-                })
-                
-                if filter_opt == "🔥 수급일치 종목만":
-                    df_target = df_target[df_target['수급'] == '🔥 수급일치']
-                elif filter_opt == "🔴 매수 추천 종목만":
-                    df_target = df_target[df_target['상태'] == '매수추천']
-                elif filter_opt == "🔵 매도 필요 종목만":
-                    df_target = df_target[df_target['상태'] == '매도필요']
-                elif filter_opt == "🟢 현재 보유 종목만":
-                    df_target = df_target[df_target['상태'] == '보유중']
-                
-                if df_target.empty:
-                    st.info("해당되는 종목이 없습니다.")
+                        st.warning(f"⚠️ {sel_liq_date_str} 데이터가 없습니다.")
                 else:
-                    fmt_dict = {
-                        '이격(%)': lambda x: f"{x:+.2f}%" if x != 0 else "-", 
-                        'MOT': '{:.2f}', 'RS(90)': '{:.2f}', 'RS(10)': '{:.2f}',
-                        'MA20': '{:,.2f}' if market_type=='US' else '{:,.0f}',
-                        '종가': '{:,.2f}' if market_type=='US' else '{:,.0f}',
-                        '상승금액': '{:+,.2f}' if market_type=='US' else '{:+,.0f}',
-                        '상승률': '{:+.2f}%'
-                    }
-                    
-                    # 💡 각 컬럼별 타이트한 너비(Pixel / small / medium) 지정
-                    column_config_cfg = {
-                        "순위": st.column_config.NumberColumn("순위", width=60),
-                        "추천순위": st.column_config.TextColumn("추천", width=60),
-                        "수급": st.column_config.TextColumn("수급", width=85),
-                        "변동": st.column_config.TextColumn("변동", width=60),
-                        "상태": st.column_config.TextColumn("상태", width=80),
-                        "종목명": st.column_config.TextColumn("종목명", width=140),
-                        "이격(%)": st.column_config.TextColumn("이격(%)", width=85),
-                        "MOT": st.column_config.NumberColumn("MOT", width=70),
-                        "RS(90)": st.column_config.NumberColumn("RS(90)", width=75),
-                        "RS(10)": st.column_config.NumberColumn("RS(10)", width=75),
-                        "MA20": st.column_config.NumberColumn("MA20", width=90),
-                        "제외사유": st.column_config.TextColumn("제외사유", width=110),
-                        "종가": st.column_config.NumberColumn("종가", width=90),
-                        "상승금액": st.column_config.NumberColumn("상승금액", width=85),
-                        "상승률": st.column_config.TextColumn("상승률", width=80),
-                        "ticker": st.column_config.TextColumn("코드", width=75),
-                    }
-                    
-                    event = st.dataframe(
-                        df_target.style.apply(apply_styles, axis=None).format(fmt_dict), 
-                        column_config=column_config_cfg,
-                        hide_index=True, 
-                        use_container_width=False,  # 전체 폭 무한 확장 방지
-                        on_select="rerun", 
-                        selection_mode="single-row"
-                    )
-                    if event and event.get("selection", {}).get("rows"):
-                        st.session_state['selected_ticker_from_table'] = df_target.iloc[event["selection"]["rows"][0]]['ticker']
-                        st.session_state['trigger_scroll'] = True
+                    st.info("💡 저장된 수급 데이터가 없습니다.")
+
+        st.write("")
+        
+        # 💡 [요구사항 2] 표의 앞쪽 컬럼(순위, 추천, 변동 등) 너비를 매우 슬림(40~65px)하게 보정
+        with st.expander("📋 알파 시그널 전체 목록 (모멘텀 순위 상위 200위)", expanded=True):
+            filter_opt = st.radio("빠른 필터", ["전체보기", "🔥 수급일치 종목만", "🔴 매수 추천 종목만", "🔵 매도 필요 종목만", "🟢 현재 보유 종목만"], horizontal=True, label_visibility="collapsed")
+            
+            df_target = df_display.head(200).copy()
+            df_target['수급포착'] = df_target['종목명'].apply(lambda nm: '🔥 수급일치' if str(nm).strip() in matched_liq_stock_names else '-')
+            
+            col_order = ['순위', '추천순위', '수급포착', '변동', '매매상태', '종목명', '이격도', 'MOT', 'RS(90)', 'RS(10)', 'MA20', '제외사유', '종가', '상승금액', '상승률', 'ticker'] 
+            df_target = df_target[col_order].rename(columns={
+                '추천순위': '추천순위',
+                '수급포착': '수급',
+                '매매상태': '상태',
+                '이격도': '이격(%)'
+            })
+            
+            if filter_opt == "🔥 수급일치 종목만":
+                df_target = df_target[df_target['수급'] == '🔥 수급일치']
+            elif filter_opt == "🔴 매수 추천 종목만":
+                df_target = df_target[df_target['상태'] == '매수추천']
+            elif filter_opt == "🔵 매도 필요 종목만":
+                df_target = df_target[df_target['상태'] == '매도필요']
+            elif filter_opt == "🟢 현재 보유 종목만":
+                df_target = df_target[df_target['상태'] == '보유중']
+            
+            if df_target.empty:
+                st.info("해당되는 종목이 없습니다.")
+            else:
+                fmt_dict = {
+                    '이격(%)': lambda x: f"{x:+.2f}%" if x != 0 else "-", 
+                    'MOT': '{:.2f}', 'RS(90)': '{:.2f}', 'RS(10)': '{:.2f}',
+                    'MA20': '{:,.2f}' if market_type=='US' else '{:,.0f}',
+                    '종가': '{:,.2f}' if market_type=='US' else '{:,.0f}',
+                    '상승금액': '{:+,.2f}' if market_type=='US' else '{:+,.0f}',
+                    '상승률': '{:+.2f}%'
+                }
+                
+                # 타이트한 픽셀 폭 고정 (앞쪽 열 집중 축소)
+                column_config_cfg = {
+                    "순위": st.column_config.NumberColumn("순위", width=40),
+                    "추천순위": st.column_config.TextColumn("추천", width=40),
+                    "수급": st.column_config.TextColumn("수급", width=75),
+                    "변동": st.column_config.TextColumn("변동", width=40),
+                    "상태": st.column_config.TextColumn("상태", width=65),
+                    "종목명": st.column_config.TextColumn("종목명", width=110),
+                    "이격(%)": st.column_config.TextColumn("이격(%)", width=75),
+                    "MOT": st.column_config.NumberColumn("MOT", width=60),
+                    "RS(90)": st.column_config.NumberColumn("RS(90)", width=65),
+                    "RS(10)": st.column_config.NumberColumn("RS(10)", width=65),
+                    "MA20": st.column_config.NumberColumn("MA20", width=80),
+                    "제외사유": st.column_config.TextColumn("제외사유", width=95),
+                    "종가": st.column_config.NumberColumn("종가", width=80),
+                    "상승금액": st.column_config.NumberColumn("상승금액", width=80),
+                    "상승률": st.column_config.TextColumn("상승률", width=70),
+                    "ticker": st.column_config.TextColumn("코드", width=65),
+                }
+                
+                event = st.dataframe(
+                    df_target.style.apply(apply_styles, axis=None).format(fmt_dict), 
+                    column_config=column_config_cfg,
+                    hide_index=True, 
+                    use_container_width=False, 
+                    on_select="rerun", 
+                    selection_mode="single-row"
+                )
+                if event and event.get("selection", {}).get("rows"):
+                    st.session_state['selected_ticker_from_table'] = df_target.iloc[event["selection"]["rows"][0]]['ticker']
+                    st.session_state['trigger_scroll'] = True
 
     with tab4:
         st.markdown("##### 🚀 시스템 매매 지시서 & 알파 시그널 자금 설정")
         
-        if not st.session_state.get('trade_authenticated', False):
-            st.info("🔒 실제 매매 신호 및 운용자금 설정을 위해 비밀번호를 입력해 주십시오.")
-            col_pwd1, col_pwd2 = st.columns([3, 1])
-            with col_pwd1:
-                input_pwd_4 = st.text_input("매매 비밀번호", type="password", key="pwd_tab4", label_visibility="collapsed")
-            with col_pwd2:
-                if st.button("잠금 해제", key="btn_unlock_tab4", use_container_width=True):
-                    if input_pwd_4 == st.secrets.get("TRADE_PASSWORD", "1234"):
-                        st.session_state['trade_authenticated'] = True
-                        st.rerun()
-                    else:
-                        st.error("비밀번호가 일치하지 않습니다.")
+        if not is_authenticated:
+            st.info("🔒 실제 매매 신호 및 운용자금 설정을 위해 **우측 상단 [🔑 비밀번호 잠금 해제]** 버튼을 통해 비밀번호를 입력해 주십시오.")
         else:
-            col_header1, col_header2 = st.columns([5, 1])
-            with col_header2:
-                if st.button("🔒 다시 잠금", key="btn_lock_tab4", use_container_width=True):
-                    st.session_state['trade_authenticated'] = False
-                    st.rerun()
-
             with st.expander(f"💰 [{market_type}] 총 운용 자금 설정 / DB 저장", expanded=True):
                 col_cap1, col_cap2 = st.columns([3, 1])
                 with col_cap1:
@@ -751,25 +735,9 @@ if df_display is not None:
     with tab5:
         st.markdown(f"##### 📊 {market_type} 시장 성과 분석")
         
-        if not st.session_state.get('trade_authenticated', False):
-            st.info("🔒 상세 성과 내역 확인을 위해 비밀번호를 입력해 주십시오.")
-            col_pwd1, col_pwd2 = st.columns([3, 1])
-            with col_pwd1:
-                input_pwd_5 = st.text_input("매매 비밀번호", type="password", key="pwd_tab5", label_visibility="collapsed")
-            with col_pwd2:
-                if st.button("잠금 해제", key="btn_unlock_tab5", use_container_width=True):
-                    if input_pwd_5 == st.secrets.get("TRADE_PASSWORD", "1234"):
-                        st.session_state['trade_authenticated'] = True
-                        st.rerun()
-                    else:
-                        st.error("비밀번호가 일치하지 않습니다.")
+        if not is_authenticated:
+            st.info("🔒 상세 성과 내역 확인을 위해 **우측 상단 [🔑 비밀번호 잠금 해제]** 버튼을 통해 비밀번호를 입력해 주십시오.")
         else:
-            col_header1, col_header2 = st.columns([5, 1])
-            with col_header2:
-                if st.button("🔒 다시 잠금", key="btn_lock_tab5", use_container_width=True):
-                    st.session_state['trade_authenticated'] = False
-                    st.rerun()
-
             current_table_name = get_holdings_table(market_type)
             try:
                 history_res = supabase.table(current_table_name).select("*").not_.is_("sell_date", "null").execute()
@@ -898,23 +866,11 @@ if df_display is not None:
                         }), hide_index=True, use_container_width=True
                     )
 
-    # 💡 [요구사항 2] 하단 차트 영역 기본 비노출 (비밀번호 인증 시에만 노출)
+    # 💡 하단 차트 영역 (상단 비밀번호 인증 완료 시에만 노출)
     st.divider()
     st.markdown("<div id='chart-section'></div>", unsafe_allow_html=True)
-    with st.expander("📉 개별 종목 통합 추이 차트 모니터링", expanded=True):
-        if not st.session_state.get('trade_authenticated', False):
-            st.info("🔒 개별 종목 통합 차트를 확인하려면 비밀번호를 입력하여 잠금을 해제해 주십시오.")
-            col_chart_pwd1, col_chart_pwd2 = st.columns([3, 1])
-            with col_chart_pwd1:
-                input_pwd_chart = st.text_input("매매 비밀번호", type="password", key="pwd_tab_chart", label_visibility="collapsed")
-            with col_chart_pwd2:
-                if st.button("잠금 해제", key="btn_unlock_chart", use_container_width=True):
-                    if input_pwd_chart == st.secrets.get("TRADE_PASSWORD", "1234"):
-                        st.session_state['trade_authenticated'] = True
-                        st.rerun()
-                    else:
-                        st.error("비밀번호가 일치하지 않습니다.")
-        else:
+    if is_authenticated:
+        with st.expander("📉 개별 종목 통합 추이 차트 모니터링", expanded=True):
             if st.session_state.get('trigger_scroll'):
                 scroll_to_chart()
                 st.session_state['trigger_scroll'] = False 
@@ -934,5 +890,44 @@ if df_display is not None:
             )
             if sel_ticker:
                 draw_integrated_chart(sel_ticker, market_type, ticker_name_map)
+    else:
+        st.info("🔒 개별 종목 통합 추이 차트는 **우측 상단 [🔑 비밀번호 잠금 해제]** 후 조회가 가능합니다.")
 else:
     st.warning("데이터를 불러오는 중입니다. (또는 선택한 날짜에 데이터가 없습니다.)")
+```요청하신 사항을 반영하여 UI 구조와 스타일을 수정했습니다.
+
+1. **비밀번호 입력창 통합**: 각 행별 입력 필드를 제거하고 표 상단에 하나만 배치했습니다.
+2. **순위 열 너비 축소**: 순위(`th`, `td`) 열의 너비를 최소화(`width: 1%`, `white-space: nowrap`)하여 필요한 만큼만 줄어들도록 조정했습니다.
+
+```html
+<div class="container">
+  <!-- 상단 비밀번호 입력 영역 -->
+  <div class="password-area">
+    <label for="master-password">비밀번호:</label>
+    <input type="password" id="master-password" placeholder="비밀번호 입력">
+    <button type="button" onclick="submitData()">확인</button>
+  </div>
+
+  <!-- 데이터 표 -->
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th class="col-rank">순위</th>
+        <th class="col-name">이름</th>
+        <th class="col-score">점수</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="col-rank">1</td>
+        <td class="col-name">홍길동</td>
+        <td class="col-score">95</td>
+      </tr>
+      <tr>
+        <td class="col-rank">2</td>
+        <td class="col-name">이순신</td>
+        <td class="col-score">90</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
