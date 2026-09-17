@@ -292,7 +292,7 @@ with st.sidebar:
     col_side_kr.metric("KR추천", f"{kr_buy_count}개")
     col_side_us.metric("US추천", f"{us_buy_count}개")
 
-# 💡 [요구사항 1] 상단에 단 1개의 비밀번호 인증 영역 배치
+# 상단 1개 비밀번호 입력 영역
 col_title, col_auth_status = st.columns([3, 1])
 with col_title:
     st.markdown("##### 📈 Quant Alpha Strategy")
@@ -418,7 +418,7 @@ if df_display is not None:
 
         st.write("")
         
-        # 💡 [요구사항 2] 표의 앞쪽 컬럼(순위, 추천, 변동 등) 너비를 매우 슬림(40~65px)하게 보정
+        # 표의 앞쪽 컬럼 너비 축소 설정
         with st.expander("📋 알파 시그널 전체 목록 (모멘텀 순위 상위 200위)", expanded=True):
             filter_opt = st.radio("빠른 필터", ["전체보기", "🔥 수급일치 종목만", "🔴 매수 추천 종목만", "🔵 매도 필요 종목만", "🟢 현재 보유 종목만"], horizontal=True, label_visibility="collapsed")
             
@@ -454,7 +454,6 @@ if df_display is not None:
                     '상승률': '{:+.2f}%'
                 }
                 
-                # 타이트한 픽셀 폭 고정 (앞쪽 열 집중 축소)
                 column_config_cfg = {
                     "순위": st.column_config.NumberColumn("순위", width=40),
                     "추천순위": st.column_config.TextColumn("추천", width=40),
@@ -866,7 +865,7 @@ if df_display is not None:
                         }), hide_index=True, use_container_width=True
                     )
 
-    # 💡 하단 차트 영역 (상단 비밀번호 인증 완료 시에만 노출)
+    # 하단 차트 영역 (상단 비밀번호 인증 시에만 노출)
     st.divider()
     st.markdown("<div id='chart-section'></div>", unsafe_allow_html=True)
     if is_authenticated:
@@ -894,40 +893,3 @@ if df_display is not None:
         st.info("🔒 개별 종목 통합 추이 차트는 **우측 상단 [🔑 비밀번호 잠금 해제]** 후 조회가 가능합니다.")
 else:
     st.warning("데이터를 불러오는 중입니다. (또는 선택한 날짜에 데이터가 없습니다.)")
-```요청하신 사항을 반영하여 UI 구조와 스타일을 수정했습니다.
-
-1. **비밀번호 입력창 통합**: 각 행별 입력 필드를 제거하고 표 상단에 하나만 배치했습니다.
-2. **순위 열 너비 축소**: 순위(`th`, `td`) 열의 너비를 최소화(`width: 1%`, `white-space: nowrap`)하여 필요한 만큼만 줄어들도록 조정했습니다.
-
-```html
-<div class="container">
-  <!-- 상단 비밀번호 입력 영역 -->
-  <div class="password-area">
-    <label for="master-password">비밀번호:</label>
-    <input type="password" id="master-password" placeholder="비밀번호 입력">
-    <button type="button" onclick="submitData()">확인</button>
-  </div>
-
-  <!-- 데이터 표 -->
-  <table class="data-table">
-    <thead>
-      <tr>
-        <th class="col-rank">순위</th>
-        <th class="col-name">이름</th>
-        <th class="col-score">점수</th>
-      </tr>
-    </thead>
-    <tbody>
-      <tr>
-        <td class="col-rank">1</td>
-        <td class="col-name">홍길동</td>
-        <td class="col-score">95</td>
-      </tr>
-      <tr>
-        <td class="col-rank">2</td>
-        <td class="col-name">이순신</td>
-        <td class="col-score">90</td>
-      </tr>
-    </tbody>
-  </table>
-</div>
