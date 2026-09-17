@@ -223,7 +223,6 @@ with st.sidebar:
     
     st.divider()
 
-    # KR -> 전략3(Top7), US -> 단기 15% 기본 설정
     default_engine_idx = 1 if market_type == "US" else 0
 
     strategy_engine_mode = st.radio(
@@ -342,7 +341,6 @@ if df_display is not None:
             
             matched_liq_stock_names = set()
             
-            # 💡 [개선] KR 일때만 간결해진 수급 스냅샷 노출
             if market_type == "KR":
                 with st.expander("💵 실시간 수급 스냅샷", expanded=True):
                     try:
@@ -420,7 +418,7 @@ if df_display is not None:
 
             st.write("")
             
-            # 💡 [수정] 표 헤더 명칭 적용 방식 변경 (column_config 이용해 깔끔하게 매핑)
+            # 💡 [요구사항 1] 모멘텀 순위표 폭 축소 및 개별 열 너비 제한 적용
             with st.expander("📋 알파 시그널 전체 목록 (모멘텀 순위 상위 200위)", expanded=True):
                 filter_opt = st.radio("빠른 필터", ["전체보기", "🔥 수급일치 종목만", "🔴 매수 추천 종목만", "🔵 매도 필요 종목만", "🟢 현재 보유 종목만"], horizontal=True, label_visibility="collapsed")
                 
@@ -456,21 +454,31 @@ if df_display is not None:
                         '상승률': '{:+.2f}%'
                     }
                     
-                    # column_config를 이용해 표 헤더 이름 깔끔 매핑 및 너비 축소
+                    # 💡 각 컬럼별 타이트한 너비(Pixel / small / medium) 지정
                     column_config_cfg = {
-                        "순위": st.column_config.NumberColumn("순위", width="small"),
-                        "추천순위": st.column_config.TextColumn("추천", width="small"),
-                        "수급": st.column_config.TextColumn("수급", width="small"),
-                        "변동": st.column_config.TextColumn("변동", width="small"),
-                        "상태": st.column_config.TextColumn("상태", width="small"),
-                        "이격(%)": st.column_config.TextColumn("이격(%)", width="small"),
+                        "순위": st.column_config.NumberColumn("순위", width=60),
+                        "추천순위": st.column_config.TextColumn("추천", width=60),
+                        "수급": st.column_config.TextColumn("수급", width=85),
+                        "변동": st.column_config.TextColumn("변동", width=60),
+                        "상태": st.column_config.TextColumn("상태", width=80),
+                        "종목명": st.column_config.TextColumn("종목명", width=140),
+                        "이격(%)": st.column_config.TextColumn("이격(%)", width=85),
+                        "MOT": st.column_config.NumberColumn("MOT", width=70),
+                        "RS(90)": st.column_config.NumberColumn("RS(90)", width=75),
+                        "RS(10)": st.column_config.NumberColumn("RS(10)", width=75),
+                        "MA20": st.column_config.NumberColumn("MA20", width=90),
+                        "제외사유": st.column_config.TextColumn("제외사유", width=110),
+                        "종가": st.column_config.NumberColumn("종가", width=90),
+                        "상승금액": st.column_config.NumberColumn("상승금액", width=85),
+                        "상승률": st.column_config.TextColumn("상승률", width=80),
+                        "ticker": st.column_config.TextColumn("코드", width=75),
                     }
                     
                     event = st.dataframe(
                         df_target.style.apply(apply_styles, axis=None).format(fmt_dict), 
                         column_config=column_config_cfg,
                         hide_index=True, 
-                        use_container_width=True, 
+                        use_container_width=False,  # 전체 폭 무한 확장 방지
                         on_select="rerun", 
                         selection_mode="single-row"
                     )
@@ -890,22 +898,41 @@ if df_display is not None:
                         }), hide_index=True, use_container_width=True
                     )
 
+    # 💡 [요구사항 2] 하단 차트 영역 기본 비노출 (비밀번호 인증 시에만 노출)
     st.divider()
     st.markdown("<div id='chart-section'></div>", unsafe_allow_html=True)
     with st.expander("📉 개별 종목 통합 추이 차트 모니터링", expanded=True):
-        if st.session_state.get('trigger_scroll'):
-            scroll_to_chart()
-            st.session_state['trigger_scroll'] = False 
+        if not st.session_state.get('trade_authenticated', False):
+            st.info("🔒 개별 종목 통합 차트를 확인하려면 비밀번호를 입력하여 잠금을 해제해 주십시오.")
+            col_chart_pwd1, col_chart_pwd2 = st.columns([3, 1])
+            with col_chart_pwd1:
+                input_pwd_chart = st.text_input("매매 비밀번호", type="password", key="pwd_tab_chart", label_visibility="collapsed")
+            with col_chart_pwd2:
+                if st.button("잠금 해제", key="btn_unlock_chart", use_container_width=True):
+                    if input_pwd_chart == st.secrets.get("TRADE_PASSWORD", "1234"):
+                        st.session_state['trade_authenticated'] = True
+                        st.rerun()
+                    else:
+                        st.error("비밀번호가 일치하지 않습니다.")
+        else:
+            if st.session_state.get('trigger_scroll'):
+                scroll_to_chart()
+                st.session_state['trigger_scroll'] = False 
 
-        top200_tickers = df_display.head(200)['ticker'].tolist()
-        if st.session_state.get('selected_ticker_from_table') and st.session_state['selected_ticker_from_table'] not in top200_tickers:
-            top200_tickers.append(st.session_state['selected_ticker_from_table'])
+            top200_tickers = df_display.head(200)['ticker'].tolist()
+            if st.session_state.get('selected_ticker_from_table') and st.session_state['selected_ticker_from_table'] not in top200_tickers:
+                top200_tickers.append(st.session_state['selected_ticker_from_table'])
+                
+            ticker_name_map = dict(zip(df_display['ticker'], df_display['종목명']))
+            default_ticker = st.session_state.get('selected_ticker_from_table', top200_tickers[0] if top200_tickers else None)
             
-        ticker_name_map = dict(zip(df_display['ticker'], df_display['종목명']))
-        default_ticker = st.session_state.get('selected_ticker_from_table', top200_tickers[0] if top200_tickers else None)
-        
-        sel_ticker = st.selectbox("분석할 종목 선택 (상위 200위)", options=top200_tickers, index=top200_tickers.index(default_ticker) if default_ticker in top200_tickers else 0, format_func=lambda x: f"[{x}] {ticker_name_map.get(x, x)}")
-        if sel_ticker:
-            draw_integrated_chart(sel_ticker, market_type, ticker_name_map)
+            sel_ticker = st.selectbox(
+                "분석할 종목 선택 (상위 200위)", 
+                options=top200_tickers, 
+                index=top200_tickers.index(default_ticker) if default_ticker in top200_tickers else 0, 
+                format_func=lambda x: f"[{x}] {ticker_name_map.get(x, x)}"
+            )
+            if sel_ticker:
+                draw_integrated_chart(sel_ticker, market_type, ticker_name_map)
 else:
     st.warning("데이터를 불러오는 중입니다. (또는 선택한 날짜에 데이터가 없습니다.)")
