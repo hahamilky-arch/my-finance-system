@@ -1,102 +1,86 @@
-import streamlit as st
+# gemini_analyzer.py
+
+import os
 import google.generativeai as genai
+import streamlit as st
 
-# Streamlit Secrets에서 API Key 가져오기
-GEMINI_KEY = st.secrets.get("GEMINI_API_KEY", "")
-if GEMINI_KEY:
-    genai.configure(api_key=GEMINI_KEY)
+# Gemini API 설정 (secrets에서 키 로드)
+API_KEY = st.secrets.get("GEMINI_API_KEY", "")
+if API_KEY:
+    genai.configure(api_key=API_KEY)
 
-MAX_DAILY_QUOTA = 250
+MAX_DAILY_QUOTA = 50
 
 def get_remaining_quota():
-    """Gemini API 일일 잔여 사용량 계산 (KeyError 방지 안전 초기화)"""
-    if 'gemini_api_count' not in st.session_state:
-        st.session_state['gemini_api_count'] = 0
-    used = st.session_state['gemini_api_count']
-    remaining = max(0, MAX_DAILY_QUOTA - used)
-    return used, remaining
+    # 사용량 세션 상태 관리 (필요 시 세션 초기화)
+    if 'gemini_used_count' not in st.session_state:
+        st.session_state['gemini_used_count'] = 0
+    used = st.session_state['gemini_used_count']
+    return used, max(0, MAX_DAILY_QUOTA - used)
 
-def analyze_stock_with_gemini(ticker, stock_name, row_data, analysis_type):
-    """선택한 종목 및 분석 옵션에 따른 Gemini 3.5 AI 분석 수행"""
-    if not GEMINI_KEY:
-        return "❌ `.streamlit/secrets.toml` 또는 Streamlit Cloud Secrets에 `GEMINI_API_KEY`가 설정되지 않았습니다."
-    
-    used, remaining = get_remaining_quota()
-    if remaining <= 0:
-        return "⚠️ 오늘 사용할 수 있는 Gemini API 호출 한도를 모두 소진했습니다."
+def analyze_stock_with_gemini(ticker, stock_name, stock_data, analysis_option):
+    used, remain = get_remaining_quota()
+    if remain <= 0:
+        return "⚠️ 오늘 일일 Gemini AI 분석 호출 한도(50회)를 모두 소모하였습니다."
 
-    # Gemini 3.5 Flash 모델 지정 및 자동 폴백 처리
-    model_names = ['gemini-3.5-flash', 'gemini-1.5-flash', 'gemini-1.5-pro']
-    model = None
-    for m_name in model_names:
-        try:
-            model = genai.GenerativeModel(m_name)
-            break
-        except Exception:
-            continue
-            
-    if not model:
-        model = genai.GenerativeModel('gemini-3.5-flash')
+    # 모델 설정 (최신 gemini-1.5-flash 또는 gemini-pro)
+    model = genai.GenerativeModel('gemini-1.5-flash')
 
-    base_info = f"""
-    [종목 정보]
-    - 종목명: {stock_name} ({ticker})
-    - 현재 종가: {row_data.get('종가', '-')}
-    - 모멘텀 점수(MOT): {row_data.get('MOT', '-')}
-    - 상대강도 RS(90): {row_data.get('RS(90)', '-')}
-    - 20일 이격도: {row_data.get('이격도', '-')}
-    - ATR: {row_data.get('atr', '-')}
-    """
+    # 기본 수치 정보 요약
+    mot = stock_data.get('MOT', 0)
+    rs90 = stock_data.get('RS(90)', 0)
+    rs10 = stock_data.get('RS(10)', 0)
+    close_price = stock_data.get('종가', 0)
+    disparity = stock_data.get('이격도', stock_data.get('이격(%)', 0))
 
-    if analysis_type == "🏢 사업 구조 및 수익 모델":
+    # 💡 듀퐁 분석용 프롬프트 템플릿 추가
+    if analysis_option == "📈 ROE 듀퐁 분석 (DuPont Analysis)":
         prompt = f"""
-        당신은 주식 펀더멘털 분석 전문가입니다. {stock_name}({ticker})의 사업 구조를 분석해주세요.
-        {base_info}
-        [요청 사항]
-        1. 핵심 제품/서비스 및 매출 발생 구조
-        2. 해당 산업 내 독점력 또는 경쟁 우위 요소(경제적 해자)
-        3. 향후 1~2년 내 실적을 견인할 주요 성장 동력
-        """
-    elif analysis_type == "📊 퀀트 지표 기반 밸류에이션":
-        prompt = f"""
-        당신은 퀀트 투자 전문가입니다. 아래 지표를 바탕으로 기술적/수량적 가치를 평가해주세요.
-        {base_info}
-        [요청 사항]
-        1. 현재 이격도 및 모멘텀(MOT) 기준 가격 과열 여부 판단
-        2. 변동성 지표(ATR) 대비 가격 위치의 안정성 평가
-        3. 퀀트 지표 관점에서의 적정 가격대 판단 및 주의 구간
-        """
-    elif analysis_type == "⚠️ 주요 리스크 및 억제 요인":
-        prompt = f"""
-        당신은 리스크 관리 전문가입니다. {stock_name}({ticker}) 투자 시 발생 가능한 위험 요소를 분석해주세요.
-        {base_info}
-        [요청 사항]
-        1. 기업 내부 또는 실적 관련 잠재적 펀더멘털 리스크 2가지
-        2. 거시경제(매크로: 금리, 환율, 원자재 등)에 따른 부정적 영향
-        3. 주가 하방 압력으로 작용할 수 있는 수급/기술적 위협 요인
-        """
-    elif analysis_type == "🎯 단기/중기 매매 시나리오":
-        prompt = f"""
-        당신은 트레이딩 전략가입니다. 아래 데이터를 바탕으로 실제 매매에 활용 가능한 전략을 제시해주세요.
-        {base_info}
-        [요청 사항]
-        1. 현재 위치에서의 추세 대응(신규 진입 vs 보유 유지를 위한 구체적 가이드)
-        2. 지표(ATR, 이격도) 연계 손절선 및 1차/2차 목표가 설정 기준
-        3. 매매 시 반드시 지켜야 할 자금 관리 핵심 주의사항
-        """
-    else:
-        prompt = f"""
-        당신은 퀀트 및 주식 펀더멘털 분석 전문가입니다. {stock_name}({ticker})의 종합 분석을 작성해주세요.
-        {base_info}
-        [요청 사항]
-        1. 주요 사업 영역 및 최근 기업 이슈 요약
-        2. 퀀트 지표(MOT, RS)와 연계된 펀더멘털 강점 및 리스크
-        3. 투자 판단에 필요한 핵심 관전 포인트 3가지
-        """
+당신은 최고의 스몰캡/대형주 주식 분석가이자 퀀트 투자 전문가입니다.
+종목명: {stock_name} (종목코드: {ticker})
+현재가: {close_price} / 모멘텀(MOT): {mot:.2f} / RS(90): {rs90:.2f} / 이격도: {disparity:.2f}%
+
+위 종목에 대해 ROE(자기자본이익률)를 분해하는 **듀퐁 분석(DuPont Analysis)** 기법을 적용하여 깊이 있고 전문적인 보고서를 작성해 주세요.
+
+다음 항목 및 형식에 맞춰 작성해야 합니다:
+
+1. **듀퐁 분석 3대 요소별 적용 분석**
+   * **순이익률 (Profit Margin) -> [방향성: 상승세/유지/하락세]**
+     * 분석: 최근 제품 믹스 개선, 마진 구조, 원자재 가격 변화 및 박리다매 여부 분석
+     * 변화 요인: 고마진 제품 비중 확대나 실적 턴어라운드 등 ROE에 미치는 수익성 측면 핵심 동인 상세 작성
+   * **자산회전율 (Asset Turnover) -> [방향성: 높은 수준 유지/개선/저하]**
+     * 분석: 총자산 대비 매출 발생 효율성, 공장 가동률 및 재고 회전 특성
+     * 변화 요인: 업황 전방 산업 수요 및 설비 가동 효율성 분석
+   * **재무레버리지 (Financial Leverage) -> [방향성: 유지/증가/관리 필요]**
+     * 분석: 총자산/자기자본 비율, 부채 활용도 및 차입 구조
+     * 변화 요인: CAPEX 투자, 원자재 매입 자금 등 타인자본 활용이 ROE를 지지하는 효과 분석
+
+2. **{stock_name} ROE 개선의 '질적 평가'**
+    아래 마크다운 표 양식을 그대로 사용하여 요약하세요:
+   | 요인 | 상태 | 평가 |
+   |---|---|---|
+   | 마진율 (수익성) | 개선/유지/악화 | 상세 평가 |
+   | 자산회전율 (효율성) | 양호/유지/저하 | 상세 평가 |
+   | 재무레버리지 (안정성) | 유지/증가/축소 | 상세 평가 |
+
+   * **종합 평가**: 부채 증가로 만든 착시인지, 수익성(순이익률)과 가동률(자산회전율) 상승이 이끈 질적으로 우수한 ROE 상승 단계인지 종합 결론 제시.
+
+답변은 한국어로 명확하고 간결하며 가독성 좋게 작성해 주세요. 불필요한 서론/인사말은 생략하세요.
+"""
+    elif analysis_option == "📋 종합 기본적 분석":
+        prompt = f"{stock_name}({ticker})의 밸류에이션, 최근 실적 추이, 업황 모멘텀을 종합 분석해 주세요."
+    elif analysis_option == "🏢 사업 구조 및 수익 모델":
+        prompt = f"{stock_name}({ticker})의 주요 제품군, 매출 비중, 핵심 수익 구조 및 전방 산업 환경을 분석해 주세요."
+    elif analysis_option == "📊 퀀트 지표 기반 밸류에이션":
+        prompt = f"{stock_name}({ticker})의 현재 모멘텀({mot:.2f}), RS(90)={rs90:.2f}, 이격도({disparity:.2f}%) 지표를 바탕으로 한 수급/차트 기술적 평가를 해주세요."
+    elif analysis_option == "⚠️ 주요 리스크 및 억제 요인":
+        prompt = f"{stock_name}({ticker}) 투자 시 유의해야 할 악재, 재무 리스크, 업황 불확실 요인을 분석해 주세요."
+    else:  # 🎯 단기/중기 매매 시나리오
+        prompt = f"{stock_name}({ticker})의 현재 주가 위치({close_price}) 기반 단기/중기 매매 전략 및 지지/저항선을 제안해 주세요."
 
     try:
         response = model.generate_content(prompt)
-        st.session_state['gemini_api_count'] += 1
+        st.session_state['gemini_used_count'] = used + 1
         return response.text
     except Exception as e:
-        return f"❌ Gemini API 분석 요청 중 오류 발생: {e}"
+        return f"❌ AI 분석 중 오류가 발생했습니다: {str(e)}"
