@@ -24,7 +24,7 @@ def analyze_stock_with_gemini(ticker, stock_name, stock_data, analysis_option):
         return "⚠️ 오늘 일일 Gemini AI 분석 호출 한도(50회)를 모두 소모하였습니다."
 
     # 모델 설정 (최신 gemini-1.5-flash 또는 gemini-pro)
-    model = genai.GenerativeModel('gemini-1.5-flash')
+    model = genai.GenerativeModel('gemini-3.5-flash')
 
     # 기본 수치 정보 요약
     mot = stock_data.get('MOT', 0)
