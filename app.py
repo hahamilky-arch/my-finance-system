@@ -22,8 +22,14 @@ st.markdown("""
         cursor: pointer; z-index: 99999; text-decoration: none;
     }
     .backup-tag {
-        background-color: #fff3cd; color: #856404; font-size: 0.8em; font-weight: bold;
-        padding: 2px 8px; border-radius: 10px; border: 1px solid #ffeeba; margin-left: 6px;
+        background-color: #fff3cd; color: #856404; font-size: 0.85em; font-weight: bold;
+        padding: 2px 8px; border-radius: 6px; border: 1px solid #ffeeba; margin-left: 6px;
+        display: inline-block;
+    }
+    .primary-tag {
+        background-color: #e3f2fd; color: #0d47a1; font-size: 0.85em; font-weight: bold;
+        padding: 2px 8px; border-radius: 6px; border: 1px solid #bbdefb; margin-left: 6px;
+        display: inline-block;
     }
     </style>
     <a href="#top-section" class="floating-btn-left"><span>⬆️</span> <span>위로</span></a>
@@ -83,12 +89,13 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
             backup_data = data.iloc[top_n_cfg:top_n_cfg + 2]
             
             if is_slot_full:
-                st.warning(f"⚠️ 현재 포트폴리오 슬롯이 만석입니다 ({current_holdings_count}/{top_n_cfg}개 보유 중). 하단의 후순위 예비 종목을 대체/대기 매수용으로 참고하세요.")
+                st.warning(f"⚠️ 현재 포트폴리오 슬롯이 만석입니다 ({current_holdings_count}/{top_n_cfg}개 보유 중). 하단의 [💡 예비 추천] 종목을 교체/대기 매수용으로 참고하세요.")
         else:
             primary_data = data
             backup_data = pd.DataFrame()
 
-        for _, row in primary_data.iterrows():
+        # 1. 주 추천 종목 출력
+        for p_idx, (_, row) in enumerate(primary_data.iterrows(), 1):
             ticker = row['ticker']
             c1, c2 = st.columns([4, 1])
             
@@ -104,6 +111,7 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                 else:
                     reason_desc = f"추세선 이탈, 손절 임계값 혹은 타임스탑 조건 도달"
                 position_info = ""
+                tag_html = ""
             else:
                 if strategy_engine_mode == "strat3_top7":
                     reason_desc = f"전략 3 진입 조건 충족 [추천순위: {rec_rank_display}] (이격도 최소 우선)"
@@ -112,13 +120,17 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                 else:
                     reason_desc = f"Ultimate 듀얼 모멘텀 조건 충족 [추천순위: {rec_rank_display}]"
                 target_pct = (100.0 / top_n_cfg) if top_n_cfg > 0 else 0.0
+                
                 atr_val = row.get('atr', 0.0)
-                position_info = f"<br><span style='font-size: 0.85em; color: #1b5e20; font-weight: bold;'>📊 추천 분산 금액: {fmt_str} (목표 비중 {target_pct:.1f}%) | ATR: {atr_val:,.2f if market_type=='US' else atr_val:,.0f}</span>"
+                atr_str = f"{atr_val:,.2f}" if market_type == "US" else f"{atr_val:,.0f}"
+                position_info = f"<br><span style='font-size: 0.85em; color: #1b5e20; font-weight: bold;'>📊 추천 분산 금액: {fmt_str} (목표 비중 {target_pct:.1f}%) | ATR: {atr_str}</span>"
+                tag_html = f"<span class='primary-tag'>🎯 주추천 {p_idx}위</span>"
 
             card_html = (
                 f"<div style='line-height: 1.6; margin-top: 4px;'>"
                 f"<strong style='font-size: 1.1em; color: #111111;'>{row['종목명']}</strong> "
                 f"<span style='font-size: 0.8em; color: #888888; margin-left: 4px;'>({ticker})</span> "
+                f"{tag_html} "
                 f"<span style='font-size: 0.8em; color: #1565c0; font-weight: bold; margin-left: 6px;'>[모멘텀순위: {rank_val}위 | 추천순위: {rec_rank_display}]</span>"
                 f"<br><span style='font-size: 0.85em; color: #d62728; font-weight: bold;'>📌 사유: {reason_desc}</span>"
                 f"{position_info}"
@@ -139,7 +151,8 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                         atr_v = float(row.get('atr', 0.0))
                         if atr_v > 0 and input_price > 0:
                             atr_suggest_qty = max(1.0, float(int((account_total * 0.02) / (2 * atr_v))))
-                            st.caption(f"💡 자금관리(ATR 변동성) 추천 수량: {atr_suggest_qty:,.2f if market_type=='US' else atr_suggest_qty:,.0f}주")
+                            atr_qty_str = f"{atr_suggest_qty:,.2f}" if market_type == "US" else f"{atr_suggest_qty:,.0f}"
+                            st.caption(f"💡 자금관리(ATR 변동성) 추천 수량: {atr_qty_str}주")
                             
                         input_qty = st.number_input("매수수량", value=calc_qty if market_type=="US" else float(int(calc_qty)), min_value=0.0, key=q_key)
                     else:
@@ -152,9 +165,10 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
             else:
                 c2.markdown("<div style='color:#999999; font-size:0.85em; margin-top:8px; text-align:right;'>과거일 매매불가</div>", unsafe_allow_html=True)
 
+        # 2. 💡 예비 추천 종목 출력
         if not backup_data.empty:
             st.markdown("---")
-            st.markdown("###### 💡 후순위 예비 추천 종목 (슬롯 만석/미체결 시 교체 매수용)")
+            st.markdown("###### 💡 예비 추천 종목 목록 (슬롯 만석/미체결 시 교체 매수용)")
             for backup_idx, (_, row) in enumerate(backup_data.iterrows(), 1):
                 ticker = row['ticker']
                 c1, c2 = st.columns([4, 1])
@@ -164,14 +178,17 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                 rec_rank_display = f"{rec_rank_val}위" if rec_rank_val != '' else '-'
                 reason_desc = f"후순위 조건 충족 [추천순위: {rec_rank_display}] (예비 {backup_idx}순위 대체 종목)"
                 target_pct = (100.0 / top_n_cfg) if top_n_cfg > 0 else 0.0
+                
                 atr_val = row.get('atr', 0.0)
-                position_info = f"<br><span style='font-size: 0.85em; color: #856404; font-weight: bold;'>📊 예비 분산 금액: {fmt_str} | ATR: {atr_val:,.2f if market_type=='US' else atr_val:,.0f}</span>"
+                atr_str = f"{atr_val:,.2f}" if market_type == "US" else f"{atr_val:,.0f}"
+                position_info = f"<br><span style='font-size: 0.85em; color: #856404; font-weight: bold;'>📊 예비 분산 금액: {fmt_str} | ATR: {atr_str}</span>"
 
                 backup_html = (
                     f"<div style='line-height: 1.6; margin-top: 4px; background-color: #fffde7; padding: 8px 12px; border-radius: 6px; border-left: 4px solid #fbc02d;'>"
                     f"<strong style='font-size: 1.05em; color: #111111;'>{row['종목명']}</strong> "
                     f"<span style='font-size: 0.8em; color: #888888; margin-left: 4px;'>({ticker})</span> "
-                    f"<span class='backup-tag'>💡 예비 {backup_idx}순위 [모멘텀순위: {rank_val}위 | 추천순위: {rec_rank_display}]</span>"
+                    f"<span class='backup-tag'>💡 예비 {backup_idx}순위</span> "
+                    f"<span style='font-size: 0.8em; color: #d7ccc8; font-weight: bold; margin-left: 4px;'>[모멘텀순위: {rank_val}위 | 추천순위: {rec_rank_display}]</span>"
                     f"<br><span style='font-size: 0.85em; color: #e65100; font-weight: bold;'>📌 사유: {reason_desc}</span>"
                     f"{position_info}"
                     f"<br><span style='font-size: 0.85em; color: #444444;'>MOT: {row['MOT']:.2f} | RS(90): {row['RS(90)']:.2f} | 이격도: {row['이격도']:+.2f}%</span>"
@@ -292,7 +309,6 @@ with st.sidebar:
     col_side_kr.metric("KR추천", f"{kr_buy_count}개")
     col_side_us.metric("US추천", f"{us_buy_count}개")
 
-# 상단 1개 비밀번호 입력 영역
 col_title, col_auth_status = st.columns([3, 1])
 with col_title:
     st.markdown("##### 📈 Quant Alpha Strategy")
@@ -418,7 +434,6 @@ if df_display is not None:
 
         st.write("")
         
-        # 표의 앞쪽 컬럼 너비 축소 설정
         with st.expander("📋 알파 시그널 전체 목록 (모멘텀 순위 상위 200위)", expanded=True):
             filter_opt = st.radio("빠른 필터", ["전체보기", "🔥 수급일치 종목만", "🔴 매수 추천 종목만", "🔵 매도 필요 종목만", "🟢 현재 보유 종목만"], horizontal=True, label_visibility="collapsed")
             
@@ -672,6 +687,7 @@ if df_display is not None:
                     "분석 요청할 항목 선택",
                     [
                         "📋 종합 기본적 분석",
+                        "📈 ROE 듀퐁 분석 (DuPont Analysis)",
                         "🏢 사업 구조 및 수익 모델",
                         "📊 퀀트 지표 기반 밸류에이션",
                         "⚠️ 주요 리스크 및 억제 요인",
@@ -865,7 +881,6 @@ if df_display is not None:
                         }), hide_index=True, use_container_width=True
                     )
 
-    # 하단 차트 영역 (상단 비밀번호 인증 시에만 노출)
     st.divider()
     st.markdown("<div id='chart-section'></div>", unsafe_allow_html=True)
     if is_authenticated:
