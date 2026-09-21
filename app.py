@@ -85,7 +85,6 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
         fmt_str = f"${target_amount:,.2f}" if market_type == "US" else f"{target_amount:,.0f}원"
 
         if button_label == '매수':
-            # 잔여 슬롯 수(needed_slots)만큼만 주 추천으로 선별
             primary_data = data.iloc[:needed_slots] if needed_slots > 0 else pd.DataFrame()
             backup_data = data.iloc[needed_slots:needed_slots + 2]
             
@@ -577,12 +576,25 @@ if df_display is not None:
                         qty = float(h_row.get('quantity', 1.0))
                         
                         curr_row = df_display[df_display['ticker'].str.strip().str.upper() == str(ticker).strip().upper()]
-                        curr_price = float(curr_row['종가'].values[0]) if not curr_row.empty else buy_price
+                        
+                        if not curr_row.empty:
+                            curr_price = float(curr_row['종가'].values[0])
+                            engine_status = curr_row['매매상태'].values[0]
+                            atr_val = float(curr_row.get('atr', 0.0).values[0]) if 'atr' in curr_row.columns else 0.0
+                        else:
+                            curr_price = buy_price
+                            engine_status = '보유'
+                            atr_val = 0.0
                         
                         eval_val = curr_price * qty
                         total_holdings_val += eval_val
                         profit_rate = ((curr_price / buy_price) - 1) * 100 if buy_price > 0 else 0.0
-                        stop_loss = buy_price * (1 + (sl_cfg / 100.0))
+                        
+                        # ATR 손절가 또는 고정 손절가 기준
+                        if atr_val > 0 and current_engine_key == "strat3_top7":
+                            stop_loss_price = buy_price - (2.5 * atr_val)
+                        else:
+                            stop_loss_price = buy_price * (1 + (sl_cfg / 100.0))
                         
                         risk_amt = eval_val * (abs(sl_cfg) / 100.0)
                         total_risk_amount += risk_amt
@@ -591,7 +603,11 @@ if df_display is not None:
                         if stock_risk_pct > 2.0:
                             risk_violations.append(f"{ticker} ({stock_risk_pct:.1f}%)")
                             
-                        status = "🚨 손절 이탈" if curr_price <= stop_loss else "보유"
+                        # 전략 엔진 매도 상태이거나 손절선 하회 시 🚨 손절 이탈 표시
+                        if engine_status == '매도' or curr_price <= stop_loss_price:
+                            status = "🚨 손절 이탈"
+                        else:
+                            status = "보유"
                         
                         holdings_list.append({
                             '종목명': f"[{ticker}] {raw_name}" if market_type == "US" else f"{raw_name}",
