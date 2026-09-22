@@ -1,5 +1,7 @@
 import streamlit as st
 import pandas as pd
+import plotly.graph_objects as gg
+import plotly.express as px
 import streamlit.components.v1 as components
 from db import supabase, get_holdings_table, update_holdings, get_market_regime, get_available_dates
 from strategy import get_data
@@ -349,7 +351,7 @@ if df_display is not None:
     current_holdings_count = len(holdings_db) if not holdings_db.empty else 0
     needed_slots = max(0, top_n_cfg - current_holdings_count)
 
-    tab1, tab4, tab5 = st.tabs(["Overview", "🚀 알파 시그널", "📊 성과 분석"])
+    tab1, tab2, tab4, tab5 = st.tabs(["Overview", "📊 매매동향 분석", "🚀 알파 시그널", "📈 성과 분석"])
     
     with tab1:
         st.markdown("###### 📊 시장 및 시그널 요약")
@@ -510,6 +512,134 @@ if df_display is not None:
                     st.session_state['selected_ticker_from_table'] = df_target.iloc[event["selection"]["rows"][0]]['ticker']
                     st.session_state['trigger_scroll'] = True
 
+    # ----------------------------------------------------
+    # TAB 2: 매매동향 분석 (투자자별 + 프로그램 매매)
+    # ----------------------------------------------------
+    with tab2:
+        st.markdown(f"##### 🏛️ [{target_date_str}] 투자자별 & 프로그램 매매동향")
+        
+        # 1. Supabase에서 일별 매매동향 데이터 조회
+        try:
+            res_inv = supabase.table("market_investor_trends").select("*").eq("trade_date", target_date_str).execute()
+            df_inv = pd.DataFrame(res_inv.data) if res_inv.data else pd.DataFrame()
+        except Exception:
+            df_inv = pd.DataFrame()
+
+        try:
+            res_prog = supabase.table("market_program_trends").select("*").eq("trade_date", target_date_str).execute()
+            df_prog = pd.DataFrame(res_prog.data) if res_prog.data else pd.DataFrame()
+        except Exception:
+            df_prog = pd.DataFrame()
+
+        # 수동 등록 폼 (데이터가 없는 경우를 위한 입력 인터페이스)
+        with st.expander("📝 당일 매매동향 데이터 수동 수집/등록", expanded=df_inv.empty):
+            col_in1, col_in2 = st.columns(2)
+            with col_in1:
+                st.markdown("###### 📊 코스피 (단위: 백만원)")
+                kospi_foreign = st.number_input("코스피 외국인", value=198470, step=1000)
+                kospi_individual = st.number_input("코스피 개인", value=-1766376, step=1000)
+                kospi_institution = st.number_input("코스피 기관계", value=-96827, step=1000)
+
+            with col_in2:
+                st.markdown("###### 📊 코스닥 (단위: 백만원)")
+                kosdaq_foreign = st.number_input("코스닥 외국인", value=-49030, step=1000)
+                kosdaq_individual = st.number_input("코스닥 개인", value=150894, step=1000)
+                kosdaq_institution = st.number_input("코스닥 기관계", value=-95484, step=1000)
+
+            st.markdown("###### ⚡ 프로그램 매매 (단위: 백만원)")
+            col_pr1, col_pr2, col_pr3 = st.columns(3)
+            prog_arb = col_pr1.number_input("차익 매수", value=90963, step=1000)
+            prog_non_arb = col_pr2.number_input("비차익 매수", value=261635, step=1000)
+            prog_tot = col_pr3.number_input("전체 매수", value=352599, step=1000)
+
+            if st.button("💾 당일 동향 저장", type="primary", use_container_width=True):
+                try:
+                    # 투자자 동향 저장
+                    inv_data = [
+                        {"trade_date": target_date_str, "market_type": "KOSPI", "foreign_net": kospi_foreign, "individual_net": kospi_individual, "institution_net": kospi_institution},
+                        {"trade_date": target_date_str, "market_type": "KOSDAQ", "foreign_net": kosdaq_foreign, "individual_net": kosdaq_individual, "institution_net": kosdaq_institution}
+                    ]
+                    supabase.table("market_investor_trends").upsert(inv_data).execute()
+                    
+                    # 프로그램 동향 저장
+                    prog_data = {"trade_date": target_date_str, "arbitrage_net": prog_arb, "non_arbitrage_net": prog_non_arb, "total_net": prog_tot}
+                    supabase.table("market_program_trends").upsert(prog_data).execute()
+                    
+                    st.success("✅ 매매동향 데이터가 성공적으로 저장되었습니다.")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"❌ 저장 실패: {e}")
+
+        # 2. 투자자별 동향 카드 및 차트 시각화
+        if not df_inv.empty:
+            st.markdown("###### 1. 투자자별 순매수 동향")
+            
+            k_row = df_inv[df_inv['market_type'] == 'KOSPI'].iloc[0] if not df_inv[df_inv['market_type'] == 'KOSPI'].empty else {}
+            kq_row = df_inv[df_inv['market_type'] == 'KOSDAQ'].iloc[0] if not df_inv[df_inv['market_type'] == 'KOSDAQ'].empty else {}
+
+            c_kp1, c_kp2, c_kp3, c_kq1, c_kq2, c_kq3 = st.columns(6)
+            
+            c_kp1.metric("KOSPI 외국인", f"{k_row.get('foreign_net', 0):,}", delta="순매수" if k_row.get('foreign_net', 0)>0 else "순매도")
+            c_kp2.metric("KOSPI 개인", f"{k_row.get('individual_net', 0):,}", delta="순매수" if k_row.get('individual_net', 0)>0 else "순매도")
+            c_kp3.metric("KOSPI 기관", f"{k_row.get('institution_net', 0):,}", delta="순매수" if k_row.get('institution_net', 0)>0 else "순매도")
+
+            c_kq1.metric("KOSDAQ 외국인", f"{kq_row.get('foreign_net', 0):,}", delta="순매수" if kq_row.get('foreign_net', 0)>0 else "순매도")
+            c_kq2.metric("KOSDAQ 개인", f"{kq_row.get('individual_net', 0):,}", delta="순매수" if kq_row.get('individual_net', 0)>0 else "순매도")
+            c_kq3.metric("KOSDAQ 기관", f"{kq_row.get('institution_net', 0):,}", delta="순매수" if kq_row.get('institution_net', 0)>0 else "순매도")
+
+            col_chart1, col_chart2 = st.columns(2)
+            
+            with col_chart1:
+                # KOSPI 차트
+                categories = ['외국인', '개인', '기관계']
+                vals_k = [k_row.get('foreign_net', 0), k_row.get('individual_net', 0), k_row.get('institution_net', 0)]
+                colors_k = ['#d62728' if v > 0 else '#1f77b4' for v in vals_k]
+                
+                fig_k = gg.Figure(data=[gg.Bar(x=categories, y=vals_k, marker_color=colors_k, text=vals_k, textposition='auto')])
+                fig_k.update_layout(title="KOSPI 투자자별 동향 (백만원)", height=320, margin=dict(l=20, r=20, t=40, b=20))
+                st.plotly_chart(fig_k, use_container_width=True)
+
+            with col_chart2:
+                # KOSDAQ 차트
+                vals_kq = [kq_row.get('foreign_net', 0), kq_row.get('individual_net', 0), kq_row.get('institution_net', 0)]
+                colors_kq = ['#d62728' if v > 0 else '#1f77b4' for v in vals_kq]
+                
+                fig_kq = gg.Figure(data=[gg.Bar(x=categories, y=vals_kq, marker_color=colors_kq, text=vals_kq, textposition='auto')])
+                fig_kq.update_layout(title="KOSDAQ 투자자별 동향 (백만원)", height=320, margin=dict(l=20, r=20, t=40, b=20))
+                st.plotly_chart(fig_kq, use_container_width=True)
+
+        # 3. 프로그램 매매동향 시각화
+        if not df_prog.empty:
+            st.markdown("###### 2. 프로그램 매매동향")
+            p_row = df_prog.iloc[0]
+            
+            p_c1, p_c2, p_c3 = st.columns(3)
+            p_c1.metric("차익 순매수", f"{p_row.get('arbitrage_net', 0):,} 백만원")
+            p_c2.metric("비차익 순매수", f"{p_row.get('non_arbitrage_net', 0):,} 백만원")
+            p_c3.metric("프로그램 전체", f"{p_row.get('total_net', 0):,} 백만원")
+
+            p_cats = ['차익', '비차익', '전체']
+            p_vals = [p_row.get('arbitrage_net', 0), p_row.get('non_arbitrage_net', 0), p_row.get('total_net', 0)]
+            p_colors = ['#d62728' if v > 0 else '#1f77b4' for v in p_vals]
+
+            fig_p = gg.Figure(data=[gg.Bar(x=p_cats, y=p_vals, marker_color=p_colors, text=p_vals, textposition='auto')])
+            fig_p.update_layout(title="프로그램 매매 순매수 (백만원)", height=280, margin=dict(l=20, r=20, t=40, b=20))
+            st.plotly_chart(fig_p, use_container_width=True)
+
+        # 4. 종합 수급 흐름 인사이트 분석
+        if not df_inv.empty and not df_prog.empty:
+            k_f = k_row.get('foreign_net', 0)
+            k_i = k_row.get('individual_net', 0)
+            p_non = p_row.get('non_arbitrage_net', 0)
+            
+            st.markdown("###### 💡 퀀트 알파 수급 종합 분석")
+            if k_f > 0 and p_non > 0:
+                st.success(f"✅ **코스피 외인·프로그램 주도 수급 강세장**: 외국인 순매수(+{k_f:,.0f}백만)와 비차익 프로그램 매수(+{p_non:,.0f}백만)가 동시 유입 중입니다. 개인 물량(-{abs(k_i):,.0f}백만)을 스마트머니가 받아내며 시가총액 상위 대형주 중심으로 반등 탄력이 강화될 가능성이 높습니다.")
+            elif k_f < 0 and p_non < 0:
+                st.error(f"🚨 **외인·프로그램 동반 매도 주의**: 코스피 외국인(-{abs(k_f):,.0f}백만)과 비차익 프로그램(-{abs(p_non):,.0f}백만)에서 동반 출회가 발생하고 있습니다. 지수 리스크 관리가 필요하며, 보유 비중 축소를 검토하십시오.")
+            else:
+                st.info("ℹ️ **혼조세 수급 시장**: 투자자별 순매수와 프로그램 유입 간의 방향성이 엇갈리는 장세입니다. 개별 모멘텀 상위 및 수급 포착 종목 위주의 핀셋 대응이 유리합니다.")
+
     with tab4:
         st.markdown(f"##### 🚀 시스템 매매 지시서 [보유 현황: {current_holdings_count} / {top_n_cfg}개]")
         
@@ -565,7 +695,6 @@ if df_display is not None:
                     
                     holdings_list = []
                     total_holdings_val = 0.0
-                    total_risk_amount = 0.0
                     risk_violations = []
                     
                     for _, h_row in holdings_merged.iterrows():
@@ -595,13 +724,10 @@ if df_display is not None:
                         else:
                             stop_loss_price = buy_price * (1 + (sl_cfg / 100.0))
                         
-                        # 손절 시 확정 손실 금액 (현재 수량 기준 평단가 대비 손절가 하락 금액)
-                        stop_loss_amount = (buy_price - stop_loss_price) * qty
+                        # 종목별 손절 도달 시 예상 손실 금액
+                        stop_loss_amount = max(0.0, (buy_price - stop_loss_price) * qty)
                         
-                        risk_amt = eval_val * (abs(sl_cfg) / 100.0)
-                        total_risk_amount += risk_amt
-                        
-                        stock_risk_pct = (risk_amt / account_total_input) * 100 if account_total_input > 0 else 0.0
+                        stock_risk_pct = (stop_loss_amount / account_total_input) * 100 if account_total_input > 0 else 0.0
                         if stock_risk_pct > 2.0:
                             risk_violations.append(f"{ticker} ({stock_risk_pct:.1f}%)")
                             
@@ -624,6 +750,8 @@ if df_display is not None:
                             '상태': status
                         })
                     
+                    # 계좌 전체 손실 총금액 = 각 보유종목 손절금액의 합계
+                    total_risk_amount = sum(item['손절금액'] for item in holdings_list)
                     total_risk_pct = (total_risk_amount / account_total_input) * 100 if account_total_input > 0 else 0.0
                     
                     st.markdown("###### 🛡️ 포트폴리오 리스크 노출도")
@@ -883,7 +1011,7 @@ if df_display is not None:
                     )
 
     st.divider()
-    st.markdown("<div id='chart-section'>`</div>", unsafe_allow_html=True)
+    st.markdown("<div id='chart-section'></div>", unsafe_allow_html=True)
     if is_authenticated:
         with st.expander("📉 개별 종목 통합 차트", expanded=True):
             if st.session_state.get('trigger_scroll'):
