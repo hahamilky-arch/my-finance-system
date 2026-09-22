@@ -374,7 +374,7 @@ if df_display is not None:
         matched_liq_stock_names = set()
         
         if market_type == "KR":
-            with st.expander("💵 실시간 수급 스냅샷", expanded=True):
+            with st.expander("💵 실시간 수급 스냅샷 (기본 접힘)", expanded=False):
                 try:
                     liq_res = supabase.table("daily_top_liquidity").select("*").order("trade_date", desc=True).limit(300).execute()
                     df_liq_all = pd.DataFrame(liq_res.data) if liq_res.data else pd.DataFrame()
@@ -517,35 +517,40 @@ if df_display is not None:
                     st.session_state['trigger_scroll'] = True
 
     # ----------------------------------------------------
-    # TAB 2: 매매동향 분석 (비밀번호 인증 필요)
+    # TAB 2: 매매동향 분석 (개별 날짜 조회기 + 차트 + AI 프롬프트 + 수동등록)
     # ----------------------------------------------------
     with tab2:
-        st.markdown(f"##### 🏛️ [{target_date_str}] 투자자별 & 프로그램 매매동향 분석")
+        col_t2_head, col_t2_date = st.columns([3, 1])
+        with col_t2_head:
+            st.markdown("##### 🏛️ 투자자별 & 프로그램 매매동향 분석")
+        with col_t2_date:
+            trend_target_date = st.date_input("조회일자", value=selected_date, key="trend_target_date_picker")
+            trend_date_str = pd.to_datetime(trend_target_date).strftime('%Y-%m-%d')
         
         if not is_authenticated:
             st.info("🔒 상세 매매동향 및 수급 AI 분석은 우측 상단 **[🔑 잠금 해제]** 후 조회가 가능합니다.")
         else:
-            # 1. Supabase 데이터 조회 (당일 + 과거 2주일 누적 계산용)
+            # 1. Supabase 데이터 조회 (선택한 trend_date_str 기준 및 과거 2주일 누적 계산용)
             try:
-                res_inv_all = supabase.table("market_investor_trends").select("*").lte("trade_date", target_date_str).order("trade_date", desc=True).limit(30).execute()
+                res_inv_all = supabase.table("market_investor_trends").select("*").lte("trade_date", trend_date_str).order("trade_date", desc=True).limit(30).execute()
                 df_inv_all = pd.DataFrame(res_inv_all.data) if res_inv_all.data else pd.DataFrame()
             except Exception:
                 df_inv_all = pd.DataFrame()
 
             try:
-                res_prog_all = supabase.table("market_program_trends").select("*").lte("trade_date", target_date_str).order("trade_date", desc=True).limit(15).execute()
+                res_prog_all = supabase.table("market_program_trends").select("*").lte("trade_date", trend_date_str).order("trade_date", desc=True).limit(15).execute()
                 df_prog_all = pd.DataFrame(res_prog_all.data) if res_prog_all.data else pd.DataFrame()
             except Exception:
                 df_prog_all = pd.DataFrame()
 
-            df_inv = df_inv_all[df_inv_all['trade_date'] == target_date_str] if not df_inv_all.empty else pd.DataFrame()
-            df_prog = df_prog_all[df_prog_all['trade_date'] == target_date_str] if not df_prog_all.empty else pd.DataFrame()
+            df_inv = df_inv_all[df_inv_all['trade_date'] == trend_date_str] if not df_inv_all.empty else pd.DataFrame()
+            df_prog = df_prog_all[df_prog_all['trade_date'] == trend_date_str] if not df_prog_all.empty else pd.DataFrame()
 
             # ----------------------------------------------------
             # 영역 1 (맨 위): 매매동향 차트 표시
             # ----------------------------------------------------
             if not df_inv.empty:
-                st.markdown("###### 1. 당일 투자자별 순매수 동향 (백만원)")
+                st.markdown(f"###### 1. [{trend_date_str}] 투자자별 순매수 동향 (백만원)")
                 
                 k_row = df_inv[df_inv['market_type'] == 'KOSPI'].iloc[0] if not df_inv[df_inv['market_type'] == 'KOSPI'].empty else {}
                 kq_row = df_inv[df_inv['market_type'] == 'KOSDAQ'].iloc[0] if not df_inv[df_inv['market_type'] == 'KOSDAQ'].empty else {}
@@ -574,9 +579,11 @@ if df_display is not None:
                     fig_kq = gg.Figure(data=[gg.Bar(x=categories, y=vals_kq, marker_color=colors_kq, text=vals_kq, textposition='auto')])
                     fig_kq.update_layout(title="KOSDAQ 투자자별 동향", height=280, margin=dict(l=10, r=10, t=35, b=10))
                     st.plotly_chart(fig_kq, use_container_width=True)
+            else:
+                st.warning(f"⚠️ {trend_date_str} 투자자별 매매동향 데이터가 없습니다. 하단 수동 입력창을 이용하세요.")
 
             if not df_prog.empty:
-                st.markdown("###### 2. 당일 프로그램 매매동향 (백만원)")
+                st.markdown(f"###### 2. [{trend_date_str}] 프로그램 매매동향 (백만원)")
                 p_row = df_prog.iloc[0]
                 
                 p_c1, p_c2, p_c3 = st.columns(3)
@@ -598,7 +605,6 @@ if df_display is not None:
             st.markdown("---")
             st.markdown("##### 🤖 Gemini AI 수급 흐름 분석 프롬프트")
 
-            # 수치 추출 (당일)
             kf_val = int(k_row.get('foreign_net', 0)) if not df_inv.empty and not k_row.empty else 0
             ki_val = int(k_row.get('individual_net', 0)) if not df_inv.empty and not k_row.empty else 0
             kin_val = int(k_row.get('institution_net', 0)) if not df_inv.empty and not k_row.empty else 0
@@ -641,7 +647,7 @@ if df_display is not None:
                 p_non_10d = int(df_p_sorted.head(10)['non_arbitrage_net'].sum())
 
             prompt_text = f"""[당일 및 누적 수급·매매동향 분석 요청]
-- 분석 일자: {target_date_str}
+- 분석 일자: {trend_date_str}
 
 1. 당일 수급 현황 (백만원):
   * KOSPI: 외국인({kf_val:+,d}), 개인({ki_val:+,d}), 기관계({kin_val:+,d})
@@ -677,7 +683,7 @@ if df_display is not None:
             # 영역 3 (맨 아래): 수동 매매동향 데이터 입력창 (기본 접힘)
             # ----------------------------------------------------
             st.markdown("---")
-            with st.expander("📝 당일 매매동향 수동 등록/수정 (기본 접힘)", expanded=False):
+            with st.expander(f"📝 [{trend_date_str}] 매매동향 수동 등록/수정 (기본 접힘)", expanded=False):
                 col_in1, col_in2 = st.columns(2)
                 with col_in1:
                     st.markdown("###### 📊 코스피 (단위: 백만원)")
@@ -700,15 +706,15 @@ if df_display is not None:
                 if st.button("💾 매매동향 DB 저장", type="primary", use_container_width=True):
                     try:
                         inv_data = [
-                            {"trade_date": target_date_str, "market_type": "KOSPI", "foreign_net": kospi_foreign, "individual_net": kospi_individual, "institution_net": kospi_institution},
-                            {"trade_date": target_date_str, "market_type": "KOSDAQ", "foreign_net": kosdaq_foreign, "individual_net": kosdaq_individual, "institution_net": kosdaq_institution}
+                            {"trade_date": trend_date_str, "market_type": "KOSPI", "foreign_net": kospi_foreign, "individual_net": kospi_individual, "institution_net": kospi_institution},
+                            {"trade_date": trend_date_str, "market_type": "KOSDAQ", "foreign_net": kosdaq_foreign, "individual_net": kosdaq_individual, "institution_net": kosdaq_institution}
                         ]
                         supabase.table("market_investor_trends").upsert(inv_data).execute()
                         
-                        prog_data = {"trade_date": target_date_str, "arbitrage_net": prog_arb, "non_arbitrage_net": prog_non_arb, "total_net": prog_tot}
+                        prog_data = {"trade_date": trend_date_str, "arbitrage_net": prog_arb, "non_arbitrage_net": prog_non_arb, "total_net": prog_tot}
                         supabase.table("market_program_trends").upsert(prog_data).execute()
                         
-                        st.success("✅ 매매동향 데이터가 저장되었습니다.")
+                        st.success(f"✅ [{trend_date_str}] 매매동향 데이터가 성공적으로 저장되었습니다.")
                         st.rerun()
                     except Exception as e:
                         st.error(f"❌ 저장 실패: {e}")
