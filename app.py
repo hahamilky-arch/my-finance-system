@@ -517,7 +517,7 @@ if df_display is not None:
                     st.session_state['trigger_scroll'] = True
 
     # ----------------------------------------------------
-    # TAB 2: 매매동향 분석 (개별 날짜 조회기 + 차트 + AI 프롬프트 + 수동등록)
+    # TAB 2: 매매동향 분석 (개별 날짜 조회기 + 추이 차트 + AI 프롬프트 + 수동등록)
     # ----------------------------------------------------
     with tab2:
         col_t2_head, col_t2_date = st.columns([3, 1])
@@ -530,15 +530,14 @@ if df_display is not None:
         if not is_authenticated:
             st.info("🔒 상세 매매동향 및 수급 AI 분석은 우측 상단 **[🔑 잠금 해제]** 후 조회가 가능합니다.")
         else:
-            # 1. Supabase 데이터 조회 (선택한 trend_date_str 기준 및 과거 2주일 누적 계산용)
             try:
-                res_inv_all = supabase.table("market_investor_trends").select("*").lte("trade_date", trend_date_str).order("trade_date", desc=True).limit(30).execute()
+                res_inv_all = supabase.table("market_investor_trends").select("*").lte("trade_date", trend_date_str).order("trade_date", desc=True).limit(60).execute()
                 df_inv_all = pd.DataFrame(res_inv_all.data) if res_inv_all.data else pd.DataFrame()
             except Exception:
                 df_inv_all = pd.DataFrame()
 
             try:
-                res_prog_all = supabase.table("market_program_trends").select("*").lte("trade_date", trend_date_str).order("trade_date", desc=True).limit(15).execute()
+                res_prog_all = supabase.table("market_program_trends").select("*").lte("trade_date", trend_date_str).order("trade_date", desc=True).limit(30).execute()
                 df_prog_all = pd.DataFrame(res_prog_all.data) if res_prog_all.data else pd.DataFrame()
             except Exception:
                 df_prog_all = pd.DataFrame()
@@ -547,106 +546,129 @@ if df_display is not None:
             df_prog = df_prog_all[df_prog_all['trade_date'] == trend_date_str] if not df_prog_all.empty else pd.DataFrame()
 
             # ----------------------------------------------------
-            # 영역 1 (맨 위): 매매동향 차트 표시
+            # 영역 1: 당일 매매동향 (간단한 표)
             # ----------------------------------------------------
-            if not df_inv.empty:
-                st.markdown(f"###### 1. [{trend_date_str}] 투자자별 순매수 동향 (백만원)")
+            with st.expander(f"📊 당일 매매동향 스냅샷 [{trend_date_str}]", expanded=True):
+                k_row = df_inv[df_inv['market_type'] == 'KOSPI'].iloc[0] if not df_inv.empty and not df_inv[df_inv['market_type'] == 'KOSPI'].empty else {}
+                kq_row = df_inv[df_inv['market_type'] == 'KOSDAQ'].iloc[0] if not df_inv.empty and not df_inv[df_inv['market_type'] == 'KOSDAQ'].empty else {}
+                p_row = df_prog.iloc[0] if not df_prog.empty else {}
+
+                col_dt1, col_dt2 = st.columns(2)
                 
-                k_row = df_inv[df_inv['market_type'] == 'KOSPI'].iloc[0] if not df_inv[df_inv['market_type'] == 'KOSPI'].empty else {}
-                kq_row = df_inv[df_inv['market_type'] == 'KOSDAQ'].iloc[0] if not df_inv[df_inv['market_type'] == 'KOSDAQ'].empty else {}
+                with col_dt1:
+                    st.markdown("**1. 투자자별 순매수 (백만원)**")
+                    disp_inv_summary = pd.DataFrame([
+                        {
+                            "시장": "KOSPI",
+                            "외국인": int(k_row.get('foreign_net', 0)),
+                            "개인": int(k_row.get('individual_net', 0)),
+                            "기관계": int(k_row.get('institution_net', 0))
+                        },
+                        {
+                            "시장": "KOSDAQ",
+                            "외국인": int(kq_row.get('foreign_net', 0)),
+                            "개인": int(kq_row.get('individual_net', 0)),
+                            "기관계": int(kq_row.get('institution_net', 0))
+                        }
+                    ])
+                    st.dataframe(
+                        disp_inv_summary.style.format({"외국인": "{:+,d}", "개인": "{:+,d}", "기관계": "{:+,d}"})
+                        .map(lambda v: 'color: red;' if v > 0 else ('color: blue;' if v < 0 else ''), subset=['외국인', '개인', '기관계']),
+                        hide_index=True, use_container_width=True
+                    )
 
-                c_kp1, c_kp2, c_kp3, c_kq1, c_kq2, c_kq3 = st.columns(6)
-                c_kp1.metric("KOSPI 외국인", f"{int(k_row.get('foreign_net', 0)):,}")
-                c_kp2.metric("KOSPI 개인", f"{int(k_row.get('individual_net', 0)):,}")
-                c_kp3.metric("KOSPI 기관", f"{int(k_row.get('institution_net', 0)):,}")
-                c_kq1.metric("KOSDAQ 외국인", f"{int(kq_row.get('foreign_net', 0)):,}")
-                c_kq2.metric("KOSDAQ 개인", f"{int(kq_row.get('individual_net', 0)):,}")
-                c_kq3.metric("KOSDAQ 기관", f"{int(kq_row.get('institution_net', 0)):,}")
-
-                col_chart1, col_chart2 = st.columns(2)
-                categories = ['외국인', '개인', '기관계']
-                
-                with col_chart1:
-                    vals_k = [int(k_row.get('foreign_net', 0)), int(k_row.get('individual_net', 0)), int(k_row.get('institution_net', 0))]
-                    colors_k = ['#d62728' if v > 0 else '#1f77b4' for v in vals_k]
-                    fig_k = gg.Figure(data=[gg.Bar(x=categories, y=vals_k, marker_color=colors_k, text=vals_k, textposition='auto')])
-                    fig_k.update_layout(title="KOSPI 투자자별 동향", height=280, margin=dict(l=10, r=10, t=35, b=10))
-                    st.plotly_chart(fig_k, use_container_width=True)
-
-                with col_chart2:
-                    vals_kq = [int(kq_row.get('foreign_net', 0)), int(kq_row.get('individual_net', 0)), int(kq_row.get('institution_net', 0))]
-                    colors_kq = ['#d62728' if v > 0 else '#1f77b4' for v in vals_kq]
-                    fig_kq = gg.Figure(data=[gg.Bar(x=categories, y=vals_kq, marker_color=colors_kq, text=vals_kq, textposition='auto')])
-                    fig_kq.update_layout(title="KOSDAQ 투자자별 동향", height=280, margin=dict(l=10, r=10, t=35, b=10))
-                    st.plotly_chart(fig_kq, use_container_width=True)
-            else:
-                st.warning(f"⚠️ {trend_date_str} 투자자별 매매동향 데이터가 없습니다. 하단 수동 입력창을 이용하세요.")
-
-            if not df_prog.empty:
-                st.markdown(f"###### 2. [{trend_date_str}] 프로그램 매매동향 (백만원)")
-                p_row = df_prog.iloc[0]
-                
-                p_c1, p_c2, p_c3 = st.columns(3)
-                p_c1.metric("차익 순매수", f"{int(p_row.get('arbitrage_net', 0)):,}")
-                p_c2.metric("비차익 순매수", f"{int(p_row.get('non_arbitrage_net', 0)):,}")
-                p_c3.metric("프로그램 전체", f"{int(p_row.get('total_net', 0)):,}")
-
-                p_cats = ['차익', '비차익', '전체']
-                p_vals = [int(p_row.get('arbitrage_net', 0)), int(p_row.get('non_arbitrage_net', 0)), int(p_row.get('total_net', 0))]
-                p_colors = ['#d62728' if v > 0 else '#1f77b4' for v in p_vals]
-
-                fig_p = gg.Figure(data=[gg.Bar(x=p_cats, y=p_vals, marker_color=p_colors, text=p_vals, textposition='auto')])
-                fig_p.update_layout(title="프로그램 매매 순매수", height=250, margin=dict(l=10, r=10, t=35, b=10))
-                st.plotly_chart(fig_p, use_container_width=True)
+                with col_dt2:
+                    st.markdown("**2. 프로그램 순매수 (백만원)**")
+                    disp_prog_summary = pd.DataFrame([
+                        {
+                            "구분": "프로그램",
+                            "차익": int(p_row.get('arbitrage_net', 0)),
+                            "비차익": int(p_row.get('non_arbitrage_net', 0)),
+                            "전체": int(p_row.get('total_net', 0))
+                        }
+                    ])
+                    st.dataframe(
+                        disp_prog_summary.style.format({"차익": "{:+,d}", "비차익": "{:+,d}", "전체": "{:+,d}"})
+                        .map(lambda v: 'color: red;' if v > 0 else ('color: blue;' if v < 0 else ''), subset=['차익', '비차익', '전체']),
+                        hide_index=True, use_container_width=True
+                    )
 
             # ----------------------------------------------------
-            # 영역 2 (중간): Gemini AI 수급 분석 프롬프트 & 누적 데이터 계산
+            # 영역 2: 매매동향 추이 확인 차트 (추가 기능)
             # ----------------------------------------------------
-            st.markdown("---")
-            st.markdown("##### 🤖 Gemini AI 수급 흐름 분석 프롬프트")
+            with st.expander("📈 매매동향 누적 및 일단위 추이 차트", expanded=True):
+                if not df_inv_all.empty:
+                    df_k_trend = df_inv_all[df_inv_all['market_type'] == 'KOSPI'].sort_values('trade_date').copy()
+                    df_kq_trend = df_inv_all[df_inv_all['market_type'] == 'KOSDAQ'].sort_values('trade_date').copy()
 
-            kf_val = int(k_row.get('foreign_net', 0)) if not df_inv.empty and not k_row.empty else 0
-            ki_val = int(k_row.get('individual_net', 0)) if not df_inv.empty and not k_row.empty else 0
-            kin_val = int(k_row.get('institution_net', 0)) if not df_inv.empty and not k_row.empty else 0
-            
-            kqf_val = int(kq_row.get('foreign_net', 0)) if not df_inv.empty and not kq_row.empty else 0
-            kqi_val = int(kq_row.get('individual_net', 0)) if not df_inv.empty and not kq_row.empty else 0
-            kqin_val = int(kq_row.get('institution_net', 0)) if not df_inv.empty and not kq_row.empty else 0
+                    col_ch1, col_ch2 = st.columns(2)
+                    with col_ch1:
+                        fig_k_tr = gg.Figure()
+                        fig_k_tr.add_trace(gg.Scatter(x=df_k_trend['trade_date'], y=df_k_trend['foreign_net'], mode='lines+markers', name='외국인', line=dict(color='#d62728')))
+                        fig_k_tr.add_trace(gg.Scatter(x=df_k_trend['trade_date'], y=df_k_trend['institution_net'], mode='lines+markers', name='기관계', line=dict(color='#2ca02c')))
+                        fig_k_tr.add_trace(gg.Scatter(x=df_k_trend['trade_date'], y=df_k_trend['individual_net'], mode='lines+markers', name='개인', line=dict(color='#1f77b4')))
+                        fig_k_tr.update_layout(title="KOSPI 주체별 매매 추이 (백만원)", height=300, margin=dict(l=10, r=10, t=35, b=10), legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+                        st.plotly_chart(fig_k_tr, use_container_width=True)
 
-            p_non_val = int(p_row.get('non_arbitrage_net', 0)) if not df_prog.empty and not p_row.empty else 0
-            p_tot_val = int(p_row.get('total_net', 0)) if not df_prog.empty and not p_row.empty else 0
+                    with col_ch2:
+                        fig_kq_tr = gg.Figure()
+                        fig_kq_tr.add_trace(gg.Scatter(x=df_kq_trend['trade_date'], y=df_kq_trend['foreign_net'], mode='lines+markers', name='외국인', line=dict(color='#d62728')))
+                        fig_kq_tr.add_trace(gg.Scatter(x=df_kq_trend['trade_date'], y=df_kq_trend['institution_net'], mode='lines+markers', name='기관계', line=dict(color='#2ca02c')))
+                        fig_kq_tr.add_trace(gg.Scatter(x=df_kq_trend['trade_date'], y=df_kq_trend['individual_net'], mode='lines+markers', name='개인', line=dict(color='#1f77b4')))
+                        fig_kq_tr.update_layout(title="KOSDAQ 주체별 매매 추이 (백만원)", height=300, margin=dict(l=10, r=10, t=35, b=10), legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+                        st.plotly_chart(fig_kq_tr, use_container_width=True)
 
-            # 최근 1주일(5일) / 2주일(10일) 누적 수급 데이터 계산
-            k_f_5d = k_i_5d = k_inst_5d = kq_f_5d = kq_i_5d = kq_inst_5d = 0
-            k_f_10d = k_i_10d = k_inst_10d = kq_f_10d = kq_i_10d = kq_inst_10d = 0
-            p_non_5d = p_non_10d = 0
+                if not df_prog_all.empty:
+                    df_p_trend = df_prog_all.sort_values('trade_date').copy()
+                    fig_p_tr = gg.Figure()
+                    fig_p_tr.add_trace(gg.Bar(x=df_p_trend['trade_date'], y=df_p_trend['non_arbitrage_net'], name='비차익', marker_color='#ff7f0e'))
+                    fig_p_tr.add_trace(gg.Bar(x=df_p_trend['trade_date'], y=df_p_trend['arbitrage_net'], name='차익', marker_color='#1f77b4'))
+                    fig_p_tr.update_layout(title="프로그램 매매 추이 (백만원)", barmode='group', height=280, margin=dict(l=10, r=10, t=35, b=10), legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+                    st.plotly_chart(fig_p_tr, use_container_width=True)
 
-            if not df_inv_all.empty:
-                df_k_all = df_inv_all[df_inv_all['market_type'] == 'KOSPI'].sort_values('trade_date', ascending=False)
-                df_kq_all = df_inv_all[df_inv_all['market_type'] == 'KOSDAQ'].sort_values('trade_date', ascending=False)
+            # ----------------------------------------------------
+            # 영역 3: Gemini AI 수급 흐름 분석 프롬프트
+            # ----------------------------------------------------
+            with st.expander("🤖 Gemini AI 수급 분석 및 프롬프트", expanded=True):
+                kf_val = int(k_row.get('foreign_net', 0)) if not df_inv.empty and not k_row.empty else 0
+                ki_val = int(k_row.get('individual_net', 0)) if not df_inv.empty and not k_row.empty else 0
+                kin_val = int(k_row.get('institution_net', 0)) if not df_inv.empty and not k_row.empty else 0
                 
-                # 5일 누적
-                k_f_5d = int(df_k_all.head(5)['foreign_net'].sum())
-                k_i_5d = int(df_k_all.head(5)['individual_net'].sum())
-                k_inst_5d = int(df_k_all.head(5)['institution_net'].sum())
-                kq_f_5d = int(df_kq_all.head(5)['foreign_net'].sum())
-                kq_i_5d = int(df_kq_all.head(5)['individual_net'].sum())
-                kq_inst_5d = int(df_kq_all.head(5)['institution_net'].sum())
+                kqf_val = int(kq_row.get('foreign_net', 0)) if not df_inv.empty and not kq_row.empty else 0
+                kqi_val = int(kq_row.get('individual_net', 0)) if not df_inv.empty and not kq_row.empty else 0
+                kqin_val = int(kq_row.get('institution_net', 0)) if not df_inv.empty and not kq_row.empty else 0
 
-                # 10일 누적
-                k_f_10d = int(df_k_all.head(10)['foreign_net'].sum())
-                k_i_10d = int(df_k_all.head(10)['individual_net'].sum())
-                k_inst_10d = int(df_k_all.head(10)['institution_net'].sum())
-                kq_f_10d = int(df_kq_all.head(10)['foreign_net'].sum())
-                kq_i_10d = int(df_kq_all.head(10)['individual_net'].sum())
-                kq_inst_10d = int(df_kq_all.head(10)['institution_net'].sum())
+                p_non_val = int(p_row.get('non_arbitrage_net', 0)) if not df_prog.empty and not p_row.empty else 0
+                p_tot_val = int(p_row.get('total_net', 0)) if not df_prog.empty and not p_row.empty else 0
 
-            if not df_prog_all.empty:
-                df_p_sorted = df_prog_all.sort_values('trade_date', ascending=False)
-                p_non_5d = int(df_p_sorted.head(5)['non_arbitrage_net'].sum())
-                p_non_10d = int(df_p_sorted.head(10)['non_arbitrage_net'].sum())
+                k_f_5d = k_i_5d = k_inst_5d = kq_f_5d = kq_i_5d = kq_inst_5d = 0
+                k_f_10d = k_i_10d = k_inst_10d = kq_f_10d = kq_i_10d = kq_inst_10d = 0
+                p_non_5d = p_non_10d = 0
 
-            prompt_text = f"""[당일 및 누적 수급·매매동향 분석 요청]
+                if not df_inv_all.empty:
+                    df_k_all = df_inv_all[df_inv_all['market_type'] == 'KOSPI'].sort_values('trade_date', ascending=False)
+                    df_kq_all = df_inv_all[df_inv_all['market_type'] == 'KOSDAQ'].sort_values('trade_date', ascending=False)
+                    
+                    k_f_5d = int(df_k_all.head(5)['foreign_net'].sum())
+                    k_i_5d = int(df_k_all.head(5)['individual_net'].sum())
+                    k_inst_5d = int(df_k_all.head(5)['institution_net'].sum())
+                    kq_f_5d = int(df_kq_all.head(5)['foreign_net'].sum())
+                    kq_i_5d = int(df_kq_all.head(5)['individual_net'].sum())
+                    kq_inst_5d = int(df_kq_all.head(5)['institution_net'].sum())
+
+                    k_f_10d = int(df_k_all.head(10)['foreign_net'].sum())
+                    k_i_10d = int(df_k_all.head(10)['individual_net'].sum())
+                    k_inst_10d = int(df_k_all.head(10)['institution_net'].sum())
+                    kq_f_10d = int(df_kq_all.head(10)['foreign_net'].sum())
+                    kq_i_10d = int(df_kq_all.head(10)['individual_net'].sum())
+                    kq_inst_10d = int(df_kq_all.head(10)['institution_net'].sum())
+
+                if not df_prog_all.empty:
+                    df_p_sorted = df_prog_all.sort_values('trade_date', ascending=False)
+                    p_non_5d = int(df_p_sorted.head(5)['non_arbitrage_net'].sum())
+                    p_non_10d = int(df_p_sorted.head(10)['non_arbitrage_net'].sum())
+
+                prompt_text = f"""[당일 및 누적 수급·매매동향 분석 요청]
 - 분석 일자: {trend_date_str}
 
 1. 당일 수급 현황 (백만원):
@@ -670,19 +692,17 @@ if df_display is not None:
 3. 비차익 프로그램 수급 흐름이 시가총액 상위 대형주 및 트렌드 포트폴리오에 미치는 영향
 4. 현 수급 환경에 맞춘 최적의 퀀트 매매 포지션 가이드 제안"""
 
-            st.markdown("###### 📋 생성된 분석 프롬프트 정보")
-            st.code(prompt_text, language="markdown")
+                st.code(prompt_text, language="markdown")
 
-            if st.button("✨ Gemini AI 수급 종합 분석 실행", type="primary", use_container_width=True):
-                with st.spinner("🤖 당일 및 최근 1~2주 누적 수급 매매동향을 종합 분석 중입니다..."):
-                    analysis_res = analyze_stock_with_gemini("MARKET_TREND", "코스피/코스닥 수급동향", {"MOT": 0, "RS(90)": 0, "이격도": 0, "종가": 0}, prompt_text)
-                st.success("✅ 수급 분석 완료")
-                st.markdown(analysis_res)
+                if st.button("✨ Gemini AI 수급 종합 분석 실행", type="primary", use_container_width=True):
+                    with st.spinner("🤖 당일 및 최근 1~2주 누적 수급 매매동향을 종합 분석 중입니다..."):
+                        analysis_res = analyze_stock_with_gemini("MARKET_TREND", "코스피/코스닥 수급동향", {"MOT": 0, "RS(90)": 0, "이격도": 0, "종가": 0}, prompt_text)
+                    st.success("✅ 수급 분석 완료")
+                    st.markdown(analysis_res)
 
             # ----------------------------------------------------
-            # 영역 3 (맨 아래): 수동 매매동향 데이터 입력창 (기본 접힘)
+            # 영역 4: 수동 매매동향 데이터 입력창
             # ----------------------------------------------------
-            st.markdown("---")
             with st.expander(f"📝 [{trend_date_str}] 매매동향 수동 등록/수정 (기본 접힘)", expanded=False):
                 col_in1, col_in2 = st.columns(2)
                 with col_in1:
