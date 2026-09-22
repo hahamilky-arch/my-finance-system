@@ -358,7 +358,6 @@ if df_display is not None:
         c1.metric("전략 모드", "🔥 전략 3 (Top 7)" if current_engine_key == "strat3_top7" else ("🚀 단기 타점" if current_engine_key == "short_term" else ("🟢 강세장" if is_bull else "🔴 약세장")))
         c2.metric("신규 매수 상태", "🛑 중지" if stop_new_buy else ("⚠️ 비중축소" if reduce_holdings else "✅ 허용"))
         
-        # 슬롯 대비 추천 종목 수 표기
         buy_cnt = len(df_display[df_display['매매상태'] == '추천'])
         buy_cnt_display = min(buy_cnt, needed_slots)
         c3.metric("오늘의 추천 종목", f"{buy_cnt_display}개", delta=f"슬롯 잔여: {needed_slots}/{top_n_cfg}")
@@ -495,7 +494,7 @@ if df_display is not None:
                     "제외사유": st.column_config.TextColumn("제외사유", width=95),
                     "종가": st.column_config.NumberColumn("종가", width=80),
                     "상승금액": st.column_config.NumberColumn("상승금액", width=80),
-                    "상승률": st.column_config.TextColumn("상승률", width=70),
+                    "상승률": st.column_config.NumberColumn("상승률", width=70),
                     "ticker": st.column_config.TextColumn("코드", width=65),
                 }
                 
@@ -590,11 +589,14 @@ if df_display is not None:
                         total_holdings_val += eval_val
                         profit_rate = ((curr_price / buy_price) - 1) * 100 if buy_price > 0 else 0.0
                         
-                        # ATR 손절가 또는 고정 손절가 기준
+                        # 💡 손절가 및 손절 금액 계산 (전략 3 모드인 경우 ATR 기준, 그 외 기본 sl_cfg 기준)
                         if atr_val > 0 and current_engine_key == "strat3_top7":
                             stop_loss_price = buy_price - (2.5 * atr_val)
                         else:
                             stop_loss_price = buy_price * (1 + (sl_cfg / 100.0))
+                        
+                        # 손절 시 확정 손실 금액 (현재 수량 기준 평단가 대비 손절가 하락 금액)
+                        stop_loss_amount = (buy_price - stop_loss_price) * qty
                         
                         risk_amt = eval_val * (abs(sl_cfg) / 100.0)
                         total_risk_amount += risk_amt
@@ -616,6 +618,8 @@ if df_display is not None:
                             '평단가': buy_price,
                             '현재가': curr_price,
                             '수익률(%)': profit_rate,
+                            '손절가': stop_loss_price,
+                            '손절금액': stop_loss_amount,
                             '평가금액': eval_val,
                             '상태': status
                         })
@@ -639,13 +643,14 @@ if df_display is not None:
                     calc_base_total = account_total_input if account_total_input > 0 else total_holdings_val
                     df_h['비중(%)'] = (df_h['평가금액'] / calc_base_total) * 100
                     
-                    df_h = df_h[['종목명', '종목코드', '수량', '평단가', '현재가', '수익률(%)', '비중(%)', '평가금액', '상태']]
+                    df_h = df_h[['종목명', '종목코드', '수량', '평단가', '현재가', '손절가', '손절금액', '수익률(%)', '비중(%)', '평가금액', '상태']]
                     
                     price_fmt_str = '{:,.2f}' if market_type == "US" else '{:,.0f}'
                     st.dataframe(
                         df_h.style.format({
                             '수량': '{:,.2f}' if market_type == "US" else '{:,.0f}', 
                             '평단가': price_fmt_str, '현재가': price_fmt_str,
+                            '손절가': price_fmt_str, '손절금액': price_fmt_str,
                             '수익률(%)': '{:+.2f}%', '비중(%)': '{:.1f}%', '평가금액': price_fmt_str
                         }).map(lambda x: 'color: red; font-weight: bold;' if x == '🚨 손절 이탈' else '', subset=['상태'])
                           .map(lambda x: 'color: red;' if float(x) > 0 else 'color: blue;', subset=['수익률(%)']),
@@ -745,7 +750,7 @@ if df_display is not None:
         else:
             st.info(f"""
             📌 **하이브리드 듀얼 알파 매매 전략 시스템 가이드 (Ultimate)**
-            * **운용 슬롯**: 최대 {top_n_cfg}개 분산
+            * **운용 슬롯**: 최대 {top_n_cfg}개 분할
             * **매도 조건**: 종가 < MA20 이탈, 순위 이탈({rank_exit_limit}위 밖), 손절({sl_cfg}%)
             """)
 
@@ -878,7 +883,7 @@ if df_display is not None:
                     )
 
     st.divider()
-    st.markdown("<div id='chart-section'></div>", unsafe_allow_html=True)
+    st.markdown("<div id='chart-section'>`</div>", unsafe_allow_html=True)
     if is_authenticated:
         with st.expander("📉 개별 종목 통합 차트", expanded=True):
             if st.session_state.get('trigger_scroll'):
@@ -893,7 +898,7 @@ if df_display is not None:
             default_ticker = st.session_state.get('selected_ticker_from_table', top200_tickers[0] if top200_tickers else None)
             
             sel_ticker = st.selectbox(
-                "종목 선택 (상위 200위)", 
+                "종목별 차트 분석", 
                 options=top200_tickers, 
                 index=top200_tickers.index(default_ticker) if default_ticker in top200_tickers else 0, 
                 format_func=lambda x: f"[{x}] {ticker_name_map.get(x, x)}"
