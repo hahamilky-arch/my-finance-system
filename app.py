@@ -33,6 +33,10 @@ st.markdown("""
         padding: 2px 8px; border-radius: 6px; border: 1px solid #bbdefb; margin-left: 6px;
         display: inline-block;
     }
+    .prompt-box {
+        background-color: #f8f9fa; border: 1px solid #e9ecef; border-left: 4px solid #1a73e8;
+        padding: 12px 16px; border-radius: 6px; font-size: 0.9em; font-family: monospace;
+    }
     </style>
     <a href="#top-section" class="floating-btn-left"><span>⬆️</span> <span>위로</span></a>
 """, unsafe_allow_html=True)
@@ -513,10 +517,10 @@ if df_display is not None:
                     st.session_state['trigger_scroll'] = True
 
     # ----------------------------------------------------
-    # TAB 2: 매매동향 분석 (투자자별 + 프로그램 매매)
+    # TAB 2: 매매동향 분석 (투자자별/프로그램 표 & 차트 & 프롬프트 생성)
     # ----------------------------------------------------
     with tab2:
-        st.markdown(f"##### 🏛️ [{target_date_str}] 투자자별 & 프로그램 매매동향")
+        st.markdown(f"##### 🏛️ [{target_date_str}] 투자자별 & 프로그램 매매동향 분석")
         
         # 1. Supabase에서 일별 매매동향 데이터 조회
         try:
@@ -531,114 +535,126 @@ if df_display is not None:
         except Exception:
             df_prog = pd.DataFrame()
 
-        # 수동 등록 폼 (데이터가 없는 경우를 위한 입력 인터페이스)
-        with st.expander("📝 당일 매매동향 데이터 수동 수집/등록", expanded=df_inv.empty):
+        # 수동 등록 입력 폼 (SQL/쿼리로 직접 데이터 세팅 가능하도록 서포트)
+        with st.expander("📝 당일 매매동향 수동 등록/수정", expanded=df_inv.empty):
             col_in1, col_in2 = st.columns(2)
             with col_in1:
                 st.markdown("###### 📊 코스피 (단위: 백만원)")
-                kospi_foreign = st.number_input("코스피 외국인", value=198470, step=1000)
-                kospi_individual = st.number_input("코스피 개인", value=-1766376, step=1000)
-                kospi_institution = st.number_input("코스피 기관계", value=-96827, step=1000)
+                kospi_foreign = st.number_input("코스피 외국인", value=198470, step=1000, key="in_kp_f")
+                kospi_individual = st.number_input("코스피 개인", value=-1766376, step=1000, key="in_kp_i")
+                kospi_institution = st.number_input("코스피 기관계", value=-96827, step=1000, key="in_kp_inst")
 
             with col_in2:
                 st.markdown("###### 📊 코스닥 (단위: 백만원)")
-                kosdaq_foreign = st.number_input("코스닥 외국인", value=-49030, step=1000)
-                kosdaq_individual = st.number_input("코스닥 개인", value=150894, step=1000)
-                kosdaq_institution = st.number_input("코스닥 기관계", value=-95484, step=1000)
+                kosdaq_foreign = st.number_input("코스닥 외국인", value=-49030, step=1000, key="in_kq_f")
+                kosdaq_individual = st.number_input("코스닥 개인", value=150894, step=1000, key="in_kq_i")
+                kosdaq_institution = st.number_input("코스닥 기관계", value=-95484, step=1000, key="in_kq_inst")
 
             st.markdown("###### ⚡ 프로그램 매매 (단위: 백만원)")
             col_pr1, col_pr2, col_pr3 = st.columns(3)
-            prog_arb = col_pr1.number_input("차익 매수", value=90963, step=1000)
-            prog_non_arb = col_pr2.number_input("비차익 매수", value=261635, step=1000)
-            prog_tot = col_pr3.number_input("전체 매수", value=352599, step=1000)
+            prog_arb = col_pr1.number_input("차익 순매수", value=90963, step=1000, key="in_pr_arb")
+            prog_non_arb = col_pr2.number_input("비차익 순매수", value=261635, step=1000, key="in_pr_non_arb")
+            prog_tot = col_pr3.number_input("전체 순매수", value=352599, step=1000, key="in_pr_tot")
 
-            if st.button("💾 당일 동향 저장", type="primary", use_container_width=True):
+            if st.button("💾 매매동향 DB 저장", type="primary", use_container_width=True):
                 try:
-                    # 투자자 동향 저장
                     inv_data = [
                         {"trade_date": target_date_str, "market_type": "KOSPI", "foreign_net": kospi_foreign, "individual_net": kospi_individual, "institution_net": kospi_institution},
                         {"trade_date": target_date_str, "market_type": "KOSDAQ", "foreign_net": kosdaq_foreign, "individual_net": kosdaq_individual, "institution_net": kosdaq_institution}
                     ]
                     supabase.table("market_investor_trends").upsert(inv_data).execute()
                     
-                    # 프로그램 동향 저장
                     prog_data = {"trade_date": target_date_str, "arbitrage_net": prog_arb, "non_arbitrage_net": prog_non_arb, "total_net": prog_tot}
                     supabase.table("market_program_trends").upsert(prog_data).execute()
                     
-                    st.success("✅ 매매동향 데이터가 성공적으로 저장되었습니다.")
+                    st.success("✅ 매매동향 데이터가 저장되었습니다.")
                     st.rerun()
                 except Exception as e:
                     st.error(f"❌ 저장 실패: {e}")
 
-        # 2. 투자자별 동향 카드 및 차트 시각화
+        # 2. 투자자별 & 프로그램 데이터 표시 (표 & 차트)
         if not df_inv.empty:
-            st.markdown("###### 1. 투자자별 순매수 동향")
+            st.markdown("###### 1. 투자자별 순매수 동향 (백만원)")
             
             k_row = df_inv[df_inv['market_type'] == 'KOSPI'].iloc[0] if not df_inv[df_inv['market_type'] == 'KOSPI'].empty else {}
             kq_row = df_inv[df_inv['market_type'] == 'KOSDAQ'].iloc[0] if not df_inv[df_inv['market_type'] == 'KOSDAQ'].empty else {}
 
             c_kp1, c_kp2, c_kp3, c_kq1, c_kq2, c_kq3 = st.columns(6)
-            
-            c_kp1.metric("KOSPI 외국인", f"{k_row.get('foreign_net', 0):,}", delta="순매수" if k_row.get('foreign_net', 0)>0 else "순매도")
-            c_kp2.metric("KOSPI 개인", f"{k_row.get('individual_net', 0):,}", delta="순매수" if k_row.get('individual_net', 0)>0 else "순매도")
-            c_kp3.metric("KOSPI 기관", f"{k_row.get('institution_net', 0):,}", delta="순매수" if k_row.get('institution_net', 0)>0 else "순매도")
-
-            c_kq1.metric("KOSDAQ 외국인", f"{kq_row.get('foreign_net', 0):,}", delta="순매수" if kq_row.get('foreign_net', 0)>0 else "순매도")
-            c_kq2.metric("KOSDAQ 개인", f"{kq_row.get('individual_net', 0):,}", delta="순매수" if kq_row.get('individual_net', 0)>0 else "순매도")
-            c_kq3.metric("KOSDAQ 기관", f"{kq_row.get('institution_net', 0):,}", delta="순매수" if kq_row.get('institution_net', 0)>0 else "순매도")
+            c_kp1.metric("KOSPI 외국인", f"{k_row.get('foreign_net', 0):,}")
+            c_kp2.metric("KOSPI 개인", f"{k_row.get('individual_net', 0):,}")
+            c_kp3.metric("KOSPI 기관", f"{k_row.get('institution_net', 0):,}")
+            c_kq1.metric("KOSDAQ 외국인", f"{kq_row.get('foreign_net', 0):,}")
+            c_kq2.metric("KOSDAQ 개인", f"{kq_row.get('individual_net', 0):,}")
+            c_kq3.metric("KOSDAQ 기관", f"{kq_row.get('institution_net', 0):,}")
 
             col_chart1, col_chart2 = st.columns(2)
+            categories = ['외국인', '개인', '기관계']
             
             with col_chart1:
-                # KOSPI 차트
-                categories = ['외국인', '개인', '기관계']
                 vals_k = [k_row.get('foreign_net', 0), k_row.get('individual_net', 0), k_row.get('institution_net', 0)]
                 colors_k = ['#d62728' if v > 0 else '#1f77b4' for v in vals_k]
-                
                 fig_k = gg.Figure(data=[gg.Bar(x=categories, y=vals_k, marker_color=colors_k, text=vals_k, textposition='auto')])
-                fig_k.update_layout(title="KOSPI 투자자별 동향 (백만원)", height=320, margin=dict(l=20, r=20, t=40, b=20))
+                fig_k.update_layout(title="KOSPI 투자자별 동향", height=300, margin=dict(l=10, r=10, t=35, b=10))
                 st.plotly_chart(fig_k, use_container_width=True)
 
             with col_chart2:
-                # KOSDAQ 차트
                 vals_kq = [kq_row.get('foreign_net', 0), kq_row.get('individual_net', 0), kq_row.get('institution_net', 0)]
                 colors_kq = ['#d62728' if v > 0 else '#1f77b4' for v in vals_kq]
-                
                 fig_kq = gg.Figure(data=[gg.Bar(x=categories, y=vals_kq, marker_color=colors_kq, text=vals_kq, textposition='auto')])
-                fig_kq.update_layout(title="KOSDAQ 투자자별 동향 (백만원)", height=320, margin=dict(l=20, r=20, t=40, b=20))
+                fig_kq.update_layout(title="KOSDAQ 투자자별 동향", height=300, margin=dict(l=10, r=10, t=35, b=10))
                 st.plotly_chart(fig_kq, use_container_width=True)
 
-        # 3. 프로그램 매매동향 시각화
         if not df_prog.empty:
-            st.markdown("###### 2. 프로그램 매매동향")
+            st.markdown("###### 2. 프로그램 매매동향 (백만원)")
             p_row = df_prog.iloc[0]
             
             p_c1, p_c2, p_c3 = st.columns(3)
-            p_c1.metric("차익 순매수", f"{p_row.get('arbitrage_net', 0):,} 백만원")
-            p_c2.metric("비차익 순매수", f"{p_row.get('non_arbitrage_net', 0):,} 백만원")
-            p_c3.metric("프로그램 전체", f"{p_row.get('total_net', 0):,} 백만원")
+            p_c1.metric("차익 순매수", f"{p_row.get('arbitrage_net', 0):,}")
+            p_c2.metric("비차익 순매수", f"{p_row.get('non_arbitrage_net', 0):,}")
+            p_c3.metric("프로그램 전체", f"{p_row.get('total_net', 0):,}")
 
             p_cats = ['차익', '비차익', '전체']
             p_vals = [p_row.get('arbitrage_net', 0), p_row.get('non_arbitrage_net', 0), p_row.get('total_net', 0)]
             p_colors = ['#d62728' if v > 0 else '#1f77b4' for v in p_vals]
 
             fig_p = gg.Figure(data=[gg.Bar(x=p_cats, y=p_vals, marker_color=p_colors, text=p_vals, textposition='auto')])
-            fig_p.update_layout(title="프로그램 매매 순매수 (백만원)", height=280, margin=dict(l=20, r=20, t=40, b=20))
+            fig_p.update_layout(title="프로그램 매매 순매수", height=260, margin=dict(l=10, r=10, t=35, b=10))
             st.plotly_chart(fig_p, use_container_width=True)
 
-        # 4. 종합 수급 흐름 인사이트 분석
-        if not df_inv.empty and not df_prog.empty:
-            k_f = k_row.get('foreign_net', 0)
-            k_i = k_row.get('individual_net', 0)
-            p_non = p_row.get('non_arbitrage_net', 0)
-            
-            st.markdown("###### 💡 퀀트 알파 수급 종합 분석")
-            if k_f > 0 and p_non > 0:
-                st.success(f"✅ **코스피 외인·프로그램 주도 수급 강세장**: 외국인 순매수(+{k_f:,.0f}백만)와 비차익 프로그램 매수(+{p_non:,.0f}백만)가 동시 유입 중입니다. 개인 물량(-{abs(k_i):,.0f}백만)을 스마트머니가 받아내며 시가총액 상위 대형주 중심으로 반등 탄력이 강화될 가능성이 높습니다.")
-            elif k_f < 0 and p_non < 0:
-                st.error(f"🚨 **외인·프로그램 동반 매도 주의**: 코스피 외국인(-{abs(k_f):,.0f}백만)과 비차익 프로그램(-{abs(p_non):,.0f}백만)에서 동반 출회가 발생하고 있습니다. 지수 리스크 관리가 필요하며, 보유 비중 축소를 검토하십시오.")
-            else:
-                st.info("ℹ️ **혼조세 수급 시장**: 투자자별 순매수와 프로그램 유입 간의 방향성이 엇갈리는 장세입니다. 개별 모멘텀 상위 및 수급 포착 종목 위주의 핀셋 대응이 유리합니다.")
+        # 3. Gemini AI 분석용 전용 프롬프트 및 수급 정보 생성
+        st.markdown("---")
+        st.markdown("##### 🤖 Gemini AI 수급 흐름 분석 프롬프트")
+
+        kf_val = k_row.get('foreign_net', 0) if not df_inv.empty else 0
+        ki_val = k_row.get('individual_net', 0) if not df_inv.empty else 0
+        kin_val = k_row.get('institution_net', 0) if not df_inv.empty else 0
+        
+        kqf_val = kq_row.get('foreign_net', 0) if not df_inv.empty else 0
+        kqi_val = kq_row.get('individual_net', 0) if not df_inv.empty else 0
+        kqin_val = kq_row.get('institution_net', 0) if not df_inv.empty else 0
+
+        p_non_val = p_row.get('non_arbitrage_net', 0) if not df_prog.empty else 0
+        p_tot_val = p_row.get('total_net', 0) if not df_prog.empty else 0
+
+        prompt_text = f"""[당일 시장 수급 및 매매동향 분석 요청]
+- 일자: {target_date_str}
+- 코스피 수급: 외국인({kf_val:+,d}백만), 개인({ki_val:+,d}백만), 기관계({kin_val:+,d}백만)
+- 코스닥 수급: 외국인({kqf_val:+,d}백만), 개인({kqi_val:+,d}백만), 기관계({kqin_val:+,d}백만)
+- 프로그램 매매: 비차익({p_non_val:+,d}백만), 전체({p_tot_val:+,d}백만)
+
+[분석 요구사항]
+1. 코스피/코스닥 주요 주체의 수급 이탈 및 유입 배경 분석
+2. 비차익 프로그램 매수가 유입/유출된 주요 업종 및 시가총액 상위주 영향
+3. 퀀트 트렌드 폴로잉 포트폴리오의 대응 전략 및 매수/매도 스탠스 제안"""
+
+        st.markdown("###### 📋 생성된 프롬프트 정보")
+        st.code(prompt_text, language="markdown")
+
+        if st.button("✨ Gemini AI 수급 종합 분석 실행", type="primary", use_container_width=True):
+            with st.spinner("🤖 당일 수급 및 프로그램 매매동향을 종합 분석 중입니다..."):
+                analysis_res = analyze_stock_with_gemini("MARKET_TREND", "코스피/코스닥 수급동향", {"MOT": 0, "RS(90)": 0, "이격도": 0, "종가": 0}, prompt_text)
+            st.success("✅ 수급 분석 완료")
+            st.markdown(analysis_res)
 
     with tab4:
         st.markdown(f"##### 🚀 시스템 매매 지시서 [보유 현황: {current_holdings_count} / {top_n_cfg}개]")
@@ -791,33 +807,37 @@ if df_display is not None:
             display_trade_list(df_rebal[df_rebal['매매상태'] == '추천'], "시스템 매수 추천 종목", "매수", "sys_b", target_date_str, is_latest_date, market_type, holdings_db, top_n_cfg, account_total_input, current_engine_key)
 
             st.markdown("---")
-            col_m_left, col_m_right = st.columns(2)
-            with col_m_left:
-                st.markdown("###### ➕ 수동 매수")
-                with st.container(border=True):
-                    m_ticker = st.text_input("종목코드 (Ticker)", key="m_ticker").strip().upper()
-                    c1, c2 = st.columns(2)
-                    m_price = c1.number_input("매수가", min_value=0.0, value=0.0, step=0.01 if market_type=="US" else 100.0, format="%.2f" if market_type=="US" else "%.0f", key="m_price")
-                    m_qty = c2.number_input("수량", min_value=0.0, value=1.0, step=0.01 if market_type=="US" else 1.0, format="%.2f" if market_type=="US" else "%.0f", key="m_qty")
-                    m_date = st.date_input("매수일", value=selected_date, key="m_date")
-                    if st.button("수동 매수 실행", use_container_width=True, type="primary"):
-                        if m_ticker and m_price > 0 and m_qty > 0:
-                            update_holdings(m_ticker, 'BUY', m_price, m_date, m_qty, market_type)
-                        else:
-                            st.warning("종목코드, 매수가, 수량을 확인하세요.")
-            with col_m_right:
-                st.markdown("###### 🗑️ 수동 매도")
-                with st.container(border=True):
-                    ms_ticker = st.text_input("매도 종목코드", key="ms_ticker").strip().upper()
-                    c1, c2 = st.columns(2)
-                    ms_price = c1.number_input("매도가", min_value=0.0, value=0.0, step=0.01 if market_type=="US" else 100.0, format="%.2f" if market_type=="US" else "%.0f", key="ms_price")
-                    ms_qty = c2.number_input("수량", min_value=0.0, value=1.0, step=0.01 if market_type=="US" else 1.0, format="%.2f" if market_type=="US" else "%.0f", key="ms_qty")
-                    ms_date = st.date_input("매도일", value=selected_date, key="ms_date")
-                    if st.button("수동 매도 실행", use_container_width=True, type="secondary"):
-                        if ms_ticker and ms_price > 0 and ms_qty > 0:
-                            update_holdings(ms_ticker, 'SELL', ms_price, ms_date, ms_qty, market_type)
-                        else:
-                            st.warning("종목코드, 매도가, 수량을 확인하세요.")
+            # 💡 보유 종목 수동 매수/매도 플립(Flip/Toggle) 카드 기능
+            show_manual_trade = st.toggle("🔄 보유 종목 수동 매수/매도 입력창 펼치기", value=False)
+            
+            if show_manual_trade:
+                col_m_left, col_m_right = st.columns(2)
+                with col_m_left:
+                    st.markdown("###### ➕ 수동 매수")
+                    with st.container(border=True):
+                        m_ticker = st.text_input("종목코드 (Ticker)", key="m_ticker").strip().upper()
+                        c1, c2 = st.columns(2)
+                        m_price = c1.number_input("매수가", min_value=0.0, value=0.0, step=0.01 if market_type=="US" else 100.0, format="%.2f" if market_type=="US" else "%.0f", key="m_price")
+                        m_qty = c2.number_input("수량", min_value=0.0, value=1.0, step=0.01 if market_type=="US" else 1.0, format="%.2f" if market_type=="US" else "%.0f", key="m_qty")
+                        m_date = st.date_input("매수일", value=selected_date, key="m_date")
+                        if st.button("수동 매수 실행", use_container_width=True, type="primary"):
+                            if m_ticker and m_price > 0 and m_qty > 0:
+                                update_holdings(m_ticker, 'BUY', m_price, m_date, m_qty, market_type)
+                            else:
+                                st.warning("종목코드, 매수가, 수량을 확인하세요.")
+                with col_m_right:
+                    st.markdown("###### 🗑️ 수동 매도")
+                    with st.container(border=True):
+                        ms_ticker = st.text_input("매도 종목코드", key="ms_ticker").strip().upper()
+                        c1, c2 = st.columns(2)
+                        ms_price = c1.number_input("매도가", min_value=0.0, value=0.0, step=0.01 if market_type=="US" else 100.0, format="%.2f" if market_type=="US" else "%.0f", key="ms_price")
+                        ms_qty = c2.number_input("수량", min_value=0.0, value=1.0, step=0.01 if market_type=="US" else 1.0, format="%.2f" if market_type=="US" else "%.0f", key="ms_qty")
+                        ms_date = st.date_input("매도일", value=selected_date, key="ms_date")
+                        if st.button("수동 매도 실행", use_container_width=True, type="secondary"):
+                            if ms_ticker and ms_price > 0 and ms_qty > 0:
+                                update_holdings(ms_ticker, 'SELL', ms_price, ms_date, ms_qty, market_type)
+                            else:
+                                st.warning("종목코드, 매도가, 수량을 확인하세요.")
 
             st.markdown("---")
             st.markdown("##### 🤖 Google Gemini AI 종목 분석")
