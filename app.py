@@ -542,6 +542,11 @@ if df_display is not None:
             kq_row = df_inv[df_inv['market_type'] == 'KOSDAQ'].iloc[0] if not df_inv.empty and not df_inv[df_inv['market_type'] == 'KOSDAQ'].empty else {}
             p_row = df_prog.iloc[0] if not df_prog.empty else {}
 
+            # 안전한 당일 수급 변수 사전 정의 (NameError 예방)
+            p_non_val = float(p_row.get('non_arbitrage_net', 0)) if not df_prog.empty and not p_row.empty else 0.0
+            p_tot_val = float(p_row.get('total_net', 0)) if not df_prog.empty and not p_row.empty else 0.0
+            p_arb_val = float(p_row.get('arbitrage_net', 0)) if not df_prog.empty and not p_row.empty else 0.0
+
             # ----------------------------------------------------
             # 파생 수급 지표 계산 (누적 수급, Z-Score, 연속성, 다이버전스)
             # ----------------------------------------------------
@@ -575,7 +580,6 @@ if df_display is not None:
                 p_non_20_series = df_p_sorted.head(20)['non_arbitrage_net'].astype(float)
                 mean_20 = p_non_20_series.mean()
                 std_20 = p_non_20_series.std()
-                p_non_val = float(p_row.get('non_arbitrage_net', 0)) if not p_row.empty else 0.0
                 p_zscore = ((p_non_val - mean_20) / std_20) if std_20 > 0 else 0.0
             else:
                 p_zscore = 0.0
@@ -587,7 +591,7 @@ if df_display is not None:
             else:
                 z_tag = "⚖️ 정상 수급 범위"
 
-            # 4. 수급 다이버전스 감지 (지수 리시빙 조건)
+            # 4. 수급 다이버전스 감지
             divergence_msg = ""
             if market_safe and p_non_5d < 0 and k_f_5d < 0:
                 divergence_msg = "⚠️ [약세 다이버전스] 지수는 MA20 위에 있으나, 최근 5일 비차익/외국인 누적 수급이 연속 유출 중입니다. (단기 상단 경계)"
@@ -626,16 +630,12 @@ if df_display is not None:
                     )
 
                 with col_dt2:
-                    p_tot_val = int(p_row.get('total_net', 0)) if not df_prog.empty and not p_row.empty else 0
-                    p_arb_val = int(p_row.get('arbitrage_net', 0)) if not df_prog.empty and not p_row.empty else 0
-                    p_non_val_int = int(p_row.get('non_arbitrage_net', 0)) if not df_prog.empty and not p_row.empty else 0
-
                     disp_prog_summary = pd.DataFrame([
                         {
                             "구분": "프로그램",
-                            "차익": p_arb_val,
-                            "비차익": p_non_val_int,
-                            "전체": p_tot_val
+                            "차익": int(p_arb_val),
+                            "비차익": int(p_non_val),
+                            "전체": int(p_tot_val)
                         }
                     ])
                     st.dataframe(
@@ -774,9 +774,9 @@ if df_display is not None:
 
                 st.markdown("###### ⚡ 프로그램 매매 (단위: 백만원)")
                 col_pr1, col_pr2, col_pr3 = st.columns(3)
-                prog_arb = col_pr1.number_input("차익 순매수", value=p_arb_val, step=1000, key="in_pr_arb")
-                prog_non_arb = col_pr2.number_input("비차익 순매수", value=p_non_val_int, step=1000, key="in_pr_non_arb")
-                prog_tot = col_pr3.number_input("전체 순매수", value=p_tot_val, step=1000, key="in_pr_tot")
+                prog_arb = col_pr1.number_input("차익 순매수", value=int(p_arb_val), step=1000, key="in_pr_arb")
+                prog_non_arb = col_pr2.number_input("비차익 순매수", value=int(p_non_val), step=1000, key="in_pr_non_arb")
+                prog_tot = col_pr3.number_input("전체 순매수", value=int(p_tot_val), step=1000, key="in_pr_tot")
 
                 if st.button("💾 매매동향 DB 저장", type="primary", use_container_width=True):
                     try:
