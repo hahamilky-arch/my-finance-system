@@ -113,7 +113,7 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                 reason_desc = f"진입 조건 충족 [추천순위: {rec_rank_display}]"
                 target_pct = (100.0 / top_n_cfg) if top_n_cfg > 0 else 0.0
                 atr_val = row.get('atr', 0.0)
-                atr_str = f"{atr_val:,.2f}" if market_type == "US" else f"{atr_val:,.0f}"
+                atr_str = f"{atr_val:,.2f}" if market_type == "US" else f"{atr_str:,.0f}" if 'atr_str' in locals() else f"{atr_val:,.0f}"
                 position_info = f"<br><span style='font-size: 0.85em; color: #1b5e20; font-weight: bold;'>📊 분산 금액: {fmt_str} (비중 {target_pct:.1f}%) | ATR: {atr_str}</span>"
                 tag_html = f"<span class='primary-tag'>🎯 추천 {p_idx}</span>"
 
@@ -406,7 +406,6 @@ if df_display is not None:
                         with col_left_liq:
                             st.markdown("###### 🏆 최근 10일간 수급 자주 노출 종목")
                             
-                            # 최근 10개 거래일만 추출하여 필터링
                             recent_10_dates = sorted(df_liq_all['trade_date_str'].unique(), reverse=True)[:10]
                             df_liq_recent = df_liq_all[df_liq_all['trade_date_str'].isin(recent_10_dates)]
                             
@@ -515,7 +514,7 @@ if df_display is not None:
                     st.session_state['trigger_scroll'] = True
 
     # ----------------------------------------------------
-    # TAB 2: 매매동향 분석 (수급 지표 분석 & 정량 출력 고도화)
+    # TAB 2: 매매동향 분석
     # ----------------------------------------------------
     with tab2:
         col_t2_head, col_t2_date = st.columns([3, 1])
@@ -551,14 +550,10 @@ if df_display is not None:
             p_tot_val = float(p_row.get('total_net', 0)) if not df_prog.empty and not p_row.empty else 0.0
             p_arb_val = float(p_row.get('arbitrage_net', 0)) if not df_prog.empty and not p_row.empty else 0.0
 
-            # ----------------------------------------------------
-            # 파생 수급 지표 계산 (누적 수급, Z-Score, 연속성, 다이버전스)
-            # ----------------------------------------------------
             df_k_all = df_inv_all[df_inv_all['market_type'] == 'KOSPI'].sort_values('trade_date', ascending=False) if not df_inv_all.empty else pd.DataFrame()
             df_kq_all = df_inv_all[df_inv_all['market_type'] == 'KOSDAQ'].sort_values('trade_date', ascending=False) if not df_inv_all.empty else pd.DataFrame()
             df_p_sorted = df_prog_all.sort_values('trade_date', ascending=False) if not df_prog_all.empty else pd.DataFrame()
 
-            # 1. N일 누적 수급
             k_f_5d = int(df_k_all.head(5)['foreign_net'].sum()) if not df_k_all.empty else 0
             k_f_10d = int(df_k_all.head(10)['foreign_net'].sum()) if not df_k_all.empty else 0
             k_f_20d = int(df_k_all.head(20)['foreign_net'].sum()) if not df_k_all.empty else 0
@@ -575,11 +570,9 @@ if df_display is not None:
             p_non_10d = int(df_p_sorted.head(10)['non_arbitrage_net'].sum()) if not df_p_sorted.empty else 0
             p_non_20d = int(df_p_sorted.head(20)['non_arbitrage_net'].sum()) if not df_p_sorted.empty else 0
 
-            # 2. 수급 연속성 (최근 5영업일 중 매수 유입 일수)
             k_f_days = int((df_k_all.head(5)['foreign_net'] > 0).sum()) if not df_k_all.empty else 0
             p_non_days = int((df_p_sorted.head(5)['non_arbitrage_net'] > 0).sum()) if not df_p_sorted.empty else 0
 
-            # 3. 비차익 수급 Z-Score (20일 기준 유동성 강도)
             if not df_p_sorted.empty and len(df_p_sorted) >= 5:
                 p_non_20_series = df_p_sorted.head(20)['non_arbitrage_net'].astype(float)
                 mean_20 = p_non_20_series.mean()
@@ -595,16 +588,12 @@ if df_display is not None:
             else:
                 z_tag = "⚖️ 정상 수급 범위"
 
-            # 4. 수급 다이버전스 감지
             divergence_msg = ""
             if market_safe and p_non_5d < 0 and k_f_5d < 0:
                 divergence_msg = "⚠️ [약세 다이버전스] 지수는 MA20 위에 있으나, 최근 5일 비차익/외국인 누적 수급이 연속 유출 중입니다. (단기 상단 경계)"
             elif not market_safe and p_non_5d > 0 and k_f_5d > 0:
                 divergence_msg = "💡 [강세 다이버전스] 지수는 MA20 밑에 있으나, 최근 5일 스마트머니(외인/비차익)가 지속 저점 매수 중입니다. (반등 가능성)"
 
-            # ----------------------------------------------------
-            # 영역 1: 당일 매매동향 및 수급 강도 요약
-            # ----------------------------------------------------
             with st.expander(f"📊 [{trend_date_str}] 당일 매매동향 & 스마트머니 수급 지표", expanded=True):
                 if divergence_msg:
                     st.warning(divergence_msg)
@@ -655,9 +644,6 @@ if df_display is not None:
                 m_sq3.metric("KOSPI 외인 5일 누적", f"{k_f_5d:+,d} 백만원", delta=f"5일 중 {k_f_days}일 순매수")
                 m_sq4.metric("KOSDAQ 외인 5일 누적", f"{kq_f_5d:+,d} 백만원")
 
-            # ----------------------------------------------------
-            # 영역 2: 누적 수급 추세 지표 (5일 / 10일 / 20일)
-            # ----------------------------------------------------
             with st.expander("📈 기간별 누적 수급 추세 (5일 / 10일 / 20일)", expanded=True):
                 df_cum_summary = pd.DataFrame([
                     {
@@ -713,9 +699,6 @@ if df_display is not None:
                     fig_p_tr.update_layout(title="프로그램 매매 추이 (백만원)", barmode='group', height=280, margin=dict(l=10, r=10, t=35, b=10), legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
                     st.plotly_chart(fig_p_tr, use_container_width=True)
 
-            # ----------------------------------------------------
-            # 영역 3: Gemini AI 수급 흐름 분석 프롬프트 (파생 지표 포함)
-            # ----------------------------------------------------
             with st.expander("🤖 Gemini AI 수급 분석 및 고도화 프롬프트", expanded=True):
                 kf_val = int(k_row.get('foreign_net', 0)) if not df_inv.empty and not k_row.empty else 0
                 ki_val = int(k_row.get('individual_net', 0)) if not df_inv.empty and not k_row.empty else 0
@@ -759,9 +742,6 @@ if df_display is not None:
                     st.success("✅ 수급 분석 완료")
                     st.markdown(analysis_res)
 
-            # ----------------------------------------------------
-            # 영역 4: 수동 매매동향 데이터 입력창
-            # ----------------------------------------------------
             with st.expander(f"📝 [{trend_date_str}] 매매동향 수동 등록/수정 (기본 접힘)", expanded=False):
                 col_in1, col_in2 = st.columns(2)
                 with col_in1:
@@ -860,6 +840,7 @@ if df_display is not None:
                         raw_name = h_row.get('name', ticker)
                         buy_price = float(h_row.get('buy_price', 0.0))
                         qty = float(h_row.get('quantity', 1.0))
+                        prev_highest = float(h_row.get('highest_price', buy_price))
                         
                         curr_row = df_display[df_display['ticker'].str.strip().str.upper() == str(ticker).strip().upper()]
                         
@@ -871,24 +852,45 @@ if df_display is not None:
                             curr_price = buy_price
                             engine_status = '보유'
                             atr_val = 0.0
+
+                        # 1. 최고가(highest_price) 동적 갱신
+                        highest_price = max(prev_highest, curr_price, buy_price)
+                        if highest_price > prev_highest and is_authenticated:
+                            try:
+                                supabase.table(current_table_name)\
+                                    .update({'highest_price': highest_price})\
+                                    .eq('ticker', ticker)\
+                                    .is_('sell_date', 'null')\
+                                    .execute()
+                            except Exception:
+                                pass
                         
                         eval_val = curr_price * qty
                         total_holdings_val += eval_val
                         profit_rate = ((curr_price / buy_price) - 1) * 100 if buy_price > 0 else 0.0
                         
+                        # 2. 손절가 및 최고가 기반 트레일링 스톱선 계산
                         if atr_val > 0 and current_engine_key == "strat3_top7":
-                            stop_loss_price = buy_price - (2.5 * atr_val)
+                            initial_stop = buy_price - (2.5 * atr_val)
+                            trailing_stop = highest_price - (2.5 * atr_val)
+                            stop_loss_price = max(initial_stop, trailing_stop)
                         else:
-                            stop_loss_price = buy_price * (1 + (sl_cfg / 100.0))
+                            initial_stop = buy_price * (1 + (sl_cfg / 100.0))
+                            trailing_stop = highest_price * 0.95
+                            stop_loss_price = max(initial_stop, trailing_stop)
                         
-                        stop_loss_amount = max(0.0, (buy_price - stop_loss_price) * qty)
+                        stop_loss_amount = max(0.0, (curr_price - stop_loss_price) * qty) if curr_price > stop_loss_price else 0.0
+                        stock_risk_pct = ((buy_price - stop_loss_price) * qty / account_total_input) * 100 if account_total_input > 0 else 0.0
                         
-                        stock_risk_pct = (stop_loss_amount / account_total_input) * 100 if account_total_input > 0 else 0.0
                         if stock_risk_pct > 2.0:
                             risk_violations.append(f"{ticker} ({stock_risk_pct:.1f}%)")
                             
+                        # 3. 매도 및 트레일링 스톱 이탈 상태 판정
                         if engine_status == '매도' or curr_price <= stop_loss_price:
-                            status = "🚨 손절 이탈"
+                            if profit_rate > 0:
+                                status = "🟢 익절 이탈 (Trailing Stop)"
+                            else:
+                                status = "🚨 손절 이탈"
                         else:
                             status = "보유"
                         
@@ -897,15 +899,16 @@ if df_display is not None:
                             '종목코드': ticker,
                             '수량': qty,
                             '평단가': buy_price,
+                            '최고가': highest_price,
                             '현재가': curr_price,
+                            '손절/스톱가': stop_loss_price,
                             '수익률(%)': profit_rate,
-                            '손절가': stop_loss_price,
-                            '손절금액': stop_loss_amount,
+                            '비중(%)': 0.0,
                             '평가금액': eval_val,
                             '상태': status
                         })
                     
-                    total_risk_amount = sum(item['손절금액'] for item in holdings_list)
+                    total_risk_amount = sum(max(0.0, (item['평단가'] - item['손절/스톱가']) * item['수량']) for item in holdings_list)
                     total_risk_pct = (total_risk_amount / account_total_input) * 100 if account_total_input > 0 else 0.0
                     
                     st.markdown("###### 🛡️ 포트폴리오 리스크 노출도")
@@ -916,7 +919,7 @@ if df_display is not None:
                         st.markdown(f"**총 리스크: {total_risk_pct:.2f}%**")
                     
                     risk_amt_fmt = f"${total_risk_amount:,.2f}" if market_type == "US" else f"{total_risk_amount:,.0f}원"
-                    st.caption(f"※ 전 종목 손절선 도달 시 예상 최대 손실: **{risk_amt_fmt}**")
+                    st.caption(f"※ 전 종목 스톱선 도달 시 예상 최대 리스크: **{risk_amt_fmt}**")
                     if risk_violations:
                         st.warning(f"⚠️ 단일 종목 손실 한도(2.0%) 초과: {', '.join(risk_violations)}")
                         
@@ -925,16 +928,16 @@ if df_display is not None:
                     calc_base_total = account_total_input if account_total_input > 0 else total_holdings_val
                     df_h['비중(%)'] = (df_h['평가금액'] / calc_base_total) * 100
                     
-                    df_h = df_h[['종목명', '종목코드', '수량', '평단가', '현재가', '손절가', '손절금액', '수익률(%)', '비중(%)', '평가금액', '상태']]
+                    df_h = df_h[['종목명', '종목코드', '수량', '평단가', '최고가', '현재가', '손절/스톱가', '수익률(%)', '비중(%)', '평가금액', '상태']]
                     
                     price_fmt_str = '{:,.2f}' if market_type == "US" else '{:,.0f}'
                     st.dataframe(
                         df_h.style.format({
                             '수량': '{:,.2f}' if market_type == "US" else '{:,.0f}', 
-                            '평단가': price_fmt_str, '현재가': price_fmt_str,
-                            '손절가': price_fmt_str, '손절금액': price_fmt_str,
+                            '평단가': price_fmt_str, '최고가': price_fmt_str, '현재가': price_fmt_str,
+                            '손절/스톱가': price_fmt_str,
                             '수익률(%)': '{:+.2f}%', '비중(%)': '{:.1f}%', '평가금액': price_fmt_str
-                        }).map(lambda x: 'color: red; font-weight: bold;' if x == '🚨 손절 이탈' else '', subset=['상태'])
+                        }).map(lambda x: 'color: red; font-weight: bold;' if '손절' in str(x) else ('color: green; font-weight: bold;' if '익절' in str(x) else ''), subset=['상태'])
                           .map(lambda x: 'color: red;' if float(x) > 0 else 'color: blue;', subset=['수익률(%)']),
                         hide_index=True, use_container_width=True
                     )
@@ -1023,7 +1026,7 @@ if df_display is not None:
             * **운용 슬롯**: 최대 **{top_n_cfg}개** 균등 분산 (동적 복리 적용)
             * **레짐 필터**: KOSPI 종가 > MA20 상승장일 때만 매수, 하락 시 전량 현금화
             * **매수 조건**: 모멘텀 순위 **Rank ≤ 15**, RS(90) > 0, RS(10) > 0, 종가 > MA20 (이격도 최소 우선)
-            * **청산 룰**: 진입가 - 2.5 × ATR 손절, 고점 대비 -5% 트레일링스톱
+            * **청산 룰**: 진입가 - 2.5 × ATR 손절, 최고가 대비 2.5 × ATR 이탈 시 트레일링 익절
             """)
         elif current_engine_key == "short_term":
             st.info(f"""
