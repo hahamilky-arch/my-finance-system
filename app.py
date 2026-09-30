@@ -69,7 +69,7 @@ def apply_styles(df):
                 elif rank <= 30: df_s.loc[idx, :] += 'background-color: rgba(189, 215, 238, 0.4);' 
 
     if '수급' in df.columns:
-        matched_mask = df['수급'] == '🔥 수급'
+        matched_mask = df['수급'] == '🔥'
         df_s.loc[matched_mask, :] += 'background-color: rgba(200, 230, 201, 0.7); font-weight: bold;'
         df_s.loc[matched_mask, '수급'] += 'color: #2e7d32; font-weight: bold;'
 
@@ -92,7 +92,7 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
             backup_data = data.iloc[needed_slots:needed_slots + 2]
             
             if needed_slots == 0:
-                st.warning(f"⚠️️ 현재 슬롯 만석입니다 ({current_holdings_count}/{top_n_cfg}개 보유 중). 하단 예비 종목을 참고하세요.")
+                st.warning(f"⚠️ 현재 슬롯 만석입니다 ({current_holdings_count}/{top_n_cfg}개 보유 중). 하단 예비 종목을 참고하세요.")
         else:
             primary_data = data
             backup_data = pd.DataFrame()
@@ -232,7 +232,7 @@ with st.sidebar:
     strategy_engine_mode = st.radio(
         "💡 전략 엔진 선택",
         [
-            "🔥 전략 3: Top 7 레짐+ATR",
+            "🔥 전략 3: Top 7 레жим+ATR",
             "🚀 단기 타점 모멘텀 (15%+ 랠리)", 
             "🌐 Ultimate 듀얼 모멘텀 (추세)"
         ],
@@ -451,18 +451,24 @@ if df_display is not None:
             filter_opt = st.radio("빠른 필터", ["전체보기", "🔥 수급 종목만", "🔴 추천 종목만", "🔵 매도 종목만", "🟢 보유 종목만"], horizontal=True, label_visibility="collapsed")
             
             df_target = df_display.head(200).copy()
-            df_target['수급포착'] = df_target['종목명'].apply(lambda nm: '🔥 수급' if str(nm).strip() in matched_liq_stock_names else '-')
+            # 💡 수정 3-1: Overview 표 수급 칼럼에 문자대신 불 아이콘만 표시
+            df_target['수급포착'] = df_target['종목명'].apply(lambda nm: '🔥' if str(nm).strip() in matched_liq_stock_names else '-')
             
-            col_order = ['순위', '추천순위', '수급포착', '변동', '매매상태', '종목명', '이격도', 'MOT', 'RS(90)', 'RS(10)', 'MA20', '제외사유', '종가', '상승금액', '상승률', 'ticker'] 
+            # 💡 수정 3-2: Overview 표에 ATR 컬럼 추가
+            if 'atr' not in df_target.columns:
+                df_target['atr'] = 0.0
+
+            col_order = ['순위', '추천순위', '수급포착', '변동', '매매상태', '종목명', '이격도', 'MOT', 'RS(90)', 'RS(10)', 'MA20', 'atr', '제외사유', '종가', '상승금액', '상승률', 'ticker'] 
             df_target = df_target[col_order].rename(columns={
                 '추천순위': '추천순위',
                 '수급포착': '수급',
                 '매매상태': '상태',
-                '이격도': '이격(%)'
+                '이격도': '이격(%)',
+                'atr': 'ATR'
             })
             
             if filter_opt == "🔥 수급 종목만":
-                df_target = df_target[df_target['수급'] == '🔥 수급']
+                df_target = df_target[df_target['수급'] == '🔥']
             elif filter_opt == "🔴 추천 종목만":
                 df_target = df_target[df_target['상태'] == '추천']
             elif filter_opt == "🔵 매도 종목만":
@@ -477,6 +483,7 @@ if df_display is not None:
                     '이격(%)': lambda x: f"{x:+.2f}%" if x != 0 else "-", 
                     'MOT': '{:.2f}', 'RS(90)': '{:.2f}', 'RS(10)': '{:.2f}',
                     'MA20': '{:,.2f}' if market_type=='US' else '{:,.0f}',
+                    'ATR': '{:,.2f}' if market_type=='US' else '{:,.0f}',
                     '종가': '{:,.2f}' if market_type=='US' else '{:,.0f}',
                     '상승금액': '{:+,.2f}' if market_type=='US' else '{:+,.0f}',
                     '상승률': '{:+.2f}%'
@@ -485,7 +492,7 @@ if df_display is not None:
                 column_config_cfg = {
                     "순위": st.column_config.NumberColumn("순위", width=40),
                     "추천순위": st.column_config.TextColumn("추천", width=40),
-                    "수급": st.column_config.TextColumn("수급", width=65),
+                    "수급": st.column_config.TextColumn("수급", width=45),
                     "변동": st.column_config.TextColumn("변동", width=40),
                     "상태": st.column_config.TextColumn("상태", width=55),
                     "종목명": st.column_config.TextColumn("종목명", width=110),
@@ -494,6 +501,7 @@ if df_display is not None:
                     "RS(90)": st.column_config.NumberColumn("RS(90)", width=65),
                     "RS(10)": st.column_config.NumberColumn("RS(10)", width=65),
                     "MA20": st.column_config.NumberColumn("MA20", width=80),
+                    "ATR": st.column_config.NumberColumn("ATR", width=80),
                     "제외사유": st.column_config.TextColumn("제외사유", width=95),
                     "종가": st.column_config.NumberColumn("종가", width=80),
                     "상승금액": st.column_config.NumberColumn("상승금액", width=80),
@@ -519,7 +527,7 @@ if df_display is not None:
     with tab2:
         col_t2_head, col_t2_date = st.columns([3, 1])
         with col_t2_head:
-            st.markdown("##### 🏛️️ 투자자별 & 프로그램 매매동향 분석 리포트")
+            st.markdown("##### 🏛 투자자별 & 프로그램 매매동향 분석 리포트")
         with col_t2_date:
             trend_target_date = st.date_input("조회일자", value=selected_date, key="trend_target_date_picker")
             trend_date_str = pd.to_datetime(trend_target_date).strftime('%Y-%m-%d')
@@ -835,13 +843,23 @@ if df_display is not None:
                     total_holdings_val = 0.0
                     risk_violations = []
                     
+                    target_date_dt = pd.to_datetime(target_date_str)
+
                     for _, h_row in holdings_merged.iterrows():
                         ticker = h_row['ticker']
                         raw_name = h_row.get('name', ticker)
                         buy_price = float(h_row.get('buy_price', 0.0))
                         qty = float(h_row.get('quantity', 1.0))
                         
-                        # 💡 highest_price 파싱 시 None / NULL / 0 예외 안전 처리
+                        # 💡 보유일수 계산
+                        buy_date_raw = h_row.get('buy_date')
+                        if pd.notna(buy_date_raw) and buy_date_raw:
+                            buy_date_dt = pd.to_datetime(buy_date_raw)
+                            holding_days = max(0, (target_date_dt - buy_date_dt).days)
+                        else:
+                            holding_days = 0
+
+                        # highest_price 파싱 시 None / NULL / 0 예외 안전 처리
                         raw_highest = h_row.get('highest_price')
                         if pd.isna(raw_highest) or raw_highest is None or float(raw_highest) == 0:
                             prev_highest = buy_price
@@ -873,6 +891,9 @@ if df_display is not None:
                         
                         eval_val = curr_price * qty
                         total_holdings_val += eval_val
+                        
+                        # 💡 손익금액 및 수익률 계산
+                        profit_amt = (curr_price - buy_price) * qty
                         profit_rate = ((curr_price / buy_price) - 1) * 100 if buy_price > 0 else 0.0
                         
                         # 2. 손절가 및 최고가 기반 트레일링 스톱선 계산
@@ -885,8 +906,10 @@ if df_display is not None:
                             trailing_stop = highest_price * 0.95
                             stop_loss_price = max(initial_stop, trailing_stop)
                         
-                        stop_loss_amount = max(0.0, (curr_price - stop_loss_price) * qty) if curr_price > stop_loss_price else 0.0
-                        stock_risk_pct = ((buy_price - stop_loss_price) * qty / account_total_input) * 100 if account_total_input > 0 else 0.0
+                        # 💡 수정 1: 단일 종목 손실 한도(2% Rule) 경고 정상 계산
+                        # 평단가 기준 최대 손실 금액 = (평단가 - 손절가) * 수량
+                        max_loss_amt = max(0.0, (buy_price - stop_loss_price) * qty)
+                        stock_risk_pct = (max_loss_amt / account_total_input * 100) if account_total_input > 0 else 0.0
                         
                         if stock_risk_pct > 2.0:
                             risk_violations.append(f"{ticker} ({stock_risk_pct:.1f}%)")
@@ -907,11 +930,13 @@ if df_display is not None:
                             '평단가': buy_price,
                             '최고가': highest_price,
                             '현재가': curr_price,
-                            'ATR': atr_val,
-                            '손절/스톱가': stop_loss_price,
+                            '평가금액': eval_val,
+                            '손익금액': profit_amt,
                             '수익률(%)': profit_rate,
                             '비중(%)': 0.0,
-                            '평가금액': eval_val,
+                            'ATR': atr_val,
+                            '손절/스톱가': stop_loss_price,
+                            '보유일수': holding_days,
                             '상태': status
                         })
                     
@@ -935,23 +960,27 @@ if df_display is not None:
                     calc_base_total = account_total_input if account_total_input > 0 else total_holdings_val
                     df_h['비중(%)'] = (df_h['평가금액'] / calc_base_total) * 100
                     
-                    # 💡 보유 종목 표에 '최고가' 및 'ATR' 컬럼 명시적 배치
-                    df_h = df_h[['종목명', '종목코드', '수량', '평단가', '최고가', '현재가', 'ATR', '손절/스톱가', '수익률(%)', '비중(%)', '평가금액', '상태']]
+                    # 💡 수정 2: 보유 종목 표에 손익금액 및 보유일수 포함 배치
+                    df_h = df_h[['종목명', '종목코드', '수량', '평단가', '최고가', '현재가', '평가금액', '손익금액', '수익률(%)', '비중(%)', 'ATR', '손절/스톱가', '보유일수', '상태']]
                     
                     price_fmt_str = '{:,.2f}' if market_type == "US" else '{:,.0f}'
+                    profit_amt_fmt = '{:+,.2f}' if market_type == "US" else '{:+,.0f}'
+                    
                     st.dataframe(
                         df_h.style.format({
                             '수량': '{:,.2f}' if market_type == "US" else '{:,.0f}', 
                             '평단가': price_fmt_str, 
                             '최고가': price_fmt_str, 
                             '현재가': price_fmt_str,
-                            'ATR': price_fmt_str,
-                            '손절/스톱가': price_fmt_str,
+                            '평가금액': price_fmt_str,
+                            '손익금액': profit_amt_fmt,
                             '수익률(%)': '{:+.2f}%', 
                             '비중(%)': '{:.1f}%', 
-                            '평가금액': price_fmt_str
+                            'ATR': price_fmt_str,
+                            '손절/스톱가': price_fmt_str,
+                            '보유일수': '{:,.0f}일'
                         }).map(lambda x: 'color: red; font-weight: bold;' if '손절' in str(x) else ('color: green; font-weight: bold;' if '익절' in str(x) else ''), subset=['상태'])
-                          .map(lambda x: 'color: red;' if float(x) > 0 else 'color: blue;', subset=['수익률(%)']),
+                          .map(lambda x: 'color: red;' if float(x) > 0 else ('color: blue;' if float(x) < 0 else ''), subset=['손익금액', '수익률(%)']),
                         hide_index=True, use_container_width=True
                     )
 
@@ -1035,9 +1064,9 @@ if df_display is not None:
 
         if current_engine_key == "strat3_top7":
             st.info(f"""
-            📌 **전략 3 (Top 7 레짐+ATR 트레일링) 가이드**
+            📌 **전략 3 (Top 7 레жим+ATR 트레일링) 가이드**
             * **운용 슬롯**: 최대 **{top_n_cfg}개** 균등 분산 (동적 복리 적용)
-            * **레짐 필터**: KOSPI 종가 > MA20 상승장일 때만 매수, 하락 시 전량 현금화
+            * **레жим 필터**: KOSPI 종가 > MA20 상승장일 때만 매수, 하락 시 전량 현금화
             * **매수 조건**: 모멘텀 순위 **Rank ≤ 15**, RS(90) > 0, RS(10) > 0, 종가 > MA20 (이격도 최소 우선)
             * **청산 룰**: 진입가 - 2.5 × ATR 손절, 최고가 대비 2.5 × ATR 이탈 시 트레일링 익절
             """)
