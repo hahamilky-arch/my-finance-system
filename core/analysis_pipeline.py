@@ -18,6 +18,126 @@ def safe_float(val):
     except (TypeError, ValueError):
         return 0.0
 
+def update_holdings_highest_price(market='KR', analysis_date=None):
+    """
+    [배치용] 보유 중인 종목들의 당일 종가를 확인하여 highest_price를 DB에 자동 갱신
+    """
+    holdings_table = "current_holdings" if market == "KR" else "current_holdings_us"
+    
+    try:
+        # 1. 미청산 보유 종목 조회
+        holdings_res = supabase.table(holdings_table).select("*").is_("sell_date", "null").execute()
+        if not holdings_res.data:
+            print(f"[{market}] 현재 보유 중인 종목이 없어 최고가 갱신을 건너땁니다.")
+            return
+
+        updated_count = 0
+        for h in holdings_res.data:
+            ticker = h['ticker']
+            buy_price = float(h.get('buy_price', 0.0))
+            prev_highest = float(h.get('highest_price', buy_price))
+
+            # 2. stock_prices에서 당일 종가 조회
+            price_res = supabase.table("stock_prices") \
+                .select("close_price") \
+                .eq("ticker", ticker) \
+                .eq("price_date", analysis_date) \
+                .execute()
+
+            if price_res.data:
+                curr_price = float(price_res.data[0]['close_price'])
+                new_highest = max(prev_highest, curr_price, buy_price)
+
+                # 3. 최고가가 이전 최고가보다 높아졌으면 DB 업데이트
+                if new_highest > prev_highest:
+                    supabase.table(holdings_table) \
+                        .update({"highest_price": new_highest}) \
+                        .eq("id", h['id']) \
+                        .execute()
+                    print(f"[{market} | {ticker}] 최고가 갱신 완료: {prev_highest:,.2f} -> {new_highest:,.2f}")
+                    updated_count += 1
+
+        if updated_count == 0:
+            print(f"[{market}] 보유 종목의 당일 최고가 갱신 내역이 없습니다.")
+
+    except Exception as e:
+        print(f"[{market}] 보유 종목 최고가 갱신 중 오류 발생: {e}")
+
+def analyze_and_sync_market_trends(analysis_date):
+    """
+    [KR 전용] 투자자별 매매동향 및 프로그램 매매 파생 지표(Z-Score, 연속성, N일 누적) 계산 및 DB 적재
+    """
+    try:
+        inv_res = supabase.table("market_investor_trends") \
+            .select("*") \
+            .lte("trade_date", analysis_date) \
+            .order("trade_date", desc=True) \
+            .limit(60) \
+            .execute()
+            
+        prog_res = supabase.table("market_program_trends") \
+            .select("*") \
+            .lte("trade_date", analysis_date) \
+            .order("trade_date", desc=True) \
+            .limit(30) \
+            .execute()
+
+        df_inv = pd.DataFrame(inv_res.data) if inv_res.data else pd.DataFrame()
+        df_prog = pd.DataFrame(prog_res.data) if prog_res.data else pd.DataFrame()
+
+        if df_inv.empty or df_prog.empty:
+            print(f"[{analysis_date}] 수급/프로그램 기초 데이터가 부족하여 파생 지표 산출을 건너땁니다.")
+            return
+
+        df_k = df_inv[df_inv['market_type'] == 'KOSPI'].sort_values('trade_date', ascending=False)
+        df_kq = df_inv[df_inv['market_type'] == 'KOSDAQ'].sort_values('trade_date', ascending=False)
+        df_p = df_prog.sort_values('trade_date', ascending=False)
+
+        # 1. 당일 비차익
+        curr_p_non = float(df_p.iloc[0]['non_arbitrage_net']) if not df_p.empty else 0.0
+
+        # 2. 비차익 수급 Z-Score (20일 기준)
+        if len(df_p) >= 5:
+            p_non_series = df_p.head(20)['non_arbitrage_net'].astype(float)
+            std_val = p_non_series.std()
+            p_zscore = float((curr_p_non - p_non_series.mean()) / std_val) if std_val > 0 else 0.0
+        else:
+            p_zscore = 0.0
+
+        # 3. 5일 연속성 (매수 유입 일수)
+        k_f_days = int((df_k.head(5)['foreign_net'].astype(float) > 0).sum()) if not df_k.empty else 0
+        p_non_days = int((df_p.head(5)['non_arbitrage_net'].astype(float) > 0).sum()) if not df_p.empty else 0
+
+        # 4. N일 누적 수급 (5일 / 10일 / 20일)
+        trend_indicator_payload = {
+            "trade_date": analysis_date,
+            "program_zscore": safe_float(p_zscore),
+            "kospi_foreign_5d_days": k_f_days,
+            "program_non_arb_5d_days": p_non_days,
+            
+            "kospi_foreign_cum_5d": safe_float(df_k.head(5)['foreign_net'].astype(float).sum()),
+            "kospi_foreign_cum_10d": safe_float(df_k.head(10)['foreign_net'].astype(float).sum()),
+            "kospi_foreign_cum_20d": safe_float(df_k.head(20)['foreign_net'].astype(float).sum()),
+            
+            "kospi_inst_cum_5d": safe_float(df_k.head(5)['institution_net'].astype(float).sum()),
+            "kospi_inst_cum_10d": safe_float(df_k.head(10)['institution_net'].astype(float).sum()),
+            "kospi_inst_cum_20d": safe_float(df_k.head(20)['institution_net'].astype(float).sum()),
+
+            "kosdaq_foreign_cum_5d": safe_float(df_kq.head(5)['foreign_net'].astype(float).sum()),
+            "kosdaq_foreign_cum_10d": safe_float(df_kq.head(10)['foreign_net'].astype(float).sum()),
+            "kosdaq_foreign_cum_20d": safe_float(df_kq.head(20)['foreign_net'].astype(float).sum()),
+
+            "program_non_arb_cum_5d": safe_float(df_p.head(5)['non_arbitrage_net'].astype(float).sum()),
+            "program_non_arb_cum_10d": safe_float(df_p.head(10)['non_arbitrage_net'].astype(float).sum()),
+            "program_non_arb_cum_20d": safe_float(df_p.head(20)['non_arbitrage_net'].astype(float).sum()),
+        }
+
+        supabase.table("daily_market_indicators").upsert(trend_indicator_payload, on_conflict="trade_date").execute()
+        print(f"[{analysis_date}] 시장 수급 파생 지표(Z-Score: {p_zscore:+.2f}) 분석 및 DB 저장 완료")
+
+    except Exception as e:
+        print(f"[{analysis_date}] 시장 수급 파생 지표 분석 중 오류: {e}")
+
 def run_analysis_pipeline(market='KR', target_date=None):
     analysis_date = target_date if target_date else datetime.now().strftime('%Y-%m-%d')
     print(f"DEBUG: 파이프라인 실행일 -> {analysis_date}")
@@ -41,7 +161,6 @@ def run_analysis_pipeline(market='KR', target_date=None):
     prices = []
     for ticker in ticker_list:
         try:
-            # 💡 주의: 최신순(desc=True)으로 가져오고 있으므로, 뒤에서 반드시 과거순 오름차순으로 재정렬 필요
             response = supabase.table("stock_prices") \
                 .select("ticker, price_date, open_price, high_price, low_price, close_price, volume") \
                 .eq("ticker", ticker) \
@@ -59,10 +178,8 @@ def run_analysis_pipeline(market='KR', target_date=None):
 
     df = pd.DataFrame(prices)
     
-    # 💡 [핵심 수정 1] 문자열이 아닌 진정한 Datetime 객체로 변환하여 시계열 정렬 보장
+    # Datetime 변환 및 오름차순 정렬
     df['price_date'] = pd.to_datetime(df['price_date']).dt.normalize()
-    
-    # 💡 [핵심 수정 2] 내림차순(desc)으로 가져온 데이터를 과거->현재(오름차순) 순으로 완벽 정렬
     df = df.sort_values(by=['ticker', 'price_date']) 
     
     df['close_price'] = pd.to_numeric(df['close_price'], errors='coerce')
@@ -71,15 +188,13 @@ def run_analysis_pipeline(market='KR', target_date=None):
     df['open_price'] = pd.to_numeric(df['open_price'], errors='coerce')
     df['volume'] = pd.to_numeric(df['volume'], errors='coerce').fillna(0)
     
-    # 분석 기준일을 Timestamp 객체로 변환
     target_dt = pd.to_datetime(analysis_date).normalize()
 
-    # 3. 데이터 피벗 (DatetimeIndex 기반)
+    # 3. 데이터 피벗
     pivot_df = df.pivot(index='price_date', columns='ticker', values='close_price') \
                  .sort_index() \
                  .ffill()
 
-    # 타겟 날짜까지 슬라이싱
     if target_dt in pivot_df.index:
         pivot_df = pivot_df.loc[:target_dt]
     else:
@@ -97,11 +212,9 @@ def run_analysis_pipeline(market='KR', target_date=None):
     ma50_series = pivot_df.rolling(window=50, min_periods=1).mean().iloc[-1]
     ma200_series = pivot_df.rolling(window=200, min_periods=1).mean().iloc[-1]
     
-    # 90일 중장기 RS와 10일 단기 RS 계산
     rs_map_90 = get_rs_score(pivot_df, benchmark_ticker=benchmark_ticker, window=90)
     rs_map_10 = get_rs_score(pivot_df, benchmark_ticker=benchmark_ticker, window=10)
     
-    # 💡 [경고 방지] fill_method=None 지정
     r1 = pivot_df.pct_change(20, fill_method=None).iloc[-1]
     r2 = pivot_df.pct_change(40, fill_method=None).iloc[-1]
     r4 = pivot_df.pct_change(80, fill_method=None).iloc[-1]
@@ -114,10 +227,8 @@ def run_analysis_pipeline(market='KR', target_date=None):
     
     rank_map = weighted_momentum_series.rank(ascending=False)
     
-    # 💡 [핵심 수정 3] 당일 데이터 추출 시 Timestamp를 사용하여 안전하게 필터링
     df_analysis_day = df[df['price_date'] == target_dt].set_index('ticker')
     
-    # 정확한 피벗 기반 ATR(14) 계산
     try:
         high_pivot = df.pivot(index='price_date', columns='ticker', values='high_price').sort_index().ffill().reindex(pivot_df.index)
         low_pivot = df.pivot(index='price_date', columns='ticker', values='low_price').sort_index().ffill().reindex(pivot_df.index)
@@ -142,10 +253,9 @@ def run_analysis_pipeline(market='KR', target_date=None):
         print(f"ATR 계산 중 오류 발생: {e}")
         atr_series = pd.Series(0.0, index=pivot_df.columns)
 
-    # 5. 결과 DB 적재 데이터 생성
+    # 5. 개별 종목 결과 DB 적재 데이터 생성
     analysis_data = []
     for ticker in ticker_list:
-        # 안전한 데이터 조회를 위해 target_dt 사용
         current_close = pivot_df.loc[target_dt, ticker] if ticker in pivot_df.columns and target_dt in pivot_df.index else 0.0
         row_info = df_analysis_day.loc[ticker] if ticker in df_analysis_day.index else {}
         
@@ -175,9 +285,16 @@ def run_analysis_pipeline(market='KR', target_date=None):
             chunk = analysis_data[i:i + chunk_size]
             supabase.table("daily_analysis").upsert(chunk, on_conflict="ticker,price_date").execute()
             
-        print(f"[{analysis_date}] {market} 분석 완료 및 DB 적재 완료.")
+        print(f"[{analysis_date}] {market} 종목별 분석 및 DB 적재 완료.")
     else:
         print("적재할 유효한 데이터가 없습니다.")
+
+    # 6. KR 시장인 경우 수급 및 프로그램 파생 지표 분석 수행
+    if market == "KR":
+        analyze_and_sync_market_trends(analysis_date)
+
+    # 7. 보유 종목 최고가(highest_price) 자동 갱신 수행
+    update_holdings_highest_price(market=market, analysis_date=analysis_date)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run Analysis Pipeline Directly")
