@@ -106,14 +106,14 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
             rec_rank_display = f"{rec_rank_val}위" if rec_rank_val != '' else '-'
             
             if '매도' in title:
-                reason_desc = "레짐전환 현금화, ATR손절(-2.5x) 또는 트레일링스톱 도달"
+                reason_desc = "레жим전환 현금화, ATR손절(-2.5x) 또는 트레일링스톱 도달"
                 position_info = ""
                 tag_html = ""
             else:
                 reason_desc = f"진입 조건 충족 [추천순위: {rec_rank_display}]"
                 target_pct = (100.0 / top_n_cfg) if top_n_cfg > 0 else 0.0
-                atr_val = row.get('atr', 0.0)
-                atr_str = f"{atr_val:,.2f}" if market_type == "US" else f"{atr_str:,.0f}" if 'atr_str' in locals() else f"{atr_val:,.0f}"
+                atr_val = float(row.get('atr', 0.0))
+                atr_str = f"{atr_val:,.2f}" if market_type == "US" else f"{atr_val:,.0f}"
                 position_info = f"<br><span style='font-size: 0.85em; color: #1b5e20; font-weight: bold;'>📊 분산 금액: {fmt_str} (비중 {target_pct:.1f}%) | ATR: {atr_str}</span>"
                 tag_html = f"<span class='primary-tag'>🎯 추천 {p_idx}</span>"
 
@@ -168,7 +168,7 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
                 rec_rank_display = f"{rec_rank_val}위" if rec_rank_val != '' else '-'
                 reason_desc = f"후순위 대체 종목 [추천순위: {rec_rank_display}]"
                 
-                atr_val = row.get('atr', 0.0)
+                atr_val = float(row.get('atr', 0.0))
                 atr_str = f"{atr_val:,.2f}" if market_type == "US" else f"{atr_val:,.0f}"
                 position_info = f"<br><span style='font-size: 0.85em; color: #856404; font-weight: bold;'>📊 예비 분산 금액: {fmt_str} | ATR: {atr_str}</span>"
 
@@ -232,7 +232,7 @@ with st.sidebar:
     strategy_engine_mode = st.radio(
         "💡 전략 엔진 선택",
         [
-            "🔥 전략 3: Top 7 레짐+ATR",
+            "🔥 전략 3: Top 7 레жим+ATR",
             "🚀 단기 타점 모멘텀 (15%+ 랠리)", 
             "🌐 Ultimate 듀얼 모멘텀 (추세)"
         ],
@@ -840,7 +840,13 @@ if df_display is not None:
                         raw_name = h_row.get('name', ticker)
                         buy_price = float(h_row.get('buy_price', 0.0))
                         qty = float(h_row.get('quantity', 1.0))
-                        prev_highest = float(h_row.get('highest_price', buy_price))
+                        
+                        # 💡 highest_price 파싱 시 None / NULL / 0 예외 안전 처리
+                        raw_highest = h_row.get('highest_price')
+                        if pd.isna(raw_highest) or raw_highest is None or float(raw_highest) == 0:
+                            prev_highest = buy_price
+                        else:
+                            prev_highest = float(raw_highest)
                         
                         curr_row = df_display[df_display['ticker'].str.strip().str.upper() == str(ticker).strip().upper()]
                         
