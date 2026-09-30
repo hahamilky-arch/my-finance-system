@@ -92,7 +92,7 @@ def display_trade_list(data, title, button_label, key_prefix, target_date, is_la
             backup_data = data.iloc[needed_slots:needed_slots + 2]
             
             if needed_slots == 0:
-                st.warning(f"⚠️ 현재 슬롯 만석입니다 ({current_holdings_count}/{top_n_cfg}개 보유 중). 하단 예비 종목을 참고하세요.")
+                st.warning(f"⚠️️ 현재 슬롯 만석입니다 ({current_holdings_count}/{top_n_cfg}개 보유 중). 하단 예비 종목을 참고하세요.")
         else:
             primary_data = data
             backup_data = pd.DataFrame()
@@ -232,7 +232,7 @@ with st.sidebar:
     strategy_engine_mode = st.radio(
         "💡 전략 엔진 선택",
         [
-            "🔥 전략 3: Top 7 레жим+ATR",
+            "🔥 전략 3: Top 7 레짐+ATR",
             "🚀 단기 타점 모멘텀 (15%+ 랠리)", 
             "🌐 Ultimate 듀얼 모멘텀 (추세)"
         ],
@@ -519,7 +519,7 @@ if df_display is not None:
     with tab2:
         col_t2_head, col_t2_date = st.columns([3, 1])
         with col_t2_head:
-            st.markdown("##### 🏛️ 투자자별 & 프로그램 매매동향 분석 리포트")
+            st.markdown("##### 🏛️️ 투자자별 & 프로그램 매매동향 분석 리포트")
         with col_t2_date:
             trend_target_date = st.date_input("조회일자", value=selected_date, key="trend_target_date_picker")
             trend_date_str = pd.to_datetime(trend_target_date).strftime('%Y-%m-%d')
@@ -907,6 +907,7 @@ if df_display is not None:
                             '평단가': buy_price,
                             '최고가': highest_price,
                             '현재가': curr_price,
+                            'ATR': atr_val,
                             '손절/스톱가': stop_loss_price,
                             '수익률(%)': profit_rate,
                             '비중(%)': 0.0,
@@ -934,15 +935,21 @@ if df_display is not None:
                     calc_base_total = account_total_input if account_total_input > 0 else total_holdings_val
                     df_h['비중(%)'] = (df_h['평가금액'] / calc_base_total) * 100
                     
-                    df_h = df_h[['종목명', '종목코드', '수량', '평단가', '최고가', '현재가', '손절/스톱가', '수익률(%)', '비중(%)', '평가금액', '상태']]
+                    # 💡 보유 종목 표에 '최고가' 및 'ATR' 컬럼 명시적 배치
+                    df_h = df_h[['종목명', '종목코드', '수량', '평단가', '최고가', '현재가', 'ATR', '손절/스톱가', '수익률(%)', '비중(%)', '평가금액', '상태']]
                     
                     price_fmt_str = '{:,.2f}' if market_type == "US" else '{:,.0f}'
                     st.dataframe(
                         df_h.style.format({
                             '수량': '{:,.2f}' if market_type == "US" else '{:,.0f}', 
-                            '평단가': price_fmt_str, '최고가': price_fmt_str, '현재가': price_fmt_str,
+                            '평단가': price_fmt_str, 
+                            '최고가': price_fmt_str, 
+                            '현재가': price_fmt_str,
+                            'ATR': price_fmt_str,
                             '손절/스톱가': price_fmt_str,
-                            '수익률(%)': '{:+.2f}%', '비중(%)': '{:.1f}%', '평가금액': price_fmt_str
+                            '수익률(%)': '{:+.2f}%', 
+                            '비중(%)': '{:.1f}%', 
+                            '평가금액': price_fmt_str
                         }).map(lambda x: 'color: red; font-weight: bold;' if '손절' in str(x) else ('color: green; font-weight: bold;' if '익절' in str(x) else ''), subset=['상태'])
                           .map(lambda x: 'color: red;' if float(x) > 0 else 'color: blue;', subset=['수익률(%)']),
                         hide_index=True, use_container_width=True
