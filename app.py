@@ -404,8 +404,13 @@ if df_display is not None:
                         col_left_liq, col_right_liq = st.columns([1, 1.2])
                         
                         with col_left_liq:
-                            st.markdown("###### 🏆 수급 자주 노출 종목 (누적)")
-                            freq_df = df_liq_all.groupby('name').agg(
+                            st.markdown("###### 🏆 최근 10일간 수급 자주 노출 종목")
+                            
+                            # 최근 10개 거래일만 추출하여 필터링
+                            recent_10_dates = sorted(df_liq_all['trade_date_str'].unique(), reverse=True)[:10]
+                            df_liq_recent = df_liq_all[df_liq_all['trade_date_str'].isin(recent_10_dates)]
+                            
+                            freq_df = df_liq_recent.groupby('name').agg(
                                 노출횟수=('trade_date', 'nunique'),
                                 최근순위=('rank', 'min'),
                                 평균등락률=('change_rate', 'mean')
@@ -542,7 +547,6 @@ if df_display is not None:
             kq_row = df_inv[df_inv['market_type'] == 'KOSDAQ'].iloc[0] if not df_inv.empty and not df_inv[df_inv['market_type'] == 'KOSDAQ'].empty else {}
             p_row = df_prog.iloc[0] if not df_prog.empty else {}
 
-            # 안전한 당일 수급 변수 사전 정의 (NameError 예방)
             p_non_val = float(p_row.get('non_arbitrage_net', 0)) if not df_prog.empty and not p_row.empty else 0.0
             p_tot_val = float(p_row.get('total_net', 0)) if not df_prog.empty and not p_row.empty else 0.0
             p_arb_val = float(p_row.get('arbitrage_net', 0)) if not df_prog.empty and not p_row.empty else 0.0
