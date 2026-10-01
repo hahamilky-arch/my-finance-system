@@ -451,10 +451,8 @@ if df_display is not None:
             filter_opt = st.radio("빠른 필터", ["전체보기", "🔥 수급 종목만", "🔴 추천 종목만", "🔵 매도 종목만", "🟢 보유 종목만"], horizontal=True, label_visibility="collapsed")
             
             df_target = df_display.head(200).copy()
-            # 💡 수정 3-1: Overview 표 수급 칼럼에 문자대신 불 아이콘만 표시
             df_target['수급포착'] = df_target['종목명'].apply(lambda nm: '🔥' if str(nm).strip() in matched_liq_stock_names else '-')
             
-            # 💡 수정 3-2: Overview 표에 ATR 컬럼 추가
             if 'atr' not in df_target.columns:
                 df_target['atr'] = 0.0
 
@@ -602,7 +600,8 @@ if df_display is not None:
             elif not market_safe and p_non_5d > 0 and k_f_5d > 0:
                 divergence_msg = "💡 [강세 다이버전스] 지수는 MA20 밑에 있으나, 최근 5일 스마트머니(외인/비차익)가 지속 저점 매수 중입니다. (반등 가능성)"
 
-            with st.expander(f"📊 [{trend_date_str}] 당일 매매동향 & 스마트머니 수급 지표", expanded=True):
+            # 💡 접힌 상태 적용 (expanded=False)
+            with st.expander(f"📊 [{trend_date_str}] 당일 매매동향 & 스마트머니 수급 지표", expanded=False):
                 if divergence_msg:
                     st.warning(divergence_msg)
 
@@ -652,7 +651,8 @@ if df_display is not None:
                 m_sq3.metric("KOSPI 외인 5일 누적", f"{k_f_5d:+,d} 백만원", delta=f"5일 중 {k_f_days}일 순매수")
                 m_sq4.metric("KOSDAQ 외인 5일 누적", f"{kq_f_5d:+,d} 백만원")
 
-            with st.expander("📈 기간별 누적 수급 추세 (5일 / 10일 / 20일)", expanded=True):
+            # 💡 접힌 상태 적용 (expanded=False)
+            with st.expander("📈 기간별 누적 수급 추세 (5일 / 10일 / 20일)", expanded=False):
                 df_cum_summary = pd.DataFrame([
                     {
                         "구분": "KOSPI 외국인",
@@ -707,7 +707,57 @@ if df_display is not None:
                     fig_p_tr.update_layout(title="프로그램 매매 추이 (백만원)", barmode='group', height=280, margin=dict(l=10, r=10, t=35, b=10), legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
                     st.plotly_chart(fig_p_tr, use_container_width=True)
 
-            with st.expander("🤖 Gemini AI 수급 분석 및 고도화 프롬프트", expanded=True):
+            # 💡 신규 추가: 종목별 수급 상세 분석 (expanded=False)
+            with st.expander("🔍 종목별 수급 상세 분석 (외국인/기관 순매수 상위)", expanded=False):
+                try:
+                    res_stock_liq = supabase.table("daily_top_liquidity").select("*").eq("trade_date", trend_date_str).order("rank").execute()
+                    df_stock_liq = pd.DataFrame(res_stock_liq.data) if res_stock_liq.data else pd.DataFrame()
+                except Exception:
+                    df_stock_liq = pd.DataFrame()
+
+                if not df_stock_liq.empty:
+                    col_sl1, col_sl2 = st.columns(2)
+                    with col_sl1:
+                        st.markdown("###### 🔥 당일 외국인 순매수 상위 TOP 10")
+                        df_f_top = df_stock_liq.sort_values('foreign_net', ascending=False).head(10)[['rank', 'name', 'close_price', 'change_rate', 'foreign_net', 'inst_net']]
+                        df_f_top = df_f_top.rename(columns={'rank': '순위', 'name': '종목명', 'close_price': '종가', 'change_rate': '등락률', 'foreign_net': '외인순매수', 'inst_net': '기관순매수'})
+                        st.dataframe(
+                            df_f_top.style.format({'종가': '{:,.0f}', '등락률': '{:+.2f}%', '외인순매수': '{:+,.0f}', '기관순매수': '{:+,.0f}'})
+                            .map(lambda v: 'color: red;' if v > 0 else ('color: blue;' if v < 0 else ''), subset=['등락률', '외인순매수', '기관순매수']),
+                            hide_index=True, use_container_width=True
+                        )
+
+                    with col_sl2:
+                        st.markdown("###### 🏛 당일 기관 순매수 상위 TOP 10")
+                        df_i_top = df_stock_liq.sort_values('inst_net', ascending=False).head(10)[['rank', 'name', 'close_price', 'change_rate', 'foreign_net', 'inst_net']]
+                        df_i_top = df_i_top.rename(columns={'rank': '순위', 'name': '종목명', 'close_price': '종가', 'change_rate': '등락률', 'foreign_net': '외인순매수', 'inst_net': '기관순매수'})
+                        st.dataframe(
+                            df_i_top.style.format({'종가': '{:,.0f}', '등락률': '{:+.2f}%', '외인순매수': '{:+,.0f}', '기관순매수': '{:+,.0f}'})
+                            .map(lambda v: 'color: red;' if v > 0 else ('color: blue;' if v < 0 else ''), subset=['등락률', '외인순매수', '기관순매수']),
+                            hide_index=True, use_container_width=True
+                        )
+
+                    st.markdown("---")
+                    st.markdown("###### 📈 개별 종목 기간별 수급 추이 차트")
+                    all_liq_names = df_stock_liq['name'].unique().tolist()
+                    sel_stock_name = st.selectbox("수급 추이 조회 종목 선택", options=all_liq_names, key="sel_stock_liq_trend_name")
+                    
+                    if sel_stock_name:
+                        res_stk_hist = supabase.table("daily_top_liquidity").select("*").eq("name", sel_stock_name).lte("trade_date", trend_date_str).order("trade_date", desc=True).limit(20).execute()
+                        df_stk_hist = pd.DataFrame(res_stk_hist.data) if res_stk_hist.data else pd.DataFrame()
+                        
+                        if not df_stk_hist.empty:
+                            df_stk_hist = df_stk_hist.sort_values('trade_date')
+                            fig_stk_tr = gg.Figure()
+                            fig_stk_tr.add_trace(gg.Bar(x=df_stk_hist['trade_date'], y=df_stk_hist['foreign_net'], name='외국인', marker_color='#d62728'))
+                            fig_stk_tr.add_trace(gg.Bar(x=df_stk_hist['trade_date'], y=df_stk_hist['inst_net'], name='기관', marker_color='#2ca02c'))
+                            fig_stk_tr.update_layout(title=f"'{sel_stock_name}' 최근 20영업일 외인/기관 순매수 추이", barmode='group', height=300, margin=dict(l=10, r=10, t=35, b=10))
+                            st.plotly_chart(fig_stk_tr, use_container_width=True)
+                else:
+                    st.info(f"💡 [{trend_date_str}] 데이터에 등록된 종목별 수급 내역이 없습니다.")
+
+            # 💡 접힌 상태 적용 (expanded=False)
+            with st.expander("🤖 Gemini AI 수급 분석 및 고도화 프롬프트", expanded=False):
                 kf_val = int(k_row.get('foreign_net', 0)) if not df_inv.empty and not k_row.empty else 0
                 ki_val = int(k_row.get('individual_net', 0)) if not df_inv.empty and not k_row.empty else 0
                 kin_val = int(k_row.get('institution_net', 0)) if not df_inv.empty and not k_row.empty else 0
@@ -750,6 +800,7 @@ if df_display is not None:
                     st.success("✅ 수급 분석 완료")
                     st.markdown(analysis_res)
 
+            # 💡 접힌 상태 적용 (expanded=False)
             with st.expander(f"📝 [{trend_date_str}] 매매동향 수동 등록/수정 (기본 접힘)", expanded=False):
                 col_in1, col_in2 = st.columns(2)
                 with col_in1:
@@ -851,7 +902,6 @@ if df_display is not None:
                         buy_price = float(h_row.get('buy_price', 0.0))
                         qty = float(h_row.get('quantity', 1.0))
                         
-                        # 💡 보유일수 계산
                         buy_date_raw = h_row.get('buy_date')
                         if pd.notna(buy_date_raw) and buy_date_raw:
                             buy_date_dt = pd.to_datetime(buy_date_raw)
@@ -859,7 +909,6 @@ if df_display is not None:
                         else:
                             holding_days = 0
 
-                        # highest_price 파싱 시 None / NULL / 0 예외 안전 처리
                         raw_highest = h_row.get('highest_price')
                         if pd.isna(raw_highest) or raw_highest is None or float(raw_highest) == 0:
                             prev_highest = buy_price
@@ -877,7 +926,6 @@ if df_display is not None:
                             engine_status = '보유'
                             atr_val = 0.0
 
-                        # 1. 최고가(highest_price) 동적 갱신
                         highest_price = max(prev_highest, curr_price, buy_price)
                         if highest_price > prev_highest and is_authenticated:
                             try:
@@ -892,11 +940,9 @@ if df_display is not None:
                         eval_val = curr_price * qty
                         total_holdings_val += eval_val
                         
-                        # 💡 손익금액 및 수익률 계산
                         profit_amt = (curr_price - buy_price) * qty
                         profit_rate = ((curr_price / buy_price) - 1) * 100 if buy_price > 0 else 0.0
                         
-                        # 2. 손절가 및 최고가 기반 트레일링 스톱선 계산
                         if atr_val > 0 and current_engine_key == "strat3_top7":
                             initial_stop = buy_price - (2.5 * atr_val)
                             trailing_stop = highest_price - (2.5 * atr_val)
@@ -906,15 +952,12 @@ if df_display is not None:
                             trailing_stop = highest_price * 0.95
                             stop_loss_price = max(initial_stop, trailing_stop)
                         
-                        # 💡 수정 1: 단일 종목 손실 한도(2% Rule) 경고 정상 계산
-                        # 평단가 기준 최대 손실 금액 = (평단가 - 손절가) * 수량
                         max_loss_amt = max(0.0, (buy_price - stop_loss_price) * qty)
                         stock_risk_pct = (max_loss_amt / account_total_input * 100) if account_total_input > 0 else 0.0
                         
                         if stock_risk_pct > 2.0:
                             risk_violations.append(f"{ticker} ({stock_risk_pct:.1f}%)")
                             
-                        # 3. 매도 및 트레일링 스톱 이탈 상태 판정
                         if engine_status == '매도' or curr_price <= stop_loss_price:
                             if profit_rate > 0:
                                 status = "🟢 익절 이탈 (Trailing Stop)"
@@ -943,7 +986,7 @@ if df_display is not None:
                     total_risk_amount = sum(max(0.0, (item['평단가'] - item['손절/스톱가']) * item['수량']) for item in holdings_list)
                     total_risk_pct = (total_risk_amount / account_total_input) * 100 if account_total_input > 0 else 0.0
                     
-                    st.markdown("###### 🛡️ 포트폴리오 리스크 노출도")
+                    st.markdown("###### 🛡️️ 포트폴리오 리스크 노출도")
                     risk_col1, risk_col2 = st.columns([3, 1])
                     with risk_col1:
                         st.progress(min(total_risk_pct / 100.0, 1.0))
@@ -953,14 +996,13 @@ if df_display is not None:
                     risk_amt_fmt = f"${total_risk_amount:,.2f}" if market_type == "US" else f"{total_risk_amount:,.0f}원"
                     st.caption(f"※ 전 종목 스톱선 도달 시 예상 최대 리스크: **{risk_amt_fmt}**")
                     if risk_violations:
-                        st.warning(f"⚠️ 단일 종목 손실 한도(2.0%) 초과: {', '.join(risk_violations)}")
+                        st.warning(f"⚠️️ 단일 종목 손실 한도(2.0%) 초과: {', '.join(risk_violations)}")
                         
                     st.write("")
                     df_h = pd.DataFrame(holdings_list)
                     calc_base_total = account_total_input if account_total_input > 0 else total_holdings_val
                     df_h['비중(%)'] = (df_h['평가금액'] / calc_base_total) * 100
                     
-                    # 💡 수정 2: 보유 종목 표에 손익금액 및 보유일수 포함 배치
                     df_h = df_h[['종목명', '종목코드', '수량', '평단가', '최고가', '현재가', '평가금액', '손익금액', '수익률(%)', '비중(%)', 'ATR', '손절/스톱가', '보유일수', '상태']]
                     
                     price_fmt_str = '{:,.2f}' if market_type == "US" else '{:,.0f}'
