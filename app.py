@@ -19,15 +19,17 @@ st.markdown("""
     html, body, [class*="st-"] { font-size: 14px !important; }
     h5 { font-size: 1.2rem !important; margin-bottom: 0.5rem !important; }
     
-    /* 상단 탭 스크롤 고정 (Sticky Tabs) */
-    div[data-baseweb="tab-list"] {
-        position: sticky;
-        top: 2.8rem;
-        background-color: white;
-        z-index: 999;
-        padding-top: 8px;
-        padding-bottom: 8px;
-        border-bottom: 1px solid #e0e0e0;
+    /* 📌 상단 탭 스크롤 고정 (다양한 Streamlit 버전에 대응하는 CSS) */
+    div[data-testid="stTabs"] > div[:first-child],
+    div[data-baseweb="tab-list"],
+    .stTabs [role="tablist"] {
+        position: sticky !important;
+        top: 2.8rem !important; /* 상단 헤더 높이에 맞춰 필요 시 0 ~ 3.5rem 사이 조절 */
+        background-color: #ffffff !important;
+        z-index: 9999 !important;
+        padding-top: 8px !important;
+        padding-bottom: 8px !important;
+        border-bottom: 1px solid #e0e0e0 !important;
     }
     
     .floating-btn-left {
@@ -50,6 +52,7 @@ st.markdown("""
     </style>
     <a href="#top-section" class="floating-btn-left"><span>⬆️</span> <span>위로</span></a>
 """, unsafe_allow_html=True)
+
 
 def scroll_to_chart():
     components.html("<script>setTimeout(function(){const el=window.parent.document.getElementById('chart-section');if(el)el.scrollIntoView({behavior:'smooth'});},100);</script>", height=0)
