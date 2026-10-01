@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as gg
 import plotly.express as px
+from plotly.subplots import make_subplots
 import streamlit.components.v1 as components
 from db import supabase, get_holdings_table, update_holdings, get_market_regime, get_available_dates
 from strategy import get_data
@@ -600,7 +601,7 @@ if df_display is not None:
             elif not market_safe and p_non_5d > 0 and k_f_5d > 0:
                 divergence_msg = "💡 [강세 다이버전스] 지수는 MA20 밑에 있으나, 최근 5일 스마트머니(외인/비차익)가 지속 저점 매수 중입니다. (반등 가능성)"
 
-            # 💡 접힌 상태 적용 (expanded=False)
+            # 1. 당일 매매동향 (기본 접힘)
             with st.expander(f"📊 [{trend_date_str}] 당일 매매동향 & 스마트머니 수급 지표", expanded=False):
                 if divergence_msg:
                     st.warning(divergence_msg)
@@ -651,7 +652,7 @@ if df_display is not None:
                 m_sq3.metric("KOSPI 외인 5일 누적", f"{k_f_5d:+,d} 백만원", delta=f"5일 중 {k_f_days}일 순매수")
                 m_sq4.metric("KOSDAQ 외인 5일 누적", f"{kq_f_5d:+,d} 백만원")
 
-            # 💡 접힌 상태 적용 (expanded=False)
+            # 2. 기간별 누적 수급 추세 (기본 접힘)
             with st.expander("📈 기간별 누적 수급 추세 (5일 / 10일 / 20일)", expanded=False):
                 df_cum_summary = pd.DataFrame([
                     {
@@ -707,8 +708,8 @@ if df_display is not None:
                     fig_p_tr.update_layout(title="프로그램 매매 추이 (백만원)", barmode='group', height=280, margin=dict(l=10, r=10, t=35, b=10), legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
                     st.plotly_chart(fig_p_tr, use_container_width=True)
 
-            # 💡 신규 추가: 종목별 수급 상세 분석 (expanded=False)
-            with st.expander("🔍 종목별 수급 상세 분석 (외국인/기관 순매수 상위)", expanded=False):
+            # 3. 당일 순매수 상위 종목 (기본 접힘)
+            with st.expander("🏆 당일 수급 TOP 10 종목 분석 (외국인/기관 순매수)", expanded=False):
                 try:
                     res_stock_liq = supabase.table("daily_top_liquidity").select("*").eq("trade_date", trend_date_str).order("rank").execute()
                     df_stock_liq = pd.DataFrame(res_stock_liq.data) if res_stock_liq.data else pd.DataFrame()
@@ -736,27 +737,113 @@ if df_display is not None:
                             .map(lambda v: 'color: red;' if v > 0 else ('color: blue;' if v < 0 else ''), subset=['등락률', '외인순매수', '기관순매수']),
                             hide_index=True, use_container_width=True
                         )
-
-                    st.markdown("---")
-                    st.markdown("###### 📈 개별 종목 기간별 수급 추이 차트")
-                    all_liq_names = df_stock_liq['name'].unique().tolist()
-                    sel_stock_name = st.selectbox("수급 추이 조회 종목 선택", options=all_liq_names, key="sel_stock_liq_trend_name")
-                    
-                    if sel_stock_name:
-                        res_stk_hist = supabase.table("daily_top_liquidity").select("*").eq("name", sel_stock_name).lte("trade_date", trend_date_str).order("trade_date", desc=True).limit(20).execute()
-                        df_stk_hist = pd.DataFrame(res_stk_hist.data) if res_stk_hist.data else pd.DataFrame()
-                        
-                        if not df_stk_hist.empty:
-                            df_stk_hist = df_stk_hist.sort_values('trade_date')
-                            fig_stk_tr = gg.Figure()
-                            fig_stk_tr.add_trace(gg.Bar(x=df_stk_hist['trade_date'], y=df_stk_hist['foreign_net'], name='외국인', marker_color='#d62728'))
-                            fig_stk_tr.add_trace(gg.Bar(x=df_stk_hist['trade_date'], y=df_stk_hist['inst_net'], name='기관', marker_color='#2ca02c'))
-                            fig_stk_tr.update_layout(title=f"'{sel_stock_name}' 최근 20영업일 외인/기관 순매수 추이", barmode='group', height=300, margin=dict(l=10, r=10, t=35, b=10))
-                            st.plotly_chart(fig_stk_tr, use_container_width=True)
                 else:
-                    st.info(f"💡 [{trend_date_str}] 데이터에 등록된 종목별 수급 내역이 없습니다.")
+                    st.info(f"💡 [{trend_date_str}] 데이터에 등록된 당일 수급 TOP 종목 내역이 없습니다.")
 
-            # 💡 접힌 상태 적용 (expanded=False)
+            # 4. 🔥 신규 추가: 특정 종목의 이력 및 추이 심층 분석 영역 (기본 접힘)
+            with st.expander("🔍 특정 종목의 이력 및 추이 분석 (가격 & 수급 이중축 분석)", expanded=False):
+                try:
+                    res_all_names = supabase.table("daily_top_liquidity").select("name").execute()
+                    if res_all_names.data:
+                        stock_name_options = sorted(list(set(r['name'] for r in res_all_names.data if r.get('name'))))
+                    else:
+                        stock_name_options = []
+                except Exception:
+                    stock_name_options = []
+
+                if stock_name_options:
+                    col_st_sel1, col_st_sel2 = st.columns([2, 1])
+                    with col_st_sel1:
+                        target_stock_name = st.selectbox("분석 대상 종목 선택", options=stock_name_options, key="tab2_hist_stock_selector")
+                    with col_st_sel2:
+                        hist_limit_days = st.selectbox("조회 기간 설정", [20, 40, 60, 90], index=1, key="tab2_hist_limit_days")
+
+                    if target_stock_name:
+                        try:
+                            res_single_hist = supabase.table("daily_top_liquidity")\
+                                .select("*")\
+                                .eq("name", target_stock_name)\
+                                .lte("trade_date", trend_date_str)\
+                                .order("trade_date", desc=True)\
+                                .limit(hist_limit_days)\
+                                .execute()
+                            df_single_hist = pd.DataFrame(res_single_hist.data) if res_single_hist.data else pd.DataFrame()
+                        except Exception:
+                            df_single_hist = pd.DataFrame()
+
+                        if not df_single_hist.empty:
+                            df_single_hist = df_single_hist.sort_values("trade_date").reset_index(drop=True)
+                            
+                            # 종목 주요 요약 메트릭
+                            f_cum = df_single_hist['foreign_net'].sum()
+                            i_cum = df_single_hist['inst_net'].sum()
+                            first_close = df_single_hist.iloc[0]['close_price']
+                            last_close = df_single_hist.iloc[-1]['close_price']
+                            price_chg_rate = ((last_close - first_close) / first_close * 100) if first_close > 0 else 0.0
+
+                            m_st1, m_st2, m_st3, m_st4 = st.columns(4)
+                            m_st1.metric("최신 종가", f"{last_close:,.0f}원", f"{price_chg_rate:+.2f}% (기간 변동)")
+                            m_st2.metric("외국인 누적 순매수", f"{f_cum:+,.0f}")
+                            m_st3.metric("기관 누적 순매수", f"{i_cum:+,.0f}")
+                            avg_vol_pwr = df_single_hist['volume_power'].mean() if 'volume_power' in df_single_hist.columns else 0.0
+                            m_st4.metric("평균 체결강도", f"{avg_vol_pwr:.2f}")
+
+                            st.write("")
+                            st.markdown(f"###### 📊 [{target_stock_name}] 가격(주가) 및 외국인/기관 순매수 추이")
+
+                            # 주가 & 수급 이중축 서브플롯 생성
+                            fig_combo = make_subplots(specs=[[{"secondary_y": True}]])
+
+                            # 1) 바 차트: 외국인 & 기관 순매수
+                            fig_combo.add_trace(
+                                gg.Bar(x=df_single_hist['trade_date'], y=df_single_hist['foreign_net'], name='외국인 순매수', marker_color='rgba(214, 39, 40, 0.7)'),
+                                secondary_y=False
+                            )
+                            fig_combo.add_trace(
+                                gg.Bar(x=df_single_hist['trade_date'], y=df_single_hist['inst_net'], name='기관 순매수', marker_color='rgba(44, 160, 44, 0.7)'),
+                                secondary_y=False
+                            )
+
+                            # 2) 라인 차트: 종가 추이
+                            fig_combo.add_trace(
+                                gg.Scatter(x=df_single_hist['trade_date'], y=df_single_hist['close_price'], mode='lines+markers', name='종가 (원)', line=dict(color='#1f77b4', width=2.5)),
+                                secondary_y=True
+                            )
+
+                            fig_combo.update_layout(
+                                title=f"'{target_stock_name}' 최근 {len(df_single_hist)}영업일 수급 및 주가 추이",
+                                barmode='group',
+                                height=380,
+                                margin=dict(l=10, r=10, t=35, b=10),
+                                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+                            )
+                            fig_combo.update_yaxes(title_text="순매수 (백만원)", secondary_y=False)
+                            fig_combo.update_yaxes(title_text="종가 (원)", secondary_y=True)
+
+                            st.plotly_chart(fig_combo, use_container_width=True)
+
+                            # 상세 데이터 표
+                            st.markdown(f"###### 📜 [{target_stock_name}] 일자별 수급 상세 이력 데이터")
+                            disp_single_cols = ['trade_date', 'rank', 'close_price', 'change_rate', 'foreign_net', 'inst_net', 'net_total', 'large_volume', 'volume_power']
+                            df_disp_single = df_single_hist[disp_single_cols].sort_values('trade_date', ascending=False).rename(columns={
+                                'trade_date': '일자', 'rank': '노출순위', 'close_price': '종가', 'change_rate': '등락률',
+                                'foreign_net': '외국인', 'inst_net': '기관', 'net_total': '수급합계',
+                                'large_volume': '대량체결', 'volume_power': '체결강도'
+                            })
+
+                            st.dataframe(
+                                df_disp_single.style.format({
+                                    '종가': '{:,.0f}', '등락률': '{:+.2f}%', '외국인': '{:+,.0f}',
+                                    '기관': '{:+,.0f}', '수급합계': '{:+,.0f}', '대량체결': '{:,.0f}', '체결강도': '{:.2f}'
+                                }).map(lambda v: 'color: red;' if float(v) > 0 else ('color: blue;' if float(v) < 0 else ''), subset=['등락률', '외국인', '기관', '수급합계']),
+                                hide_index=True, use_container_width=True
+                            )
+                        else:
+                            st.warning(f"⚠️ 선택하신 [{target_stock_name}] 종목의 이력 데이터가 존재하지 않습니다.")
+                else:
+                    st.info("💡 저장된 종목별 수급 이력 데이터가 없습니다.")
+
+            # 5. Gemini AI 수급 분석 및 고도화 프롬프트 (기본 접힘)
             with st.expander("🤖 Gemini AI 수급 분석 및 고도화 프롬프트", expanded=False):
                 kf_val = int(k_row.get('foreign_net', 0)) if not df_inv.empty and not k_row.empty else 0
                 ki_val = int(k_row.get('individual_net', 0)) if not df_inv.empty and not k_row.empty else 0
@@ -800,7 +887,7 @@ if df_display is not None:
                     st.success("✅ 수급 분석 완료")
                     st.markdown(analysis_res)
 
-            # 💡 접힌 상태 적용 (expanded=False)
+            # 6. 매매동향 수동 등록/수정 (기본 접힘)
             with st.expander(f"📝 [{trend_date_str}] 매매동향 수동 등록/수정 (기본 접힘)", expanded=False):
                 col_in1, col_in2 = st.columns(2)
                 with col_in1:
@@ -986,7 +1073,7 @@ if df_display is not None:
                     total_risk_amount = sum(max(0.0, (item['평단가'] - item['손절/스톱가']) * item['수량']) for item in holdings_list)
                     total_risk_pct = (total_risk_amount / account_total_input) * 100 if account_total_input > 0 else 0.0
                     
-                    st.markdown("###### 🛡️️ 포트폴리오 리스크 노출도")
+                    st.markdown("###### 🛡️ 포트폴리오 리스크 노출도")
                     risk_col1, risk_col2 = st.columns([3, 1])
                     with risk_col1:
                         st.progress(min(total_risk_pct / 100.0, 1.0))
@@ -996,7 +1083,7 @@ if df_display is not None:
                     risk_amt_fmt = f"${total_risk_amount:,.2f}" if market_type == "US" else f"{total_risk_amount:,.0f}원"
                     st.caption(f"※ 전 종목 스톱선 도달 시 예상 최대 리스크: **{risk_amt_fmt}**")
                     if risk_violations:
-                        st.warning(f"⚠️️ 단일 종목 손실 한도(2.0%) 초과: {', '.join(risk_violations)}")
+                        st.warning(f"⚠️ 단일 종목 손실 한도(2.0%) 초과: {', '.join(risk_violations)}")
                         
                     st.write("")
                     df_h = pd.DataFrame(holdings_list)
