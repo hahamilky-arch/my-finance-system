@@ -18,6 +18,18 @@ st.markdown("""
     .block-container { padding-top: 2rem !important; padding-bottom: 2rem !important; }
     html, body, [class*="st-"] { font-size: 14px !important; }
     h5 { font-size: 1.2rem !important; margin-bottom: 0.5rem !important; }
+    
+    /* 상단 탭 스크롤 고정 (Sticky Tabs) */
+    div[data-baseweb="tab-list"] {
+        position: sticky;
+        top: 2.8rem;
+        background-color: white;
+        z-index: 999;
+        padding-top: 8px;
+        padding-bottom: 8px;
+        border-bottom: 1px solid #e0e0e0;
+    }
+    
     .floating-btn-left {
         position: fixed; bottom: 25px; left: 25px;
         background: linear-gradient(135deg, #2b5876 0%, #4e4376 100%);
@@ -42,7 +54,6 @@ st.markdown("""
 def scroll_to_chart():
     components.html("<script>setTimeout(function(){const el=window.parent.document.getElementById('chart-section');if(el)el.scrollIntoView({behavior:'smooth'});},100);</script>", height=0)
 
-# 수급 및 매매상태 스타일링 적용 함수
 def apply_styles(df):
     df_s = pd.DataFrame('', index=df.index, columns=df.columns)
     
@@ -601,7 +612,6 @@ if df_display is not None:
             elif not market_safe and p_non_5d > 0 and k_f_5d > 0:
                 divergence_msg = "💡 [강세 다이버전스] 지수는 MA20 밑에 있으나, 최근 5일 스마트머니(외인/비차익)가 지속 저점 매수 중입니다. (반등 가능성)"
 
-            # 1. 당일 매매동향 (기본 접힘)
             with st.expander(f"📊 [{trend_date_str}] 당일 매매동향 & 스마트머니 수급 지표", expanded=False):
                 if divergence_msg:
                     st.warning(divergence_msg)
@@ -652,7 +662,6 @@ if df_display is not None:
                 m_sq3.metric("KOSPI 외인 5일 누적", f"{k_f_5d:+,d} 백만원", delta=f"5일 중 {k_f_days}일 순매수")
                 m_sq4.metric("KOSDAQ 외인 5일 누적", f"{kq_f_5d:+,d} 백만원")
 
-            # 2. 기간별 누적 수급 추세 (기본 접힘)
             with st.expander("📈 기간별 누적 수급 추세 (5일 / 10일 / 20일)", expanded=False):
                 df_cum_summary = pd.DataFrame([
                     {
@@ -708,7 +717,6 @@ if df_display is not None:
                     fig_p_tr.update_layout(title="프로그램 매매 추이 (백만원)", barmode='group', height=280, margin=dict(l=10, r=10, t=35, b=10), legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
                     st.plotly_chart(fig_p_tr, use_container_width=True)
 
-            # 3. 당일 순매수 상위 종목 (기본 접힘)
             with st.expander("🏆 당일 수급 TOP 10 종목 분석 (외국인/기관 순매수)", expanded=False):
                 try:
                     res_stock_liq = supabase.table("daily_top_liquidity").select("*").eq("trade_date", trend_date_str).order("rank").execute()
@@ -740,7 +748,6 @@ if df_display is not None:
                 else:
                     st.info(f"💡 [{trend_date_str}] 데이터에 등록된 당일 수급 TOP 종목 내역이 없습니다.")
 
-            # 4. 🔥 신규 추가: 특정 종목의 이력 및 추이 심층 분석 영역 (기본 접힘)
             with st.expander("🔍 특정 종목의 이력 및 추이 분석 (가격 & 수급 이중축 분석)", expanded=False):
                 try:
                     res_all_names = supabase.table("daily_top_liquidity").select("name").execute()
@@ -774,7 +781,6 @@ if df_display is not None:
                         if not df_single_hist.empty:
                             df_single_hist = df_single_hist.sort_values("trade_date").reset_index(drop=True)
                             
-                            # 종목 주요 요약 메트릭
                             f_cum = df_single_hist['foreign_net'].sum()
                             i_cum = df_single_hist['inst_net'].sum()
                             first_close = df_single_hist.iloc[0]['close_price']
@@ -791,10 +797,8 @@ if df_display is not None:
                             st.write("")
                             st.markdown(f"###### 📊 [{target_stock_name}] 가격(주가) 및 외국인/기관 순매수 추이")
 
-                            # 주가 & 수급 이중축 서브플롯 생성
                             fig_combo = make_subplots(specs=[[{"secondary_y": True}]])
 
-                            # 1) 바 차트: 외국인 & 기관 순매수
                             fig_combo.add_trace(
                                 gg.Bar(x=df_single_hist['trade_date'], y=df_single_hist['foreign_net'], name='외국인 순매수', marker_color='rgba(214, 39, 40, 0.7)'),
                                 secondary_y=False
@@ -804,7 +808,6 @@ if df_display is not None:
                                 secondary_y=False
                             )
 
-                            # 2) 라인 차트: 종가 추이
                             fig_combo.add_trace(
                                 gg.Scatter(x=df_single_hist['trade_date'], y=df_single_hist['close_price'], mode='lines+markers', name='종가 (원)', line=dict(color='#1f77b4', width=2.5)),
                                 secondary_y=True
@@ -822,7 +825,6 @@ if df_display is not None:
 
                             st.plotly_chart(fig_combo, use_container_width=True)
 
-                            # 상세 데이터 표
                             st.markdown(f"###### 📜 [{target_stock_name}] 일자별 수급 상세 이력 데이터")
                             disp_single_cols = ['trade_date', 'rank', 'close_price', 'change_rate', 'foreign_net', 'inst_net', 'net_total', 'large_volume', 'volume_power']
                             df_disp_single = df_single_hist[disp_single_cols].sort_values('trade_date', ascending=False).rename(columns={
@@ -843,7 +845,6 @@ if df_display is not None:
                 else:
                     st.info("💡 저장된 종목별 수급 이력 데이터가 없습니다.")
 
-            # 5. Gemini AI 수급 분석 및 고도화 프롬프트 (기본 접힘)
             with st.expander("🤖 Gemini AI 수급 분석 및 고도화 프롬프트", expanded=False):
                 kf_val = int(k_row.get('foreign_net', 0)) if not df_inv.empty and not k_row.empty else 0
                 ki_val = int(k_row.get('individual_net', 0)) if not df_inv.empty and not k_row.empty else 0
@@ -887,7 +888,6 @@ if df_display is not None:
                     st.success("✅ 수급 분석 완료")
                     st.markdown(analysis_res)
 
-            # 6. 매매동향 수동 등록/수정 (기본 접힘)
             with st.expander(f"📝 [{trend_date_str}] 매매동향 수동 등록/수정 (기본 접힘)", expanded=False):
                 col_in1, col_in2 = st.columns(2)
                 with col_in1:
