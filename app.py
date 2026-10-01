@@ -13,23 +13,30 @@ from gemini_analyzer import analyze_stock_with_gemini, get_remaining_quota, MAX_
 st.set_page_config(layout="wide")
 
 st.markdown("<div id='top-section'></div>", unsafe_allow_html=True)
+
+# 📌 1. 상단 탭 완벽 고정(Sticky) 및 탭 전환 스크립트 적용
 st.markdown("""
     <style>
-    .block-container { padding-top: 2rem !important; padding-bottom: 2rem !important; }
+    /* 부모 컨테이너 overflow 제약 해제 (Sticky 정상 작동 필수) */
+    [data-testid="stMainBlockContainer"], .main, .main .block-container {
+        overflow: visible !important;
+    }
+    .block-container { padding-top: 1.5rem !important; padding-bottom: 2rem !important; }
     html, body, [class*="st-"] { font-size: 14px !important; }
     h5 { font-size: 1.2rem !important; margin-bottom: 0.5rem !important; }
     
-    /* 📌 상단 탭 스크롤 고정 (다양한 Streamlit 버전에 대응하는 CSS) */
-    div[data-testid="stTabs"] > div[:first-child],
+    /* 📌 상단 탭 스크롤 고정 (Sticky Tabs) */
+    div[data-testid="stTabs"] > div:first-child,
     div[data-baseweb="tab-list"],
     .stTabs [role="tablist"] {
         position: sticky !important;
-        top: 2.8rem !important; /* 상단 헤더 높이에 맞춰 필요 시 0 ~ 3.5rem 사이 조절 */
+        top: 0px !important;
         background-color: #ffffff !important;
-        z-index: 9999 !important;
-        padding-top: 8px !important;
-        padding-bottom: 8px !important;
-        border-bottom: 1px solid #e0e0e0 !important;
+        z-index: 99999 !important;
+        padding-top: 10px !important;
+        padding-bottom: 6px !important;
+        border-bottom: 2px solid #e0e0e0 !important;
+        box-shadow: 0px 4px 10px rgba(0,0,0,0.05);
     }
     
     .floating-btn-left {
@@ -37,7 +44,7 @@ st.markdown("""
         background: linear-gradient(135deg, #2b5876 0%, #4e4376 100%);
         color: white !important; border-radius: 30px; padding: 10px 18px;
         font-weight: bold; box-shadow: 0 4px 15px rgba(0,0,0,0.2);
-        cursor: pointer; z-index: 99999; text-decoration: none;
+        cursor: pointer; z-index: 999999; text-decoration: none;
     }
     .backup-tag {
         background-color: #fff3cd; color: #856404; font-size: 0.85em; font-weight: bold;
@@ -53,9 +60,20 @@ st.markdown("""
     <a href="#top-section" class="floating-btn-left"><span>⬆️</span> <span>위로</span></a>
 """, unsafe_allow_html=True)
 
-
-def scroll_to_chart():
-    components.html("<script>setTimeout(function(){const el=window.parent.document.getElementById('chart-section');if(el)el.scrollIntoView({behavior:'smooth'});},100);</script>", height=0)
+# 📌 종목 선택 시 2번 탭(매매동향 분석)으로 자동 이동시키는 JS 스크립트
+def switch_to_tab2():
+    js_code = """
+    <script>
+    setTimeout(function() {
+        const tabs = window.parent.document.querySelectorAll('button[data-baseweb="tab"], [role="tab"]');
+        if (tabs && tabs.length >= 2) {
+            tabs[1].click();
+            tabs[1].scrollIntoView({behavior: 'smooth', block: 'center'});
+        }
+    }, 150);
+    </script>
+    """
+    components.html(js_code, height=0)
 
 def apply_styles(df):
     df_s = pd.DataFrame('', index=df.index, columns=df.columns)
@@ -528,11 +546,21 @@ if df_display is not None:
                     hide_index=True, 
                     use_container_width=False, 
                     on_select="rerun", 
-                    selection_mode="single-row"
+                    selection_mode="single-row",
+                    key="overview_table_selection"
                 )
+                
+                # 📌 3. Overview 목록에서 종목 체크 시 2번 탭(매매동향 분석)으로 이동 및 해당 종목 설정
                 if event and event.get("selection", {}).get("rows"):
-                    st.session_state['selected_ticker_from_table'] = df_target.iloc[event["selection"]["rows"][0]]['ticker']
-                    st.session_state['trigger_scroll'] = True
+                    selected_row = df_target.iloc[event["selection"]["rows"][0]]
+                    sel_ticker = selected_row['ticker']
+                    sel_name = selected_row['종목명']
+                    
+                    st.session_state['selected_ticker_from_table'] = sel_ticker
+                    st.session_state['tab2_selected_stock_name'] = sel_name
+                    st.session_state['trigger_tab2_switch'] = True
+                    
+                    switch_to_tab2()
 
     # ----------------------------------------------------
     # TAB 2: 매매동향 분석
@@ -751,7 +779,9 @@ if df_display is not None:
                 else:
                     st.info(f"💡 [{trend_date_str}] 데이터에 등록된 당일 수급 TOP 종목 내역이 없습니다.")
 
-            with st.expander("🔍 특정 종목의 이력 및 추이 분석 (가격 & 수급 이중축 분석)", expanded=False):
+            # 📌 특정 종목 이력 & 추이 상세 분석 (Overview에서 클릭 시 자동 연동)
+            is_tab2_auto_expanded = st.session_state.get('trigger_tab2_switch', False)
+            with st.expander("🔍 특정 종목의 이력 및 추이 분석 (가격 & 수급 이중축 분석)", expanded=is_tab2_auto_expanded):
                 try:
                     res_all_names = supabase.table("daily_top_liquidity").select("name").execute()
                     if res_all_names.data:
@@ -763,16 +793,26 @@ if df_display is not None:
 
                 if stock_name_options:
                     col_st_sel1, col_st_sel2 = st.columns([2, 1])
+                    
+                    target_stock_name = st.session_state.get('tab2_selected_stock_name', stock_name_options[0])
+                    if target_stock_name not in stock_name_options:
+                        stock_name_options.insert(0, target_stock_name)
+
                     with col_st_sel1:
-                        target_stock_name = st.selectbox("분석 대상 종목 선택", options=stock_name_options, key="tab2_hist_stock_selector")
+                        selected_stock_name = st.selectbox(
+                            "분석 대상 종목 선택", 
+                            options=stock_name_options, 
+                            index=stock_name_options.index(target_stock_name) if target_stock_name in stock_name_options else 0,
+                            key="tab2_hist_stock_selector"
+                        )
                     with col_st_sel2:
                         hist_limit_days = st.selectbox("조회 기간 설정", [20, 40, 60, 90], index=1, key="tab2_hist_limit_days")
 
-                    if target_stock_name:
+                    if selected_stock_name:
                         try:
                             res_single_hist = supabase.table("daily_top_liquidity")\
                                 .select("*")\
-                                .eq("name", target_stock_name)\
+                                .eq("name", selected_stock_name)\
                                 .lte("trade_date", trend_date_str)\
                                 .order("trade_date", desc=True)\
                                 .limit(hist_limit_days)\
@@ -798,7 +838,7 @@ if df_display is not None:
                             m_st4.metric("평균 체결강도", f"{avg_vol_pwr:.2f}")
 
                             st.write("")
-                            st.markdown(f"###### 📊 [{target_stock_name}] 가격(주가) 및 외국인/기관 순매수 추이")
+                            st.markdown(f"###### 📊 [{selected_stock_name}] 가격(주가) 및 외국인/기관 순매수 추이")
 
                             fig_combo = make_subplots(specs=[[{"secondary_y": True}]])
 
@@ -817,7 +857,7 @@ if df_display is not None:
                             )
 
                             fig_combo.update_layout(
-                                title=f"'{target_stock_name}' 최근 {len(df_single_hist)}영업일 수급 및 주가 추이",
+                                title=f"'{selected_stock_name}' 최근 {len(df_single_hist)}영업일 수급 및 주가 추이",
                                 barmode='group',
                                 height=380,
                                 margin=dict(l=10, r=10, t=35, b=10),
@@ -828,7 +868,7 @@ if df_display is not None:
 
                             st.plotly_chart(fig_combo, use_container_width=True)
 
-                            st.markdown(f"###### 📜 [{target_stock_name}] 일자별 수급 상세 이력 데이터")
+                            st.markdown(f"###### 📜 [{selected_stock_name}] 일자별 수급 상세 이력 데이터")
                             disp_single_cols = ['trade_date', 'rank', 'close_price', 'change_rate', 'foreign_net', 'inst_net', 'net_total', 'large_volume', 'volume_power']
                             df_disp_single = df_single_hist[disp_single_cols].sort_values('trade_date', ascending=False).rename(columns={
                                 'trade_date': '일자', 'rank': '노출순위', 'close_price': '종가', 'change_rate': '등락률',
@@ -844,9 +884,36 @@ if df_display is not None:
                                 hide_index=True, use_container_width=True
                             )
                         else:
-                            st.warning(f"⚠️ 선택하신 [{target_stock_name}] 종목의 이력 데이터가 존재하지 않습니다.")
+                            st.warning(f"⚠️️ 선택하신 [{selected_stock_name}] 종목의 이력 데이터가 존재하지 않습니다.")
                 else:
                     st.info("💡 저장된 종목별 수급 이력 데이터가 없습니다.")
+
+            # 📌 2. 하단 개별 종목 통합 차트를 2번 탭 내부로 이동
+            st.markdown("---")
+            st.markdown("<div id='chart-section'></div>", unsafe_allow_html=True)
+            with st.expander("📉 개별 종목 통합 차트 분석", expanded=is_tab2_auto_expanded):
+                top200_tickers = df_display.head(200)['ticker'].tolist()
+                
+                sel_ticker_from_tab1 = st.session_state.get('selected_ticker_from_table')
+                if sel_ticker_from_tab1 and sel_ticker_from_tab1 not in top200_tickers:
+                    top200_tickers.insert(0, sel_ticker_from_tab1)
+
+                ticker_name_map = dict(zip(df_display['ticker'], df_display['종목명']))
+                default_ticker = sel_ticker_from_tab1 if sel_ticker_from_tab1 in top200_tickers else (top200_tickers[0] if top200_tickers else None)
+                
+                sel_chart_ticker = st.selectbox(
+                    "차트 조회 종목 선택", 
+                    options=top200_tickers, 
+                    index=top200_tickers.index(default_ticker) if default_ticker in top200_tickers else 0, 
+                    format_func=lambda x: f"[{x}] {ticker_name_map.get(x, x)}",
+                    key="tab2_integrated_chart_selector"
+                )
+                if sel_chart_ticker:
+                    draw_integrated_chart(sel_chart_ticker, market_type, ticker_name_map)
+
+            # 세션 플래그 리셋
+            if st.session_state.get('trigger_tab2_switch'):
+                st.session_state['trigger_tab2_switch'] = False
 
             with st.expander("🤖 Gemini AI 수급 분석 및 고도화 프롬프트", expanded=False):
                 kf_val = int(k_row.get('foreign_net', 0)) if not df_inv.empty and not k_row.empty else 0
@@ -1335,30 +1402,5 @@ if df_display is not None:
                         }), hide_index=True, use_container_width=True
                     )
 
-    st.divider()
-    st.markdown("<div id='chart-section'></div>", unsafe_allow_html=True)
-    if is_authenticated:
-        with st.expander("📉 개별 종목 통합 차트", expanded=True):
-            if st.session_state.get('trigger_scroll'):
-                scroll_to_chart()
-                st.session_state['trigger_scroll'] = False 
-
-            top200_tickers = df_display.head(200)['ticker'].tolist()
-            if st.session_state.get('selected_ticker_from_table') and st.session_state['selected_ticker_from_table'] not in top200_tickers:
-                top200_tickers.append(st.session_state['selected_ticker_from_table'])
-                
-            ticker_name_map = dict(zip(df_display['ticker'], df_display['종목명']))
-            default_ticker = st.session_state.get('selected_ticker_from_table', top200_tickers[0] if top200_tickers else None)
-            
-            sel_ticker = st.selectbox(
-                "종목별 차트 분석", 
-                options=top200_tickers, 
-                index=top200_tickers.index(default_ticker) if default_ticker in top200_tickers else 0, 
-                format_func=lambda x: f"[{x}] {ticker_name_map.get(x, x)}"
-            )
-            if sel_ticker:
-                draw_integrated_chart(sel_ticker, market_type, ticker_name_map)
-    else:
-        st.info("🔒 개별 종목 차트는 우측 상단 **[🔑 잠금 해제]** 후 조회가 가능합니다.")
 else:
     st.warning("데이터를 불러오는 중입니다.")
