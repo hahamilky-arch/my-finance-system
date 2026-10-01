@@ -550,7 +550,7 @@ if df_display is not None:
                     key="overview_table_selection"
                 )
                 
-                # 📌 3. Overview 목록에서 종목 체크 시 2번 탭(매매동향 분석)으로 이동 및 해당 종목 설정
+                # 📌 Overview 목록에서 종목 선택 시 2번 탭으로 이동 및 2번 탭 전체 종목 자동 연동
                 if event and event.get("selection", {}).get("rows"):
                     selected_row = df_target.iloc[event["selection"]["rows"][0]]
                     sel_ticker = selected_row['ticker']
@@ -563,7 +563,7 @@ if df_display is not None:
                     switch_to_tab2()
 
     # ----------------------------------------------------
-    # TAB 2: 매매동향 분석
+    # TAB 2: 매매동향 분석 (모든 상세 분석 통합)
     # ----------------------------------------------------
     with tab2:
         col_t2_head, col_t2_date = st.columns([3, 1])
@@ -779,7 +779,7 @@ if df_display is not None:
                 else:
                     st.info(f"💡 [{trend_date_str}] 데이터에 등록된 당일 수급 TOP 종목 내역이 없습니다.")
 
-            # 📌 특정 종목 이력 & 추이 상세 분석 (Overview에서 클릭 시 자동 연동)
+            # 📌 특정 종목 이력 & 추이 상세 분석 (Overview에서 선택한 종목 연동)
             is_tab2_auto_expanded = st.session_state.get('trigger_tab2_switch', False)
             with st.expander("🔍 특정 종목의 이력 및 추이 분석 (가격 & 수급 이중축 분석)", expanded=is_tab2_auto_expanded):
                 try:
@@ -884,13 +884,11 @@ if df_display is not None:
                                 hide_index=True, use_container_width=True
                             )
                         else:
-                            st.warning(f"⚠️️ 선택하신 [{selected_stock_name}] 종목의 이력 데이터가 존재하지 않습니다.")
+                            st.warning(f"⚠️ 선택하신 [{selected_stock_name}] 종목의 이력 데이터가 존재하지 않습니다.")
                 else:
                     st.info("💡 저장된 종목별 수급 이력 데이터가 없습니다.")
 
-            # 📌 2. 하단 개별 종목 통합 차트를 2번 탭 내부로 이동
-            st.markdown("---")
-            st.markdown("<div id='chart-section'></div>", unsafe_allow_html=True)
+            # 📌 개별 종목 통합 차트 분석
             with st.expander("📉 개별 종목 통합 차트 분석", expanded=is_tab2_auto_expanded):
                 top200_tickers = df_display.head(200)['ticker'].tolist()
                 
@@ -911,11 +909,57 @@ if df_display is not None:
                 if sel_chart_ticker:
                     draw_integrated_chart(sel_chart_ticker, market_type, ticker_name_map)
 
+            # 📌 1. Google Gemini AI 종목 분석도 2번 탭으로 이동 및 종목 자동 연동 적용
+            with st.expander("🤖 Google Gemini AI 개별 종목 분석", expanded=is_tab2_auto_expanded):
+                used_cnt, remain_cnt = get_remaining_quota()
+                col_q1, col_q2 = st.columns([3, 1])
+                with col_q1:
+                    st.caption("선택한 종목의 수치 지표와 분석 옵션에 따라 AI가 맞춤 리포트를 생성합니다.")
+                with col_q2:
+                    st.metric("Gemini 잔여 사용량", f"{remain_cnt}/{MAX_DAILY_QUOTA}회")
+
+                all_avail_tickers = df_display['ticker'].tolist()
+                default_gemini_ticker = st.session_state.get('selected_ticker_from_table', all_avail_tickers[0] if all_avail_tickers else None)
+
+                col_sel1, col_sel2 = st.columns([1, 1])
+                with col_sel1:
+                    selected_target_ticker = st.selectbox(
+                        "분석할 종목 선택", 
+                        options=all_avail_tickers,
+                        index=all_avail_tickers.index(default_gemini_ticker) if default_gemini_ticker in all_avail_tickers else 0,
+                        format_func=lambda x: f"[{x}] {dict(zip(df_display['ticker'], df_display['종목명'])).get(x, x)}",
+                        key="tab2_gemini_target_ticker_selector"
+                    )
+
+                with col_sel2:
+                    analysis_option = st.selectbox(
+                        "분석 요청할 항목 선택",
+                        [
+                            "📋 종합 기본적 분석",
+                            "📈 ROE 듀퐁 분석 (DuPont Analysis)",
+                            "🏢 사업 구조 및 수익 모델",
+                            "📊 퀀트 지표 기반 밸류에이션",
+                            "⚠️ 주요 리스크 및 억제 요인",
+                            "🎯 단기/중기 매매 시나리오"
+                        ],
+                        key="tab2_gemini_analysis_option_selector"
+                    )
+
+                if st.button("✨ Gemini 종목 분석 실행", type="primary", use_container_width=True, key="btn_run_gemini_stock_analysis"):
+                    target_row = df_display[df_display['ticker'] == selected_target_ticker].iloc[0]
+                    stock_nm = target_row['종목명']
+                    
+                    with st.spinner(f"🤖 '{stock_nm}' 종목의 [{analysis_option}] 분석을 진행 중입니다..."):
+                        analysis_result = analyze_stock_with_gemini(selected_target_ticker, stock_nm, target_row, analysis_option)
+                        
+                    st.success("✅ 분석 완료")
+                    st.markdown(analysis_result)
+
             # 세션 플래그 리셋
             if st.session_state.get('trigger_tab2_switch'):
                 st.session_state['trigger_tab2_switch'] = False
 
-            with st.expander("🤖 Gemini AI 수급 분석 및 고도화 프롬프트", expanded=False):
+            with st.expander("🤖 Gemini AI 시장 전체 수급 분석 및 고도화 프롬프트", expanded=False):
                 kf_val = int(k_row.get('foreign_net', 0)) if not df_inv.empty and not k_row.empty else 0
                 ki_val = int(k_row.get('individual_net', 0)) if not df_inv.empty and not k_row.empty else 0
                 kin_val = int(k_row.get('institution_net', 0)) if not df_inv.empty and not k_row.empty else 0
@@ -952,7 +996,7 @@ if df_display is not None:
 
                 st.code(prompt_text, language="markdown")
 
-                if st.button("✨ Gemini AI 수급 종합 분석 실행", type="primary", use_container_width=True):
+                if st.button("✨ Gemini AI 시장 수급 종합 분석 실행", type="primary", use_container_width=True, key="btn_run_gemini_market_analysis"):
                     with st.spinner("🤖 당일 수급 지표 및 N일 누적 수급 흐름을 종합 분석 중입니다..."):
                         analysis_res = analyze_stock_with_gemini("MARKET_TREND", "코스피/코스닥 수급동향", {"MOT": 0, "RS(90)": 0, "이격도": 0, "종가": 0}, prompt_text)
                     st.success("✅ 수급 분석 완료")
@@ -1219,47 +1263,6 @@ if df_display is not None:
                                 update_holdings(ms_ticker, 'SELL', ms_price, ms_date, ms_qty, market_type)
                             else:
                                 st.warning("종목코드, 매도가, 수량을 확인하세요.")
-
-            st.markdown("---")
-            st.markdown("##### 🤖 Google Gemini AI 종목 분석")
-
-            used_cnt, remain_cnt = get_remaining_quota()
-            col_q1, col_q2 = st.columns([3, 1])
-            with col_q1:
-                st.caption("선택한 종목의 수치 지표와 분석 옵션에 따라 AI가 맞춤 리포트를 생성합니다.")
-            with col_q2:
-                st.metric("Gemini 잔여 사용량", f"{remain_cnt}/{MAX_DAILY_QUOTA}회")
-
-            col_sel1, col_sel2 = st.columns([1, 1])
-            with col_sel1:
-                selected_target_ticker = st.selectbox(
-                    "분석할 종목 선택", 
-                    options=df_display['ticker'].tolist(),
-                    format_func=lambda x: f"[{x}] {dict(zip(df_display['ticker'], df_display['종목명'])).get(x, x)}"
-                )
-
-            with col_sel2:
-                analysis_option = st.selectbox(
-                    "분석 요청할 항목 선택",
-                    [
-                        "📋 종합 기본적 분석",
-                        "📈 ROE 듀퐁 분석 (DuPont Analysis)",
-                        "🏢 사업 구조 및 수익 모델",
-                        "📊 퀀트 지표 기반 밸류에이션",
-                        "⚠️ 주요 리스크 및 억제 요인",
-                        "🎯 단기/중기 매매 시나리오"
-                    ]
-                )
-
-            if st.button("✨ Gemini 분석 실행", type="primary", use_container_width=True):
-                target_row = df_display[df_display['ticker'] == selected_target_ticker].iloc[0]
-                stock_nm = target_row['종목명']
-                
-                with st.spinner(f"🤖 '{stock_nm}' 종목의 [{analysis_option}] 분석을 진행 중입니다..."):
-                    analysis_result = analyze_stock_with_gemini(selected_target_ticker, stock_nm, target_row, analysis_option)
-                    
-                st.success("✅ 분석 완료")
-                st.markdown(analysis_result)
 
         if current_engine_key == "strat3_top7":
             st.info(f"""
