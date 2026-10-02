@@ -5,6 +5,7 @@ import plotly.graph_objects as gg
 import plotly.express as px
 from plotly.subplots import make_subplots
 import streamlit.components.v1 as components
+import time
 from db import supabase, get_holdings_table, update_holdings, get_market_regime, get_available_dates
 from strategy import get_data
 from charts import draw_integrated_chart, draw_attribution_charts
@@ -75,6 +76,16 @@ st.markdown("""
     </style>
     <a href="#top-section" class="floating-btn-left"><span>⬆️</span> <span>위로</span></a>
 """, unsafe_allow_html=True)
+
+# 📌 2. 5분 비밀번호 유지 세션 로직
+LOGIN_TIMEOUT_SECONDS = 300  # 5분 (300초)
+
+current_time = time.time()
+if 'trade_authenticated' in st.session_state and st.session_state['trade_authenticated']:
+    last_auth = st.session_state.get('last_auth_time', 0)
+    if current_time - last_auth > LOGIN_TIMEOUT_SECONDS:
+        st.session_state['trade_authenticated'] = False
+        st.session_state['last_auth_time'] = 0
 
 # 📌 종목 선택 시 2번 탭(매매동향 분석)으로 자동 이동시키는 JS 스크립트
 def switch_to_tab2():
@@ -325,7 +336,7 @@ with st.sidebar:
             rank_exit_limit = 30
 
     if stop_new_buy: 
-        st.warning("⚠️️ MA20 3일 연속 하회 감지: 신규 매수 중지")
+        st.warning("⚠ MA20 3일 연속 하회 감지: 신규 매수 중지")
     elif reduce_holdings:
         st.warning("⚠️ MA20 하회 감지: 보유 종목 비중 축소")
         
@@ -352,19 +363,27 @@ with col_title:
     st.markdown("##### 📈 Quant Alpha Strategy")
 
 with col_auth_status:
-    if not st.session_state.get('trade_authenticated', False):
+    # 📌 로그인 상태 확인 및 잔여 시간 표시
+    is_auth = st.session_state.get('trade_authenticated', False)
+    if is_auth:
+        elapsed = time.time() - st.session_state.get('last_auth_time', 0)
+        remaining_sec = max(0, int(LOGIN_TIMEOUT_SECONDS - elapsed))
+        rem_min, rem_sec = remaining_sec // 60, remaining_sec % 60
+        st.caption(f"🔓 인증됨 (남은 시간: {rem_min}분 {rem_sec}초)")
+        if st.button("🔒 다시 잠금", key="btn_global_lock", use_container_width=True):
+            st.session_state['trade_authenticated'] = False
+            st.session_state['last_auth_time'] = 0
+            st.rerun()
+    else:
         with st.popover("🔑 잠금 해제", use_container_width=True):
             input_pwd_global = st.text_input("매매 비밀번호", type="password", key="global_pwd_input")
             if st.button("해제", key="btn_global_unlock", type="primary", use_container_width=True):
                 if input_pwd_global == st.secrets.get("TRADE_PASSWORD", "1234"):
                     st.session_state['trade_authenticated'] = True
+                    st.session_state['last_auth_time'] = time.time()
                     st.rerun()
                 else:
                     st.error("비밀번호 불일치")
-    else:
-        if st.button("🔒 다시 잠금", key="btn_global_lock", use_container_width=True):
-            st.session_state['trade_authenticated'] = False
-            st.rerun()
 
 cap_key = "us_capital" if market_type == "US" else "kr_capital"
 default_cap = st.session_state.get(cap_key, 6000.0 if market_type == "US" else 20000000.0)
@@ -631,11 +650,19 @@ if df_display is not None:
             kq_f_10d = int(df_kq_all.head(10)['foreign_net'].sum()) if not df_kq_all.empty else 0
             kq_f_20d = int(df_kq_all.head(20)['foreign_net'].sum()) if not df_kq_all.empty else 0
 
+            kq_inst_5d = int(df_kq_all.head(5)['institution_net'].sum()) if not df_kq_all.empty else 0
+            kq_inst_10d = int(df_kq_all.head(10)['institution_net'].sum()) if not df_kq_all.empty else 0
+            kq_inst_20d = int(df_kq_all.head(20)['institution_net'].sum()) if not df_kq_all.empty else 0
+
             p_non_5d = int(df_p_sorted.head(5)['non_arbitrage_net'].sum()) if not df_p_sorted.empty else 0
             p_non_10d = int(df_p_sorted.head(10)['non_arbitrage_net'].sum()) if not df_p_sorted.empty else 0
             p_non_20d = int(df_p_sorted.head(20)['non_arbitrage_net'].sum()) if not df_p_sorted.empty else 0
 
+            # 📌 연속성 유입 일수 계산 (최근 5일 기준)
             k_f_days = int((df_k_all.head(5)['foreign_net'] > 0).sum()) if not df_k_all.empty else 0
+            k_inst_days = int((df_k_all.head(5)['institution_net'] > 0).sum()) if not df_k_all.empty else 0
+            kq_f_days = int((df_kq_all.head(5)['foreign_net'] > 0).sum()) if not df_kq_all.empty else 0
+            kq_inst_days = int((df_kq_all.head(5)['institution_net'] > 0).sum()) if not df_kq_all.empty else 0
             p_non_days = int((df_p_sorted.head(5)['non_arbitrage_net'] > 0).sum()) if not df_p_sorted.empty else 0
 
             if not df_p_sorted.empty and len(df_p_sorted) >= 5:
@@ -655,7 +682,7 @@ if df_display is not None:
 
             divergence_msg = ""
             if market_safe and p_non_5d < 0 and k_f_5d < 0:
-                divergence_msg = "⚠️️ [약세 다이버전스] 지수는 MA20 위에 있으나, 최근 5일 비차익/외국인 누적 수급이 연속 유출 중입니다. (단기 상단 경계)"
+                divergence_msg = "⚠️ [약세 다이버전스] 지수는 MA20 위에 있으나, 최근 5일 비차익/외국인 누적 수급이 연속 유출 중입니다. (단기 상단 경계)"
             elif not market_safe and p_non_5d > 0 and k_f_5d > 0:
                 divergence_msg = "💡 [강세 다이버전스] 지수는 MA20 밑에 있으나, 최근 5일 스마트머니(외인/비차익)가 지속 저점 매수 중입니다. (반등 가능성)"
 
@@ -703,11 +730,14 @@ if df_display is not None:
                     )
 
                 st.markdown("###### 2. 수급 강도 & 연속성 지표 (20일 기준)")
-                m_sq1, m_sq2, m_sq3, m_sq4 = st.columns(4)
+                # 📌 기관 수급 항목이 추가된 6개 컬럼 구성
+                m_sq1, m_sq2, m_sq3, m_sq4, m_sq5, m_sq6 = st.columns(6)
                 m_sq1.metric("비차익 수급 Z-Score", f"{p_zscore:+.2f}", delta=z_tag, delta_color="off")
                 m_sq2.metric("비차익 5일 누적", f"{p_non_5d:+,d} 백만원", delta=f"5일 중 {p_non_days}일 순매수")
-                m_sq3.metric("KOSPI 외인 5일 누적", f"{k_f_5d:+,d} 백만원", delta=f"5일 중 {k_f_days}일 순매수")
-                m_sq4.metric("KOSDAQ 외인 5일 누적", f"{kq_f_5d:+,d} 백만원")
+                m_sq3.metric("KOSPI 외인 5일", f"{k_f_5d:+,d} 백만원", delta=f"5일 중 {k_f_days}일 순매수")
+                m_sq4.metric("KOSPI 기관 5일", f"{k_inst_5d:+,d} 백만원", delta=f"5일 중 {k_inst_days}일 순매수")
+                m_sq5.metric("KOSDAQ 외인 5일", f"{kq_f_5d:+,d} 백만원", delta=f"5일 중 {kq_f_days}일 순매수")
+                m_sq6.metric("KOSDAQ 기관 5일", f"{kq_inst_5d:+,d} 백만원", delta=f"5일 중 {kq_inst_days}일 순매수")
 
             with st.expander("📈 기간별 누적 수급 추세 (5일 / 10일 / 20일)", expanded=False):
                 df_cum_summary = pd.DataFrame([
@@ -722,6 +752,10 @@ if df_display is not None:
                     {
                         "구분": "KOSDAQ 외국인",
                         "5일 누적": kq_f_5d, "10일 누적": kq_f_10d, "20일 누적": kq_f_20d
+                    },
+                    {
+                        "구분": "KOSDAQ 기관계",
+                        "5일 누적": kq_inst_5d, "10일 누적": kq_inst_10d, "20일 누적": kq_inst_20d
                     },
                     {
                         "구분": "비차익 프로그램",
@@ -995,6 +1029,9 @@ if df_display is not None:
 2. 수급 강도 및 연속성 파생 지표:
   * 비차익 수급 Z-Score (20일 기준): {p_zscore:+.2f} ({z_tag})
   * KOSPI 외국인 연속성: 최근 5영업일 중 {k_f_days}일 순매수 유입
+  * KOSPI 기관 연속성: 최근 5영업일 중 {k_inst_days}일 순매수 유입
+  * KOSDAQ 외국인 연속성: 최근 5영업일 중 {kq_f_days}일 순매수 유입
+  * KOSDAQ 기관 연속성: 최근 5영업일 중 {kq_inst_days}일 순매수 유입
   * 비차익 프로그램 연속성: 최근 5영업일 중 {p_non_days}일 순매수 유입
   * 지수-수급 다이버전스: {divergence_msg if divergence_msg else "특이사항 없음 (지수 수급 일치)"}
 
@@ -1002,6 +1039,7 @@ if df_display is not None:
   * KOSPI 외국인: 5일({k_f_5d:+,d}), 10일({k_f_10d:+,d}), 20일({k_f_20d:+,d})
   * KOSPI 기관계: 5일({k_inst_5d:+,d}), 10일({k_inst_10d:+,d}), 20일({k_inst_20d:+,d})
   * KOSDAQ 외국인: 5일({kq_f_5d:+,d}), 10일({kq_f_10d:+,d}), 20일({kq_f_20d:+,d})
+  * KOSDAQ 기관계: 5일({kq_inst_5d:+,d}), 10일({kq_inst_10d:+,d}), 20일({kq_inst_20d:+,d})
   * 비차익 프로그램: 5일({p_non_5d:+,d}), 10일({p_non_10d:+,d}), 20일({p_non_20d:+,d})
 
 [분석 요구사항]
