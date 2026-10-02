@@ -13,7 +13,7 @@ from gemini_analyzer import analyze_stock_with_gemini, get_remaining_quota, MAX_
 
 st.set_page_config(layout="wide")
 
-# 📌 0. 새로고침 및 페이지 이탈 방지 컨펌 팝업 스크립트
+# 📌 0-1. 새로고침 및 페이지 이탈 방지 컨펌 팝업 스크립트
 components.html(
     """
     <script>
@@ -77,15 +77,50 @@ st.markdown("""
     <a href="#top-section" class="floating-btn-left"><span>⬆️</span> <span>위로</span></a>
 """, unsafe_allow_html=True)
 
-# 📌 2. 5분 비밀번호 유지 세션 로직
+# 📌 2. 5분 비밀번호 유지 세션 및 1분 전 연장 알림 로직
 LOGIN_TIMEOUT_SECONDS = 300  # 5분 (300초)
 
+# 자동 연장 요청 파라미터 처리
+if st.query_params.get("extend_auth") == "true":
+    st.session_state['last_auth_time'] = time.time()
+    st.query_params.clear()
+    st.rerun()
+
 current_time = time.time()
-if 'trade_authenticated' in st.session_state and st.session_state['trade_authenticated']:
+is_authenticated = st.session_state.get('trade_authenticated', False)
+
+if is_authenticated:
     last_auth = st.session_state.get('last_auth_time', 0)
-    if current_time - last_auth > LOGIN_TIMEOUT_SECONDS:
+    elapsed_sec = current_time - last_auth
+    remaining_sec = max(0, int(LOGIN_TIMEOUT_SECONDS - elapsed_sec))
+    
+    if remaining_sec <= 0:
         st.session_state['trade_authenticated'] = False
         st.session_state['last_auth_time'] = 0
+        st.rerun()
+    else:
+        # 📌 JS 기반 타이머: 남은 시간이 60초가 되면 알림창 출력 후 연장
+        js_timer_code = f"""
+        <script>
+        (function() {{
+            let remSec = {remaining_sec};
+            if (window.authTimer) clearInterval(window.authTimer);
+            
+            window.authTimer = setInterval(function() {{
+                remSec--;
+                // 1분(60초) 남았을 때 알림 및 연장 물음
+                if (remSec === 60) {{
+                    if (confirm("⚠️ 매매 잠금 해제 만료 1분 전입니다.\\n인증 시간을 5분 연장하시겠습니까?")) {{
+                        const url = new URL(window.parent.location.href);
+                        url.searchParams.set("extend_auth", "true");
+                        window.parent.location.href = url.toString();
+                    }}
+                }}
+            }}, 1000);
+        }})();
+        </script>
+        """
+        components.html(js_timer_code, height=0)
 
 # 📌 종목 선택 시 2번 탭(매매동향 분석)으로 자동 이동시키는 JS 스크립트
 def switch_to_tab2():
@@ -363,17 +398,23 @@ with col_title:
     st.markdown("##### 📈 Quant Alpha Strategy")
 
 with col_auth_status:
-    # 📌 로그인 상태 확인 및 잔여 시간 표시
-    is_auth = st.session_state.get('trade_authenticated', False)
-    if is_auth:
+    # 📌 인증 상태 및 수동/자동 5분 연장 버튼
+    if is_authenticated:
         elapsed = time.time() - st.session_state.get('last_auth_time', 0)
         remaining_sec = max(0, int(LOGIN_TIMEOUT_SECONDS - elapsed))
         rem_min, rem_sec = remaining_sec // 60, remaining_sec % 60
         st.caption(f"🔓 인증됨 (남은 시간: {rem_min}분 {rem_sec}초)")
-        if st.button("🔒 다시 잠금", key="btn_global_lock", use_container_width=True):
-            st.session_state['trade_authenticated'] = False
-            st.session_state['last_auth_time'] = 0
-            st.rerun()
+        
+        c_ext, c_lock = st.columns(2)
+        with c_ext:
+            if st.button("🔄 5분 연장", key="btn_extend_auth", use_container_width=True):
+                st.session_state['last_auth_time'] = time.time()
+                st.rerun()
+        with c_lock:
+            if st.button("🔒 잠금", key="btn_global_lock", use_container_width=True):
+                st.session_state['trade_authenticated'] = False
+                st.session_state['last_auth_time'] = 0
+                st.rerun()
     else:
         with st.popover("🔑 잠금 해제", use_container_width=True):
             input_pwd_global = st.text_input("매매 비밀번호", type="password", key="global_pwd_input")
@@ -404,7 +445,6 @@ if df_display is not None:
         })
 
     is_latest_date = (target_date_str == max(all_dates)) if all_dates and target_date_str else False
-    is_authenticated = st.session_state.get('trade_authenticated', False)
 
     current_table_name = get_holdings_table(market_type)
     try:
@@ -934,7 +974,7 @@ if df_display is not None:
                                 hide_index=True, use_container_width=True
                             )
                         else:
-                            st.warning(f"⚠️ 선택하신 [{selected_stock_name}] 종목의 이력 데이터가 존재하지 않습니다.")
+                            st.warning(f"⚠️️ 선택하신 [{selected_stock_name}] 종목의 이력 데이터가 존재하지 않습니다.")
                 else:
                     st.info("💡 저장된 종목별 수급 이력 데이터가 없습니다.")
 
