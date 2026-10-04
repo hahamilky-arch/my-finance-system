@@ -770,14 +770,34 @@ if df_display is not None:
                     )
 
                 st.markdown("###### 2. 수급 강도 & 연속성 지표 (20일 기준)")
-                # 📌 기관 수급 항목이 추가된 6개 컬럼 구성
-                m_sq1, m_sq2, m_sq3, m_sq4, m_sq5, m_sq6 = st.columns(6)
-                m_sq1.metric("비차익 수급 Z-Score", f"{p_zscore:+.2f}", delta=z_tag, delta_color="off")
-                m_sq2.metric("비차익 5일 누적", f"{p_non_5d:+,d} 백만원", delta=f"5일 중 {p_non_days}일 순매수")
-                m_sq3.metric("KOSPI 외인 5일", f"{k_f_5d:+,d} 백만원", delta=f"5일 중 {k_f_days}일 순매수")
-                m_sq4.metric("KOSPI 기관 5일", f"{k_inst_5d:+,d} 백만원", delta=f"5일 중 {k_inst_days}일 순매수")
-                m_sq5.metric("KOSDAQ 외인 5일", f"{kq_f_5d:+,d} 백만원", delta=f"5일 중 {kq_f_days}일 순매수")
-                m_sq6.metric("KOSDAQ 기관 5일", f"{kq_inst_5d:+,d} 백만원", delta=f"5일 중 {kq_inst_days}일 순매수")
+                
+                # 📌 Z-Score 상세 툴팁 설명 가이드
+                z_help_text = (
+                    "💡 **비차익 수급 Z-Score 상세 안내**\n"
+                    "• **개념**: 당일 비차익 순매수 금액이 최근 20영업일 평균 대비 몇 표준편차(σ) 떨어져 있는지를 나타내는 지표입니다.\n"
+                    "• **산출식**: (당일 비차익 순매수 - 20일 평균) / 20일 표준편차\n\n"
+                    "• **판독 기준**:\n"
+                    "  - **Z ≥ +1.5**: 🔥 강한 스마트머니 유입 (대형주 상방 압력)\n"
+                    "  - **+0.5 ≤ Z < +1.5**: 🟢 매수 우위 범위\n"
+                    "  - **-0.5 < Z < +0.5**: ⚖️ 정상 평균 범위\n"
+                    "  - **Z ≤ -1.5**: ❄️ 강한 수급 이탈 (대형주 하방 압력)\n\n"
+                    "• **다이버전스 시그널**:\n"
+                    "  - **지수 상승 + Z-Score 이탈**: 단기 상단 경계 (약세 다이버전스)\n"
+                    "  - **지수 하락 + Z-Score 유입**: 바닥권 저점 매수 (강세 다이버전스)"
+                )
+                
+                # 📌 짤림 방지를 위해 2행 3열 (3개씩 2줄) 구조로 레이아웃 분리
+                r1_col1, r1_col2, r1_col3 = st.columns(3)
+                r1_col1.metric("비차익 수급 Z-Score", f"{p_zscore:+.2f}", delta=z_tag, delta_color="off", help=z_help_text)
+                r1_col2.metric("비차익 5일 누적", f"{p_non_5d:+,d} 백만원", delta=f"5일 중 {p_non_days}일 순매수")
+                r1_col3.metric("KOSPI 외인 5일", f"{k_f_5d:+,d} 백만원", delta=f"5일 중 {k_f_days}일 순매수")
+
+                st.write("") # 행 간격 조정
+                
+                r2_col1, r2_col2, r2_col3 = st.columns(3)
+                r2_col1.metric("KOSPI 기관 5일", f"{k_inst_5d:+,d} 백만원", delta=f"5일 중 {k_inst_days}일 순매수")
+                r2_col2.metric("KOSDAQ 외인 5일", f"{kq_f_5d:+,d} 백만원", delta=f"5일 중 {kq_f_days}일 순매수")
+                r2_col3.metric("KOSDAQ 기관 5일", f"{kq_inst_5d:+,d} 백만원", delta=f"5일 중 {kq_inst_days}일 순매수")
 
             with st.expander("📈 기간별 누적 수급 추세 (5일 / 10일 / 20일)", expanded=False):
                 df_cum_summary = pd.DataFrame([
@@ -974,7 +994,7 @@ if df_display is not None:
                                 hide_index=True, use_container_width=True
                             )
                         else:
-                            st.warning(f"⚠️️ 선택하신 [{selected_stock_name}] 종목의 이력 데이터가 존재하지 않습니다.")
+                            st.warning(f"⚠️ 선택하신 [{selected_stock_name}] 종목의 이력 데이터가 존재하지 않습니다.")
                 else:
                     st.info("💡 저장된 종목별 수급 이력 데이터가 없습니다.")
 
