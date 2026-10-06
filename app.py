@@ -521,9 +521,9 @@ with st.sidebar:
     strategy_engine_mode = st.radio(
         "💡 전략 엔진 선택",
         [
-            "🔥 전략 3: Top 7 레жим+익절스탑 (개선)",
-            "🚀 단기 타점 모멘텀 (15%+ 랠리)",
-            "🌐 Ultimate 듀얼 모멘텀 (추세)",
+            "🔥 전략 3: Top 7 Regime",
+            "🚀 단기 타점 모멘텀",
+            "🌐 Ultimate 듀얼 모멘텀",
         ],
         index=default_engine_idx,
     )
