@@ -21,6 +21,7 @@ from gemini_analyzer import (
     analyze_stock_with_gemini,
     get_remaining_quota,
 )
+from risk_manager import calculate_holdings_risk
 from strategy import get_data
 
 st.set_page_config(layout="wide")
@@ -33,8 +34,6 @@ components.html(
         e.preventDefault();
         e.returnValue = ''; // 브라우저 표준 경고 팝업 활성화
     };
-    
-    // 부모 창(Streamlit 메인 window)에 이벤트 등록
     window.parent.addEventListener('beforeunload', preventReload);
     </script>
     """,
@@ -47,7 +46,6 @@ st.markdown("<div id='top-section'></div>", unsafe_allow_html=True)
 st.markdown(
     """
     <style>
-    /* 부모 컨테이너 overflow 제약 해제 (Sticky 정상 작동 필수) */
     [data-testid="stMainBlockContainer"], .main, .main .block-container {
         overflow: visible !important;
     }
@@ -55,7 +53,6 @@ st.markdown(
     html, body, [class*="st-"] { font-size: 14px !important; }
     h5 { font-size: 1.2rem !important; margin-bottom: 0.5rem !important; }
     
-    /* 상단 탭 스크롤 고정 (Sticky Tabs) */
     div[data-testid="stTabs"] > div:first-child,
     div[data-baseweb="tab-list"],
     .stTabs [role="tablist"] {
@@ -92,8 +89,8 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# 📌 2. 5분 비밀번호 유지 세션 및 1분 전 연장 알림 로직
-LOGIN_TIMEOUT_SECONDS = 300  # 5분 (300초)
+# 📌 2. 5분 비밀번호 유지 세션 및 연장 알림 로직
+LOGIN_TIMEOUT_SECONDS = 300
 
 if st.query_params.get("extend_auth") == "true":
     st.session_state["last_auth_time"] = time.time()
@@ -118,7 +115,6 @@ if is_authenticated:
         (function() {{
             let remSec = {remaining_sec};
             if (window.authTimer) clearInterval(window.authTimer);
-            
             window.authTimer = setInterval(function() {{
                 remSec--;
                 if (remSec === 60) {{
@@ -135,24 +131,8 @@ if is_authenticated:
         components.html(js_timer_code, height=0)
 
 
-def switch_to_tab2():
-    js_code = """
-    <script>
-    setTimeout(function() {
-        const tabs = window.parent.document.querySelectorAll('button[data-baseweb="tab"], [role="tab"]');
-        if (tabs && tabs.length >= 2) {
-            tabs[1].click();
-            tabs[1].scrollIntoView({behavior: 'smooth', block: 'center'});
-        }
-    }, 150);
-    </script>
-    """
-    components.html(js_code, height=0)
-
-
 def apply_styles(df):
     df_s = pd.DataFrame("", index=df.index, columns=df.columns)
-
     for col in ["변동", "상승금액", "상승률"]:
         if col in df.columns:
             df_s.loc[df[col] > 0, col] += "color: red;"
@@ -243,7 +223,6 @@ def display_trade_list(
                 data.iloc[:needed_slots] if needed_slots > 0 else pd.DataFrame()
             )
             backup_data = data.iloc[needed_slots : needed_slots + 2]
-
             if needed_slots == 0:
                 st.warning(
                     f"⚠️ 현재 슬롯 만석입니다 ({current_holdings_count}/{top_n_cfg}개 보유 중). 하단 예비 종목을 참고하세요."
@@ -518,7 +497,6 @@ with st.sidebar:
 
     default_engine_idx = 1 if market_type == "US" else 0
 
-    # 📌 요청하신 문구로 라디오 버튼 항목 변경 반영
     strategy_engine_mode = st.radio(
         "💡 전략 엔진 선택",
         [
@@ -538,7 +516,6 @@ with st.sidebar:
 
     st.session_state["strategy_engine_mode"] = current_engine_key
 
-    # 📌 지수 2일 연속 안착 체크 및 시장 스위치
     market_safe, stop_new_buy, reduce_holdings = get_market_regime(
         market_type, target_date_str
     )
@@ -745,12 +722,9 @@ if df_display is not None:
         "📈 성과 분석",
     ])
 
-    # ----------------------------------------------------
-    # TAB 1: 📊 시장 & 수급 종합 (Market Overview & 수급 동향)
-    # ----------------------------------------------------
+    # TAB 1: 📊 시장 & 수급 종합
     with tab1:
         st.markdown("###### 📊 시장 방향성 & 스마트머니 수급 종합")
-
         c1, c2, c3, c4 = st.columns(4)
         c1.metric(
             "전략 엔진",
@@ -959,7 +933,6 @@ if df_display is not None:
                 st.warning(divergence_msg)
 
             col_t1_left, col_t1_right = st.columns([1.1, 0.9])
-
             with col_t1_left:
                 st.markdown("###### 🏛 수급 강도 & 연속성 지표 (20일 기준)")
                 z_help_text = (
@@ -1061,7 +1034,6 @@ if df_display is not None:
                     tab_foreign, tab_inst = st.tabs(
                         ["🔥 외국인 TOP 5", "🏛 기관 TOP 5"]
                     )
-
                     with tab_foreign:
                         df_f_top = df_stock_liq.sort_values(
                             "foreign_net", ascending=False
@@ -1166,9 +1138,7 @@ if df_display is not None:
                     st.success("✅ 수급 분석 완료")
                     st.markdown(analysis_res)
 
-    # ----------------------------------------------------
-    # TAB 2: 🚀 알파 시그널 (전체 스크리닝 & 심층 분석)
-    # ----------------------------------------------------
+    # TAB 2: 🚀 알파 시그널
     with tab2:
         st.markdown("###### 📋 알파 시그널 스크리닝 (모멘텀 순위 상위 200위)")
         filter_opt = st.radio(
@@ -1336,9 +1306,7 @@ if df_display is not None:
                     st.success("✅ 분석 완료")
                     st.markdown(analysis_result)
 
-    # ----------------------------------------------------
-    # TAB 3: 💼 시스템 매매 지시서 (실질 매매 & 보유 계좌)
-    # ----------------------------------------------------
+    # TAB 3: 💼 시스템 매매 지시서
     with tab3:
         st.markdown(
             f"##### 🚀 시스템 매매 지시서 [보유 현황: {current_holdings_count} / {top_n_cfg}개]"
@@ -1439,147 +1407,17 @@ if df_display is not None:
                         holdings_merged = holdings_db
                         holdings_merged["name"] = holdings_merged["ticker"]
 
-                    holdings_list = []
-                    total_holdings_val = 0.0
-                    risk_violations = []
-                    target_date_dt = pd.to_datetime(target_date_str)
-
-                    for _, h_row in holdings_merged.iterrows():
-                        ticker = h_row["ticker"]
-                        raw_name = h_row.get("name", ticker)
-                        buy_price = float(h_row.get("buy_price", 0.0))
-                        qty = float(h_row.get("quantity", 1.0))
-
-                        buy_date_raw = h_row.get("buy_date")
-                        holding_days = (
-                            max(
-                                0,
-                                (
-                                    target_date_dt
-                                    - pd.to_datetime(buy_date_raw)
-                                ).days,
-                            )
-                            if pd.notna(buy_date_raw) and buy_date_raw
-                            else 0
+                    # 📌 분리된 risk_manager 모듈로 리스크 & 스톱가 계산
+                    holdings_list, total_risk_pct, risk_violations = (
+                        calculate_holdings_risk(
+                            holdings_merged,
+                            df_display,
+                            market_type,
+                            account_total_input,
+                            current_engine_key,
+                            sl_cfg,
+                            target_date_str,
                         )
-                        raw_highest = h_row.get("highest_price")
-                        prev_highest = (
-                            buy_price
-                            if (
-                                pd.isna(raw_highest)
-                                or raw_highest is None
-                                or float(raw_highest) == 0
-                            )
-                            else float(raw_highest)
-                        )
-
-                        curr_row = df_display[
-                            df_display["ticker"].str.strip().str.upper()
-                            == str(ticker).strip().upper()
-                        ]
-
-                        if not curr_row.empty:
-                            curr_price = float(curr_row["종가"].values[0])
-                            engine_status = curr_row["매매상태"].values[0]
-                            atr_val = (
-                                float(curr_row.get("atr", 0.0).values[0])
-                                if "atr" in curr_row.columns
-                                else 0.0
-                            )
-                        else:
-                            curr_price, engine_status, atr_val = (
-                                buy_price,
-                                "보유",
-                                0.0,
-                            )
-
-                        highest_price = max(prev_highest, curr_price, buy_price)
-                        eval_val = curr_price * qty
-                        total_holdings_val += eval_val
-
-                        profit_amt = (curr_price - buy_price) * qty
-                        profit_rate = (
-                            ((curr_price / buy_price) - 1) * 100
-                            if buy_price > 0
-                            else 0.0
-                        )
-
-                        # 익절 스탑 + ATR 스탑 통합 계산
-                        max_return = (
-                            (highest_price / buy_price) - 1.0
-                            if buy_price > 0
-                            else 0.0
-                        )
-                        tp_stop_price = highest_price * 0.92  # 고점 대비 -8% 반락
-
-                        if atr_val > 0 and current_engine_key == "strat3_top7":
-                            atr_stop_price = max(
-                                buy_price - (2.5 * atr_val),
-                                highest_price - (2.5 * atr_val),
-                            )
-                        else:
-                            atr_stop_price = max(
-                                buy_price * (1 + (sl_cfg / 100.0)),
-                                highest_price * 0.95,
-                            )
-
-                        effective_stop_price = (
-                            tp_stop_price
-                            if (max_return >= 0.15)
-                            else atr_stop_price
-                        )
-
-                        max_loss_amt = max(
-                            0.0, (buy_price - effective_stop_price) * qty
-                        )
-                        stock_risk_pct = (
-                            (max_loss_amt / account_total_input * 100)
-                            if account_total_input > 0
-                            else 0.0
-                        )
-                        if stock_risk_pct > 2.0:
-                            risk_violations.append(
-                                f"{ticker} ({stock_risk_pct:.1f}%)"
-                            )
-
-                        if max_return >= 0.15 and curr_price <= tp_stop_price:
-                            status = "🎯 익절 이탈 (+15% 도달 후 -8% 반락)"
-                        elif engine_status == "매도" or curr_price <= atr_stop_price:
-                            status = (
-                                "🟢 익절 이탈"
-                                if profit_rate > 0
-                                else "🚨 손절 이탈"
-                            )
-                        else:
-                            status = "보유"
-
-                        holdings_list.append({
-                            "종목명": f"[{ticker}] {raw_name}"
-                            if market_type == "US"
-                            else f"{raw_name}",
-                            "종목코드": ticker,
-                            "수량": qty,
-                            "평단가": buy_price,
-                            "최고가": highest_price,
-                            "현재가": curr_price,
-                            "평가금액": eval_val,
-                            "손익금액": profit_amt,
-                            "수익률(%)": profit_rate,
-                            "비중(%)": 0.0,
-                            "ATR": atr_val,
-                            "손절/스톱가": effective_stop_price,
-                            "보유일수": holding_days,
-                            "상태": status,
-                        })
-
-                    total_risk_amount = sum(
-                        max(0.0, (item["평단가"] - item["손절/스톱가"]) * item["수량"])
-                        for item in holdings_list
-                    )
-                    total_risk_pct = (
-                        (total_risk_amount / account_total_input) * 100
-                        if account_total_input > 0
-                        else 0.0
                     )
 
                     st.markdown("###### 🛡️ 포트폴리오 리스크 노출도")
@@ -1598,7 +1436,7 @@ if df_display is not None:
                     calc_base_total = (
                         account_total_input
                         if account_total_input > 0
-                        else total_holdings_val
+                        else df_h["평가금액"].sum()
                     )
                     df_h["비중(%)"] = (df_h["평가금액"] / calc_base_total) * 100
                     df_h = df_h[[
@@ -1613,6 +1451,7 @@ if df_display is not None:
                         "수익률(%)",
                         "비중(%)",
                         "ATR",
+                        "스톱기준",
                         "손절/스톱가",
                         "보유일수",
                         "상태",
@@ -1641,6 +1480,16 @@ if df_display is not None:
                             "손절/스톱가": price_fmt_str,
                             "보유일수": "{:,.0f}일",
                         })
+                        .map(
+                            lambda x: "color: #1976d2; font-weight: bold;"
+                            if "1번" in str(x)
+                            else (
+                                "color: #e65100; font-weight: bold;"
+                                if "2번" in str(x)
+                                else ""
+                            ),
+                            subset=["스톱기준"],
+                        )
                         .map(
                             lambda x: "color: red; font-weight: bold;"
                             if "손절" in str(x)
@@ -1760,9 +1609,7 @@ if df_display is not None:
                                     market_type,
                                 )
 
-    # ----------------------------------------------------
-    # TAB 4: 📈 성과 분석 (Performance Tracker)
-    # ----------------------------------------------------
+    # TAB 4: 📈 성과 분석
     with tab4:
         st.markdown(f"##### 📊 {market_type} 시장 성과 분석 리포트")
 
