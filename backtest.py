@@ -19,26 +19,64 @@ if url and key:
 from db import supabase
 
 
+def save_trades_to_db(closed_trades):
+    """백테스트 매매이력을 Supabase DB(backtest_trades)에 저장합니다."""
+    if not closed_trades:
+        print("💡 저장할 매매이력이 없습니다.")
+        return
+
+    print("\n💾 Supabase DB에 백테스트 매매이력을 저장 중입니다...")
+    try:
+        # 기존 백테스트 매매이력 삭제 (초기화)
+        supabase.table("backtest_trades").delete().neq("id", 0).execute()
+
+        # 새로 생성된 매매이력 저장 데이터 가공
+        db_records = []
+        for trade in closed_trades:
+            db_records.append({
+                "ticker": trade["ticker"],
+                "name": trade["name"],
+                "buy_date": trade["buy_date"],
+                "sell_date": trade["sell_date"],
+                "buy_price": float(trade["buy_price"]),
+                "sell_price": float(trade["sell_price"]),
+                "quantity": float(trade["qty"]),
+                "profit_amount": float(trade["profit_amt"]),
+                "profit_rate": float(trade["profit_rate"]),
+                "exit_reason": trade["reason"],
+            })
+
+        # 100건씩 분할 배치(Batch) 저장
+        batch_size = 100
+        for i in range(0, len(db_records), batch_size):
+            batch = db_records[i : i + batch_size]
+            supabase.table("backtest_trades").insert(batch).execute()
+
+        print(f"✅ 총 {len(db_records)}건의 매매이력이 DB에 저장되었습니다.")
+    except Exception as e:
+        print(f"⚠️ DB 저장 중 오류 발생 (테이블 'backtest_trades' 존재 여부 확인): {e}")
+
+
 def run_backtest(
-    start_date="2026-01-01", end_date="2026-09-30", market_type="KR"
+    start_date="2026-01-01",
+    end_date="2026-09-30",
+    market_type="KR",
+    save_to_db=True,
 ):
-    print("=" * 65)
-    print(f"🚀 Quant Alpha [Top 7 Regime] 1월~9월 전체 백테스트")
+    print("=" * 75)
+    print(f"🚀 Quant Alpha [Top 7 Regime] 1월~9월 백테스트 & 매매이력 출력")
     print(f"• 테스트 기간       : {start_date} ~ {end_date}")
     print(f"• 대상 시장         : {market_type}")
     print(f"• 핵심 수식         : +8% 달성 시 트레일링 스탑 (max(최고가*0.92, 평단가))")
-    print("=" * 65)
+    print("=" * 75)
 
     # 1. 1월~9월 사이의 실제 존재하는 전체 영업일(price_date) 날짜 수집
     print("📅 영업일 목록 수집 중...")
-    
-    # 2026-01-01부터 2026-09-30까지의 모든 날짜 생성 후 DB에 실제 데이터가 있는 날만 추출
-    date_range = pd.date_range(start=start_date, end=end_date, freq='B') # 평일(영업일) 생성
+    date_range = pd.date_range(start=start_date, end=end_date, freq="B")
     all_dates = []
 
     for dt in date_range:
         d_str = dt.strftime("%Y-%m-%d")
-        # 해당 날짜에 데이터가 1건이라도 존재하는지 고속 확인 (limit 1)
         res_chk = (
             supabase.table("daily_analysis")
             .select("price_date")
@@ -54,7 +92,7 @@ def run_backtest(
         print(f"❌ {start_date} ~ {end_date} 기간 내 영업일 데이터가 없습니다.")
         return
 
-    print(f"📅 총 {len(all_dates)}영업일 확인 완료! (1월~9월 전체 영업일 감지)")
+    print(f"📅 총 {len(all_dates)}영업일 확인 완료!")
 
     # 2. 영업일별로 상위 50개(momentum_rank <= 50) 종목만 순차 수집
     print("⚡ 영업일별 상위 50개 종목 데이터 수집 중...")
@@ -83,7 +121,9 @@ def run_backtest(
         return
 
     df_all = pd.DataFrame(all_data_list)
-    df_all["price_date"] = pd.to_datetime(df_all["price_date"]).dt.strftime("%Y-%m-%d")
+    df_all["price_date"] = pd.to_datetime(df_all["price_date"]).dt.strftime(
+        "%Y-%m-%d"
+    )
     df_all["ticker"] = df_all["ticker"].astype(str).str.strip().str.upper()
 
     num_cols = [
@@ -98,14 +138,22 @@ def run_backtest(
     for col in num_cols:
         df_all[col] = pd.to_numeric(df_all[col], errors="coerce")
 
-    print(f"✅ 총 {len(df_all):,d}건 데이터 수집 완료 (총 {len(all_dates)}영업일 × 상위 50개)\n")
+    print(
+        f"✅ 총 {len(df_all):,d}건 데이터 수집 완료 (총 {len(all_dates)}영업일 × 상위 50개)\n"
+    )
 
     # 종목 한글명 맵핑 로드
     try:
-        stocks_res = supabase.table("stocks").select("ticker, name").execute()
+        stocks_res = (
+            supabase.table("stocks").select("ticker, name").execute()
+        )
         stock_name_map = (
-            {str(r["ticker"]).strip().upper(): r["name"] for r in stocks_res.data}
-            if stocks_res.data else {}
+            {
+                str(r["ticker"]).strip().upper(): r["name"]
+                for r in stocks_res.data
+            }
+            if stocks_res.data
+            else {}
         )
     except Exception:
         stock_name_map = {}
@@ -163,7 +211,8 @@ def run_backtest(
                 profit_amt = (sell_price - p_item["buy_price"]) * p_item["qty"]
                 profit_rate = (
                     ((sell_price / p_item["buy_price"]) - 1.0) * 100
-                    if p_item["buy_price"] > 0 else 0.0
+                    if p_item["buy_price"] > 0
+                    else 0.0
                 )
 
                 current_cash += sell_price * p_item["qty"]
@@ -174,6 +223,7 @@ def run_backtest(
                     "sell_date": target_date,
                     "buy_price": p_item["buy_price"],
                     "sell_price": sell_price,
+                    "qty": p_item["qty"],
                     "profit_amt": profit_amt,
                     "profit_rate": profit_rate,
                     "reason": reason,
@@ -188,7 +238,9 @@ def run_backtest(
             & (df_daily["close_price"] > df_daily["ma20"])
         )
         candidates = df_daily[cond_buy].copy()
-        candidates["이격도"] = ((candidates["close_price"] / candidates["ma20"]) - 1.0) * 100
+        candidates["이격도"] = (
+            (candidates["close_price"] / candidates["ma20"]) - 1.0
+        ) * 100
         candidates = candidates.sort_values(by="이격도", ascending=True)
 
         empty_slots = top_n_cfg - len(portfolio)
@@ -241,10 +293,14 @@ def run_backtest(
         return
 
     final_equity = df_equity.iloc[-1]["equity"]
-    cumulative_return = ((final_equity - initial_capital) / initial_capital) * 100
+    cumulative_return = (
+        (final_equity - initial_capital) / initial_capital
+    ) * 100
 
     df_equity["peak"] = df_equity["equity"].cummax()
-    df_equity["drawdown"] = ((df_equity["equity"] - df_equity["peak"]) / df_equity["peak"]) * 100
+    df_equity["drawdown"] = (
+        (df_equity["equity"] - df_equity["peak"]) / df_equity["peak"]
+    ) * 100
     mdd = df_equity["drawdown"].min()
 
     df_trades = pd.DataFrame(closed_trades)
@@ -256,31 +312,54 @@ def run_backtest(
 
         win_rate = (len(wins) / total_trades_count) * 100
         avg_profit = wins["profit_amt"].mean() if not wins.empty else 0.0
-        avg_loss = abs(losses["profit_amt"].mean()) if not losses.empty else 0.0
+        avg_loss = (
+            abs(losses["profit_amt"].mean()) if not losses.empty else 0.0
+        )
         profit_factor = (avg_profit / avg_loss) if avg_loss > 0 else 999.0
         avg_return_per_trade = df_trades["profit_rate"].mean()
     else:
         win_rate = avg_return_per_trade = profit_factor = 0.0
 
-    print("\n" + "=" * 65)
+    print("\n" + "=" * 75)
     print("📊 Top 7 전략 [1월~9월 전체] 백테스트 종합 성과 리포트")
-    print("=" * 65)
+    print("=" * 75)
     print(f"• 테스트 기간       : {start_date} ~ {end_date}")
     print(f"• 총 영업일 수       : {len(all_dates)}일")
     print(f"• 초기 자본금       : {initial_capital:,.0f}원")
     print(f"• 최종 평가 자산    : {final_equity:,.0f}원")
     print(f"• 누적 수익률       : {cumulative_return:+.2f}%")
     print(f"• 최대 낙폭 (MDD)    : {mdd:.2f}%")
-    print("-" * 65)
+    print("-" * 75)
     print(f"• 총 청산 거래 건수 : {total_trades_count}건")
     print(f"• 승률 (Win Rate)   : {win_rate:.1f}%")
     print(f"• 건당 평균 수익률  : {avg_return_per_trade:+.2f}%")
     print(f"• 손익비 (PF)       : {profit_factor:.2f}")
-    print("=" * 65)
+    print("=" * 75)
+
+    # 6. 상세 매매 이력 콘솔 출력
+    if total_trades_count > 0:
+        print("\n📜 [상세 청산 매매 이력]")
+        print("-" * 75)
+        for idx, t in enumerate(closed_trades, 1):
+            sign = "+" if t["profit_rate"] >= 0 else ""
+            print(
+                f"{idx:02d}. [{t['buy_date']} ~ {t['sell_date']}] {t['name']}({t['ticker']})"
+            )
+            print(
+                f"    - 매수가: {t['buy_price']:,.0f}원 | 매도가: {t['sell_price']:,.0f}원"
+            )
+            print(
+                f"    - 손익금: {t['profit_amt']:+,.0f}원 ({sign}{t['profit_rate']:.2f}%) | 사유: {t['reason']}"
+            )
+        print("-" * 75)
+
+    # 7. Supabase DB에 저장 처리
+    if save_to_db:
+        save_trades_to_db(closed_trades)
 
 
 if __name__ == "__main__":
     s_date = sys.argv[1] if len(sys.argv) > 1 else "2026-01-01"
     e_date = sys.argv[2] if len(sys.argv) > 2 else "2026-09-30"
 
-    run_backtest(start_date=s_date, end_date=e_date)
+    run_backtest(start_date=s_date, end_date=e_date, save_to_db=True)
