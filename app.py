@@ -243,7 +243,6 @@ def display_trade_list(
                 f"{rec_rank_val}위" if rec_rank_val != "" else "-"
             )
 
-            # 📌 실제 발동된 단일 사유 동적 바인딩
             raw_reason = str(row.get("제외사유", "")).strip()
 
             if "매도" in title:
@@ -780,7 +779,6 @@ if df_display is not None:
 
         st.divider()
 
-        # 미국장일 때는 수급 데이터 제외 처리
         if market_type == "US":
             st.info(
                 "💡 **미국 시장 안내**: 현재 한국장(KR)의 외국인/기관/비차익 수급 데이터만 수집하고 있습니다. 미국 시장(US)은 지수 추세 및 종목별 모멘텀 지표(Rank, RS)를 기준으로 전략이 동작합니다."
@@ -1565,7 +1563,6 @@ if df_display is not None:
                                 )
 
             st.markdown("---")
-            # 📌 운용 자금 설정 및 리스크 관리 영역 맨 아래 배치
             with st.expander(
                 f"💰 [{market_type}] 운용 자금 설정 및 리스크 관리",
                 expanded=False,
