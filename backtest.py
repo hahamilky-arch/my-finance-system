@@ -11,7 +11,6 @@ url = os.environ.get("SUPABASE_URL")
 key = os.environ.get("SUPABASE_KEY")
 
 if url and key:
-    # Read-only 제한을 우회하기 위해 내부 _secrets 딕셔너리에 주입
     if not hasattr(st.secrets, "_secrets") or st.secrets._secrets is None:
         st.secrets._secrets = {}
     st.secrets._secrets["SUPABASE_URL"] = url
@@ -32,7 +31,7 @@ def run_backtest(
     print(f"• 핵심 수식         : +8% 달성 시 트레일링 스탑 (max(최고가*0.92, 평단가))")
     print("=" * 65)
 
-    # 1. Supabase에서 해당 기간 내 전체 영업일 조회
+    # 1. Supabase에서 해당 기간 내 전체 영업일 조회 (.order()에 desc=False 적용)
     try:
         res_dates = (
             supabase.table("daily_analysis")
@@ -40,7 +39,7 @@ def run_backtest(
             .eq("market", market_type)
             .gte("price_date", start_date)
             .lte("price_date", end_date)
-            .order("price_date", ascending=True)
+            .order("price_date", desc=False)  # 👈 ascending=True 대신 desc=False 적용
             .execute()
         )
     except Exception as e:
