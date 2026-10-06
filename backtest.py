@@ -4,18 +4,20 @@ import numpy as np
 import pandas as pd
 from supabase import create_client, Client
 
-# 📌 1. db.py 및 strategy.py 로드 전 st.secrets 예외 방지 (다른 파일 수정 0건)
+# 📌 1. db.py 및 strategy.py 로드 전 st.secrets 내부 딕셔너리에 안전하게 환경 변수 주입
 import streamlit as st
 
 url = os.environ.get("SUPABASE_URL")
 key = os.environ.get("SUPABASE_KEY")
 
 if url and key:
-    # GitHub Actions 환경 변수를 Streamlit secrets 객체 구조에 주입
-    st.secrets["SUPABASE_URL"] = url
-    st.secrets["SUPABASE_KEY"] = key
+    # Read-only 제한을 우회하기 위해 내부 _secrets 딕셔너리에 주입
+    if not hasattr(st.secrets, "_secrets") or st.secrets._secrets is None:
+        st.secrets._secrets = {}
+    st.secrets._secrets["SUPABASE_URL"] = url
+    st.secrets._secrets["SUPABASE_KEY"] = key
 
-# 📌 2. 모듈 독립 로드 구문
+# 📌 2. 모듈 로드
 from db import supabase
 from strategy import get_data
 
