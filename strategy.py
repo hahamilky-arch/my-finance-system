@@ -35,7 +35,7 @@ def get_data(
         print(f"❌ 데이터 로드 오류: {e}")
         return None
 
-    # 데이터 타입 변환 및 필드 가공
+    # 데이터 타입 변환 및 기본 필드 가공
     df["ticker"] = df["ticker"].astype(str).str.strip().str.upper()
     df["종가"] = pd.to_numeric(df["close_price"], errors="coerce").fillna(0.0)
     df["MA20"] = pd.to_numeric(df["ma20"], errors="coerce").fillna(0.0)
@@ -49,21 +49,32 @@ def get_data(
     )
     df["순위"] = pd.to_numeric(df["momentum_rank"], errors="coerce")
 
-    # 📌 전일 종가 및 상승금액/상승률 정확한 산출
-    if "prev_close_price" in df.columns:
-        df["prev_close"] = pd.to_numeric(
-            df["prev_close_price"], errors="coerce"
-        ).fillna(df["종가"])
-    elif "price_change" in df.columns:
-        df["prev_close"] = df["종가"] - pd.to_numeric(
+    # 📌 [수정 핵심] 상승금액 및 상승률 계산 로직 (DB 컬럼 변수 대응)
+    # 1순위: price_change (변동금액) 및 change_rate (변동률) 직접 읽기
+    if "price_change" in df.columns and "change_rate" in df.columns:
+        df["상승금액"] = pd.to_numeric(
             df["price_change"], errors="coerce"
         ).fillna(0.0)
+        df["상승률"] = pd.to_numeric(
+            df["change_rate"], errors="coerce"
+        ).fillna(0.0)
+    # 2순위: prev_close_price (전일 종가) 기반 직접 계산
+    elif "prev_close_price" in df.columns:
+        prev_close = pd.to_numeric(
+            df["prev_close_price"], errors="coerce"
+        ).fillna(df["종가"])
+        df["상승금액"] = df["종가"] - prev_close
+        df["상승률"] = np.where(
+            prev_close > 0, (df["상승금액"] / prev_close) * 100.0, 0.0
+        )
+    # 3순위: 컬럼이 없는 경우
     else:
-        df["prev_close"] = df["종가"]
+        df["상승금액"] = 0.0
+        df["상승률"] = 0.0
 
-    df["상승금액"] = df["종가"] - df["prev_close"]
-    df["상승률"] = np.where(
-        df["prev_close"] > 0, (df["상승금액"] / df["prev_close"]) * 100.0, 0.0
+    # 변동 방향 표시 (양수 1, 음수 -1, 보합 0)
+    df["변동"] = np.where(
+        df["상승금액"] > 0, 1, np.where(df["상승금액"] < 0, -1, 0)
     )
 
     # 종목명 맵핑
@@ -169,7 +180,7 @@ def get_data(
                 reason_list.append("보유 조건 유지")
 
         else:
-            # 📌 신규 매수 조건 세부 판정 (조건 미달 시 실제 사유 명시)
+            # 신규 매수 조건 세부 판정
             if stop_new_buy or reduce_holdings or not is_bull:
                 status_list.append("매수불가")
                 reason_list.append("하락장/리스크 관리 (신규 매수 중지)")
@@ -191,7 +202,6 @@ def get_data(
 
     df["매매상태"] = status_list
     df["제외사유"] = reason_list
-    df["변동"] = np.where(df["상승금액"] > 0, 1, np.where(df["상승금액"] < 0, -1, 0))
 
     # 매수 추천 순위 할당
     buys = df[df["매매상태"] == "매수추천"].copy()
