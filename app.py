@@ -715,11 +715,12 @@ if df_display is not None:
     current_holdings_count = len(holdings_db) if not holdings_db.empty else 0
     needed_slots = max(0, top_n_cfg - current_holdings_count)
 
-    tab1, tab2, tab3, tab4 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "📊 시장 & 수급 종합",
         "🚀 알파 시그널",
         "💼 시스템 매매 지시서",
         "📈 성과 분석",
+        "🧪 백테스트 리포트",
     ])
 
     # TAB 1: 📊 시장 & 수급 종합
@@ -1318,74 +1319,6 @@ if df_display is not None:
             )
         else:
             with st.expander(
-                f"💰 [{market_type}] 운용 자금 설정 및 리스크 관리",
-                expanded=True,
-            ):
-                col_cap1, col_cap2 = st.columns([3, 1])
-                with col_cap1:
-                    new_capital_input = st.number_input(
-                        f"[{market_type}] 총 운용 자금 설정",
-                        value=account_total_input,
-                        step=100.0 if market_type == "US" else 1000000.0,
-                        format="%.2f" if market_type == "US" else "%.0f",
-                        key=f"tab3_cap_input_{market_type}",
-                    )
-                with col_cap2:
-                    st.write("")
-                    st.write("")
-                    if st.button(
-                        "자금 저장",
-                        key=f"btn_save_cap_{market_type}",
-                        use_container_width=True,
-                        type="primary",
-                    ):
-                        st.session_state[cap_key] = new_capital_input
-                        try:
-                            res_existing = (
-                                supabase.table("strategy_settings")
-                                .select("*")
-                                .eq("id", 1)
-                                .execute()
-                            )
-                            existing_data = (
-                                res_existing.data[0]
-                                if res_existing.data
-                                else {}
-                            )
-                            existing_data["id"] = 1
-                            existing_data[cap_key] = float(new_capital_input)
-                            existing_data["strategy_engine_mode"] = (
-                                current_engine_key
-                            )
-                            supabase.table("strategy_settings").upsert(
-                                existing_data
-                            ).execute()
-                            cap_disp = (
-                                f"${new_capital_input:,.2f}"
-                                if market_type == "US"
-                                else f"{new_capital_input:,.0f}원"
-                            )
-                            st.success(
-                                f"✅ 총 운용자금이 {cap_disp}으로 업데이트되었습니다."
-                            )
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"❌ DB 저장 실패: {e}")
-
-                max_risk_per_stock = new_capital_input * 0.02
-                risk_fmt = (
-                    f"${max_risk_per_stock:,.2f}"
-                    if market_type == "US"
-                    else f"{max_risk_per_stock:,.0f}원"
-                )
-                st.caption(
-                    f"🔒 **단일 종목 최대 허용 손실 (2% Rule)**: {risk_fmt}"
-                )
-                account_total_input = new_capital_input
-
-            st.write("")
-
-            with st.expander(
                 f"💼 현재 보유 종목 ({current_holdings_count}/{top_n_cfg}개 슬롯)",
                 expanded=True,
             ):
@@ -1608,6 +1541,74 @@ if df_display is not None:
                                     market_type,
                                 )
 
+            st.markdown("---")
+            # 📌 [요청 반영] 운용 자금 설정 및 리스크 관리 영역 맨 아래로 이동
+            with st.expander(
+                f"💰 [{market_type}] 운용 자금 설정 및 리스크 관리",
+                expanded=False,
+            ):
+                col_cap1, col_cap2 = st.columns([3, 1])
+                with col_cap1:
+                    new_capital_input = st.number_input(
+                        f"[{market_type}] 총 운용 자금 설정",
+                        value=account_total_input,
+                        step=100.0 if market_type == "US" else 1000000.0,
+                        format="%.2f" if market_type == "US" else "%.0f",
+                        key=f"tab3_cap_input_{market_type}",
+                    )
+                with col_cap2:
+                    st.write("")
+                    st.write("")
+                    if st.button(
+                        "자금 저장",
+                        key=f"btn_save_cap_{market_type}",
+                        use_container_width=True,
+                        type="primary",
+                    ):
+                        st.session_state[cap_key] = new_capital_input
+                        try:
+                            res_existing = (
+                                supabase.table("strategy_settings")
+                                .select("*")
+                                .eq("id", 1)
+                                .execute()
+                            )
+                            existing_data = (
+                                res_existing.data[0]
+                                if res_existing.data
+                                else {}
+                            )
+                            existing_data["id"] = 1
+                            existing_data[cap_key] = float(new_capital_input)
+                            existing_data["strategy_engine_mode"] = (
+                                current_engine_key
+                            )
+                            supabase.table("strategy_settings").upsert(
+                                existing_data
+                            ).execute()
+                            cap_disp = (
+                                f"${new_capital_input:,.2f}"
+                                if market_type == "US"
+                                else f"{new_capital_input:,.0f}원"
+                            )
+                            st.success(
+                                f"✅ 총 운용자금이 {cap_disp}으로 업데이트되었습니다."
+                            )
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"❌ DB 저장 실패: {e}")
+
+                max_risk_per_stock = new_capital_input * 0.02
+                risk_fmt = (
+                    f"${max_risk_per_stock:,.2f}"
+                    if market_type == "US"
+                    else f"{max_risk_per_stock:,.0f}원"
+                )
+                st.caption(
+                    f"🔒 **단일 종목 최대 허용 손실 (2% Rule)**: {risk_fmt}"
+                )
+                account_total_input = new_capital_input
+
     # TAB 4: 📈 성과 분석
     with tab4:
         st.markdown(f"##### 📊 {market_type} 시장 성과 분석 리포트")
@@ -1815,6 +1816,110 @@ if df_display is not None:
                         hide_index=True,
                         use_container_width=True,
                     )
+
+    # 📌 [신규 추가] TAB 5: 🧪 백테스트 리포트
+    with tab5:
+        st.markdown("##### 🧪 [Top 7 Regime] 자동 백테스트 검증 리포트")
+        st.caption(
+            "GitHub Actions를 통해 시뮬레이션된 백테스트 결과 및 청산 매매 내역입니다."
+        )
+
+        try:
+            res_bt = (
+                supabase.table("backtest_trades")
+                .select("*")
+                .order("sell_date", desc=True)
+                .execute()
+            )
+            bt_data = res_bt.data if res_bt.data else []
+        except Exception as e:
+            bt_data = []
+
+        if not bt_data:
+            st.info(
+                "💡 아직 저장된 백테스트 매매 내역이 없습니다. GitHub Actions에서 `backtest.py`를 실행해 주십시오."
+            )
+        else:
+            df_bt = pd.DataFrame(bt_data)
+            df_bt["profit_amount"] = pd.to_numeric(
+                df_bt["profit_amount"], errors="coerce"
+            ).fillna(0.0)
+            df_bt["profit_rate"] = pd.to_numeric(
+                df_bt["profit_rate"], errors="coerce"
+            ).fillna(0.0)
+
+            total_bt_trades = len(df_bt)
+            win_bt = df_bt[df_bt["profit_amount"] > 0]
+            loss_bt = df_bt[df_bt["profit_amount"] < 0]
+
+            tot_bt_profit = df_bt["profit_amount"].sum()
+            win_bt_rate = (
+                (len(win_bt) / total_bt_trades * 100)
+                if total_bt_trades > 0
+                else 0.0
+            )
+            avg_bt_win = win_bt["profit_amount"].mean() if not win_bt.empty else 0.0
+            avg_bt_loss = (
+                abs(loss_bt["profit_amount"].mean())
+                if not loss_bt.empty
+                else 0.0
+            )
+            bt_pf = (avg_bt_win / avg_bt_loss) if avg_bt_loss > 0 else 999.0
+
+            st.markdown("###### 📈 백테스트 종합 요약 지표")
+            b1, b2, b3, b4 = st.columns(4)
+            b1.metric("총 청산 거래", f"{total_bt_trades}건")
+            b2.metric("총 실현 손익", f"{tot_bt_profit:+,.0f}원")
+            b3.metric("백테스트 승률", f"{win_bt_rate:.1f}%")
+            b4.metric(
+                "손익비 (PF)", f"{bt_pf:.2f}" if bt_pf < 999 else "무한"
+            )
+
+            st.divider()
+            st.markdown("###### 📜 백테스트 상세 매매 청산 목록")
+
+            df_bt_disp = df_bt[[
+                "sell_date",
+                "buy_date",
+                "ticker",
+                "name",
+                "buy_price",
+                "sell_price",
+                "quantity",
+                "profit_amount",
+                "profit_rate",
+                "exit_reason",
+            ]].copy()
+
+            df_bt_disp = df_bt_disp.rename(columns={
+                "sell_date": "매도일",
+                "buy_date": "매수일",
+                "ticker": "티커",
+                "name": "종목명",
+                "buy_price": "매수가",
+                "sell_price": "매도가",
+                "quantity": "수량",
+                "profit_amount": "손익금액",
+                "profit_rate": "수익률(%)",
+                "exit_reason": "청산사유",
+            })
+
+            st.dataframe(
+                df_bt_disp.style.format({
+                    "매수가": "{:,.0f}원",
+                    "매도가": "{:,.0f}원",
+                    "수량": "{:,.0f}주",
+                    "손익금액": "{:+,.0f}원",
+                    "수익률(%)": "{:+.2f}%",
+                }).map(
+                    lambda v: "color: red;"
+                    if float(v) > 0
+                    else ("color: blue;" if float(v) < 0 else ""),
+                    subset=["손익금액", "수익률(%)"],
+                ),
+                hide_index=True,
+                use_container_width=True,
+            )
 
 else:
     st.warning("데이터를 불러오는 중입니다.")
