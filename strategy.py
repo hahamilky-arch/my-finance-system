@@ -214,15 +214,17 @@ def get_data(
                     if stop_new_buy or not is_bull_mode:
                         sell_list.add(ticker_upper)
                         continue
+                    # ATR 손절 (-2.5x)
                     if c_price <= (buy_price - 2.5 * entry_atr):
                         sell_list.add(ticker_upper)
                         continue
-                    if (
-                        highest_price >= buy_price * 1.15
-                        and c_price <= highest_price * 0.92
-                    ):
-                        sell_list.add(ticker_upper)
-                        continue
+                    # 🔥 [신규 반영] +8% 이상 달성 시 트레일링 스탑 (최소 본절 보장)
+                    if highest_price >= buy_price * 1.08:
+                        ts_price = max(highest_price * 0.92, buy_price)
+                        if c_price <= ts_price:
+                            sell_list.add(ticker_upper)
+                            continue
+                    # MA20 이탈 청산
                     if c_price < ma20:
                         sell_list.add(ticker_upper)
                         continue
