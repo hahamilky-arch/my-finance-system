@@ -4,359 +4,194 @@ from db import get_holdings_table, get_recently_sold_info, supabase
 
 
 def get_data(
-    target_date,
+    selected_date,
     all_dates,
-    market_type,
-    top_n_cfg,
-    sl_cfg,
-    rebalance_cycle,
-    is_bull_mode,
-    stop_new_buy,
-    reduce_holdings,
+    market_type="KR",
+    top_n_cfg=7,
+    sl_cfg=-2.5,
+    rebalance_cycle="상시 (빈자리 즉시 채우기)",
+    is_bull=True,
+    stop_new_buy=False,
+    reduce_holdings=False,
     strategy_engine_mode="strat3_top7",
 ):
-    target_date_str = pd.to_datetime(target_date).strftime("%Y-%m-%d")
+    target_date_str = pd.to_datetime(selected_date).strftime("%Y-%m-%d")
 
-    # 1. 당일 데이터 조회
-    res_curr = (
-        supabase.table("daily_analysis")
-        .select(
-            "ticker, momentum_rank, weighted_momentum, rs_score, rs_score_10, close_price, ma10, ma20, atr, high_price, low_price, ma200"
-        )
-        .eq("price_date", target_date_str)
-        .eq("market", market_type)
-        .limit(5000)
-        .execute()
-    )
-
-    df_final = pd.DataFrame(res_curr.data)
-    if df_final.empty:
-        return None
-
-    num_cols = [
-        "close_price",
-        "ma10",
-        "ma20",
-        "atr",
-        "high_price",
-        "low_price",
-        "ma200",
-    ]
-    for col in num_cols:
-        if col in df_final.columns:
-            df_final[col] = pd.to_numeric(
-                df_final[col], errors="coerce"
-            ).astype("float64")
-
-    df_final["ticker"] = (
-        df_final["ticker"].astype(str).str.strip().str.upper()
-    )
-    df_final["atr"] = df_final["atr"].fillna(0.0)
-
-    # 2. 전일 데이터 조회
-    prev_date_res = (
-        supabase.table("daily_analysis")
-        .select("price_date")
-        .eq("market", market_type)
-        .lt("price_date", target_date_str)
-        .order("price_date", desc=True)
-        .limit(1)
-        .execute()
-    )
-
-    df_prev = pd.DataFrame()
-    if prev_date_res.data:
-        res_prev = (
+    # 1. 당일 수급/모멘텀 분석 데이터 로드
+    try:
+        res = (
             supabase.table("daily_analysis")
-            .select("ticker, momentum_rank, close_price, ma20")
-            .eq("price_date", prev_date_res.data[0]["price_date"])
+            .select("*")
             .eq("market", market_type)
-            .limit(5000)
+            .eq("price_date", target_date_str)
+            .order("momentum_rank", desc=False)
+            .limit(200)
             .execute()
         )
-        if res_prev.data:
-            df_prev = pd.DataFrame(res_prev.data)
+        if not res.data:
+            return None
+        df = pd.DataFrame(res.data)
+    except Exception as e:
+        print(f"❌ 데이터 로드 오류: {e}")
+        return None
 
-    if not df_prev.empty:
-        df_prev = df_prev.rename(
-            columns={
-                "momentum_rank": "순위_prev",
-                "close_price": "종가_prev",
-                "ma20": "MA20_prev",
-            }
-        )
-        df_prev["ticker"] = (
-            df_prev["ticker"].astype(str).str.strip().str.upper()
-        )
-        df_final = pd.merge(
-            df_final,
-            df_prev[["ticker", "순위_prev", "종가_prev", "MA20_prev"]],
-            on="ticker",
-            how="left",
-        )
-    else:
-        df_final["순위_prev"] = df_final["종가_prev"] = df_final[
-            "MA20_prev"
-        ] = None
+    # 데이터 타입 변환
+    df["ticker"] = df["ticker"].astype(str).str.strip().str.upper()
+    df["종가"] = pd.to_numeric(df["close_price"], errors="coerce").fillna(0.0)
+    df["MA20"] = pd.to_numeric(df["ma20"], errors="coerce").fillna(0.0)
+    df["atr"] = pd.to_numeric(df["atr"], errors="coerce").fillna(0.0)
+    df["MOT"] = pd.to_numeric(
+        df["weighted_momentum"], errors="coerce"
+    ).fillna(0.0)
+    df["RS(90)"] = pd.to_numeric(df["rs_score"], errors="coerce").fillna(0.0)
+    df["RS(10)"] = pd.to_numeric(df["rs_score_10"], errors="coerce").fillna(
+        0.0
+    )
+    df["순위"] = pd.to_numeric(df["momentum_rank"], errors="coerce")
 
-    df_final = df_final.rename(
-        columns={
-            "momentum_rank": "순위",
-            "weighted_momentum": "MOT",
-            "rs_score": "RS(90)",
-            "rs_score_10": "RS(10)",
-            "close_price": "종가",
-        }
-    )
-    df_final[["순위_prev", "종가_prev", "MA20_prev"]] = df_final[
-        ["순위_prev", "종가_prev", "MA20_prev"]
-    ].apply(pd.to_numeric, errors="coerce")
-
-    df_final["상승금액"] = df_final.apply(
-        lambda r: r["종가"] - r["종가_prev"]
-        if pd.notna(r["종가_prev"])
-        else 0.0,
-        axis=1,
-    )
-    df_final["상승률"] = df_final.apply(
-        lambda r: (r["상승금액"] / r["종가_prev"] * 100)
-        if pd.notna(r["종가_prev"]) and r["종가_prev"] > 0
-        else 0.0,
-        axis=1,
-    )
-    df_final["변동"] = df_final.apply(
-        lambda r: int(r["순위_prev"] - r["순위"])
-        if (pd.notna(r["순위_prev"]) and pd.notna(r["순위"]))
-        else 0.0,
-        axis=1,
-    )
-
-    df_final["ma20"] = df_final["ma20"].fillna(0)
-    df_final["이격도"] = df_final.apply(
-        lambda r: ((r["종가"] / r["ma20"]) - 1) * 100
-        if (pd.notna(r["ma20"]) and r["ma20"] > 0)
-        else 0.0,
-        axis=1,
-    )
-    df_final = df_final.rename(columns={"ma20": "MA20", "ma10": "MA10"})
-
-    cycle_passed = (
-        True
-        if rebalance_cycle == "상시 (빈자리 즉시 채우기)"
-        else pd.Timestamp(target_date).day_name() == "Wednesday"
-    )
-
-    df_stocks = pd.DataFrame(
-        supabase.table("stocks").select("ticker, name").execute().data
-    )
-    if not df_stocks.empty:
-        df_stocks["ticker"] = (
-            df_stocks["ticker"].astype(str).str.strip().str.upper()
-        )
-
-    df_final = pd.merge(df_final, df_stocks, on="ticker", how="left").rename(
-        columns={"name": "종목명"}
-    )
-    df_final["종목명"] = df_final["종목명"].fillna(df_final["ticker"])
-    if market_type == "US":
-        df_final["종목명"] = df_final.apply(
-            lambda r: f"[{r['ticker']}] {r['종목명']}", axis=1
-        )
-
-    table_name = get_holdings_table(market_type)
+    # 종목명 맵핑
     try:
-        h_res = (
-            supabase.table(table_name)
+        stocks_res = (
+            supabase.table("stocks").select("ticker, name").execute()
+        )
+        name_map = (
+            {
+                str(r["ticker"]).strip().upper(): r["name"]
+                for r in stocks_res.data
+            }
+            if stocks_res.data
+            else {}
+        )
+    except Exception:
+        name_map = {}
+
+    df["종목명"] = df["ticker"].map(lambda t: name_map.get(t, t))
+
+    # 이격도 계산
+    df["이격도"] = np.where(
+        df["MA20"] > 0, ((df["종가"] / df["MA20"]) - 1.0) * 100, 0.0
+    )
+
+    # 2. 보유 종목 데이터 로드
+    holdings_table = get_holdings_table(market_type)
+    try:
+        holdings_res = (
+            supabase.table(holdings_table)
             .select("*")
             .is_("sell_date", "null")
             .execute()
         )
-        holdings_df = (
-            pd.DataFrame(h_res.data) if h_res.data else pd.DataFrame()
-        )
+        holdings_data = holdings_res.data if holdings_res.data else []
     except Exception:
-        holdings_df = pd.DataFrame()
+        holdings_data = []
 
-    my_holdings_clean = [
-        str(t).strip().upper()
-        for t in (holdings_df["ticker"].tolist() if not holdings_df.empty else [])
-    ]
-    sold_info = get_recently_sold_info(
-        market_type, target_date_str, cooldown_days=3
-    )
-    sell_list = set()
+    holdings_dict = {
+        str(h["ticker"]).strip().upper(): h for h in holdings_data
+    }
 
-    target_dt = pd.to_datetime(target_date)
+    # 3. 매매 상태 및 개별 세부 사유 판정
+    status_list = []
+    reason_list = []
 
-    # 3. 전략별 보유 종목 청산 검사
-    for _, row in df_final.iterrows():
-        ticker_upper = str(row["ticker"]).strip().upper()
-        if ticker_upper in my_holdings_clean:
-            c_price, ma20, mom_rank = row["종가"], row["MA20"], row["순위"]
-            h_row = holdings_df[
-                holdings_df["ticker"].astype(str).str.strip().str.upper()
-                == ticker_upper
-            ]
+    for _, row in df.iterrows():
+        t_code = row["ticker"]
+        c_price = row["종가"]
+        ma20 = row["MA20"]
+        atr = row["atr"]
+        rank = row["순위"]
 
-            if not h_row.empty:
-                buy_dt = pd.to_datetime(h_row.iloc[0]["buy_date"])
-                buy_price = float(h_row.iloc[0]["buy_price"])
-                highest_price = float(
-                    h_row.iloc[0].get("highest_price", buy_price)
-                )
-                entry_atr = float(h_row.iloc[0].get("entry_atr", row["atr"]))
-                days_held = (target_dt - buy_dt).days
-                profit_rate_pos = (
-                    ((c_price / buy_price) - 1) * 100 if buy_price > 0 else 0.0
-                )
+        is_holding = t_code in holdings_dict
 
-                if strategy_engine_mode == "strat3_top7":
-                    if stop_new_buy or not is_bull_mode:
-                        sell_list.add(ticker_upper)
-                        continue
-                    # ATR 손절 (-2.5x)
-                    if c_price <= (buy_price - 2.5 * entry_atr):
-                        sell_list.add(ticker_upper)
-                        continue
-                    # 🔥 [신규 반영] +8% 이상 달성 시 트레일링 스탑 (최소 본절 보장)
-                    if highest_price >= buy_price * 1.08:
-                        ts_price = max(highest_price * 0.92, buy_price)
-                        if c_price <= ts_price:
-                            sell_list.add(ticker_upper)
-                            continue
-                    # MA20 이탈 청산
-                    if c_price < ma20:
-                        sell_list.add(ticker_upper)
-                        continue
-                elif strategy_engine_mode == "short_term":
-                    if (
-                        profit_rate_pos >= 15.0
-                        or days_held >= 14
-                        or c_price <= buy_price * (1 + (sl_cfg / 100.0))
-                        or c_price < ma20
-                        or mom_rank > 200
-                    ):
-                        sell_list.add(ticker_upper)
-                        continue
-                else:
-                    rank_limit = 60 if is_bull_mode else 30
-                    if (
-                        (days_held >= 10 and profit_rate_pos < 3.0)
-                        or c_price <= buy_price * (1 + (sl_cfg / 100.0))
-                        or c_price < ma20
-                        or mom_rank > rank_limit
-                    ):
-                        sell_list.add(ticker_upper)
-                        continue
+        if is_holding:
+            h_info = holdings_dict[t_code]
+            buy_price = float(h_info.get("buy_price", c_price))
+            highest_price = float(h_info.get("highest_price", c_price))
 
-    # 4. 독립적인 매수추천순위(Buy Rank) 산출
-    buy_rank_map = {}
-    if strategy_engine_mode == "strat3_top7":
-        cond_rank = (
-            (df_final["순위"] <= 15)
-            & (df_final["RS(90)"] > 0)
-            & (df_final["RS(10)"] > 0)
-            & (df_final["MA20"] > 0)
-            & (df_final["종가"] > df_final["MA20"])
-        )
-        candidates = df_final[cond_rank].sort_values(
-            by="이격도", ascending=True
-        )
-    elif strategy_engine_mode == "short_term":
-        cond_rank = (
-            (df_final["순위"] <= 200)
-            & (df_final["MOT"] >= 0.9)
-            & (df_final["이격도"] >= -5.0)
-            & (df_final["이격도"] <= 7.0)
-        )
-        candidates = df_final[cond_rank].sort_values(
-            by="순위", ascending=True
-        )
-    else:
-        cond_rank = (
-            (df_final["순위"] <= 30)
-            & (df_final["RS(90)"] > 0)
-            & (df_final["MA20"] > 0)
-            & (df_final["종가"] > df_final["MA20"])
-        )
-        candidates = df_final[cond_rank].sort_values(
-            by="순위", ascending=True
-        )
+            # 📌 청산 개별 조건 검사 (가장 먼저 발동된 실제 조건만 부여)
+            # 조건 1: ATR 손절 (-2.5x)
+            if atr > 0 and c_price <= (buy_price - 2.5 * atr):
+                status_list.append("매도필요")
+                reason_list.append("ATR 손절 (-2.5x ATR 하회)")
 
-    for rank_idx, (idx, row) in enumerate(candidates.iterrows(), 1):
-        ticker_upper = str(row["ticker"]).strip().upper()
-        buy_rank_map[ticker_upper] = int(rank_idx)
-
-    # 5. 실제 매수 추천 목록 선정
-    effective_max_slots = (
-        7
-        if strategy_engine_mode == "strat3_top7"
-        else (min(top_n_cfg, 3) if reduce_holdings else top_n_cfg)
-    )
-    slots_available = int(effective_max_slots) - len(
-        [t for t in my_holdings_clean if t not in sell_list]
-    )
-    total_needed = max(0, slots_available) + 2
-
-    buy_list = set()
-    if cycle_passed and (not stop_new_buy) and is_bull_mode:
-        for idx, row in candidates.iterrows():
-            if len(buy_list) >= total_needed:
-                break
-            ticker_upper = str(row["ticker"]).strip().upper()
-            if (
-                ticker_upper in my_holdings_clean
-                or (
-                    ticker_upper in sold_info
-                    and row["종가"] <= sold_info[ticker_upper]
-                )
+            # 조건 2: +8% 달성 후 트레일링 스탑 (최소 본절 보장)
+            elif highest_price >= buy_price * 1.08 and c_price <= max(
+                highest_price * 0.92, buy_price
             ):
-                continue
-            buy_list.add(ticker_upper)
+                status_list.append("매도필요")
+                if max(highest_price * 0.92, buy_price) == buy_price:
+                    reason_list.append(
+                        "트레일링 스탑 (본절 보장 라인 이탈)"
+                    )
+                else:
+                    reason_list.append(
+                        "익절 스탑 (+8% 달성 후 고점 대비 -8% 하락)"
+                    )
 
-    # 6. 상태 및 제외사유 부여
-    def assign_status_and_reason(row):
-        t = str(row["ticker"]).strip().upper()
-        b_rank = buy_rank_map.get(t, "")
+            # 조건 3: MA20 이탈
+            elif ma20 > 0 and c_price < ma20:
+                status_list.append("매도필요")
+                reason_list.append("MA20 이탈 (20일 이동평균선 하회)")
 
-        if t in sell_list:
-            return "매도필요", "레짐전환/트레일링스톱/손절", b_rank
-        if t in my_holdings_clean:
-            return "보유중", "기보유", b_rank
-        if t in buy_list:
-            return "매수추천", "조건충족", b_rank
+            # 조건 4: 단기 타점 모멘텀 모드 손절(-5%) / 목표익절(+15%)
+            elif (
+                strategy_engine_mode == "short_term"
+                and c_price >= buy_price * 1.15
+            ):
+                status_list.append("매도필요")
+                reason_list.append("목표익절 달성 (+15%)")
+            elif (
+                strategy_engine_mode == "short_term"
+                and c_price <= buy_price * 0.95
+            ):
+                status_list.append("매도필요")
+                reason_list.append("단기 손절선 이탈 (-5%)")
 
-        reasons = []
-        if stop_new_buy:
-            reasons.append("시장경보(KOSPI < MA20)")
-        if not is_bull_mode:
-            reasons.append("하락장 레짐")
-        if not cycle_passed:
-            reasons.append("리밸런싱일 미해당")
+            # 조건 5: 레짐 전환 (신규 매수 중지 또는 비중 축소)
+            elif stop_new_buy or reduce_holdings or not is_bull:
+                status_list.append("매도필요")
+                reason_list.append("레짐 전환 (시장 하락장/리스크 관리 모드)")
 
-        if strategy_engine_mode == "strat3_top7":
-            if row["순위"] > 15:
-                reasons.append("순위 15위 초과")
-            if row["RS(90)"] <= 0:
-                reasons.append("RS(90) <= 0")
-            if row["RS(10)"] <= 0:
-                reasons.append("RS(10) <= 0")
-            if row["MA20"] <= 0 or row["종가"] <= row["MA20"]:
-                reasons.append("MA20 하회")
-        elif strategy_engine_mode == "short_term":
-            if row["순위"] > 200:
-                reasons.append("순위 200위 초과")
-            if row["MOT"] < 0.9:
-                reasons.append("MOT < 0.9")
-            if not (-5.0 <= row["이격도"] <= 7.0):
-                reasons.append("이격도 범위 초과")
+            else:
+                status_list.append("보유중")
+                reason_list.append("보유 조건 유지")
 
-        if t in sold_info and row["종가"] <= sold_info[t]:
-            reasons.append("매도 쿨다운")
-        return "", ", ".join(reasons) if reasons else "선순위 밀림", b_rank
+        else:
+            # 신규 매수 조건 판단
+            if stop_new_buy or reduce_holdings or not is_bull:
+                status_list.append("매수불가")
+                reason_list.append("하락장/리스크 관리 (신규 매수 중지)")
+            elif rank <= (15 if strategy_engine_mode == "strat3_top7" else 200):
+                if (
+                    row["RS(90)"] > 0
+                    and row["RS(10)"] > 0
+                    and ma20 > 0
+                    and c_price > ma20
+                ):
+                    status_list.append("매수추천")
+                    reason_list.append("조건충족")
+                else:
+                    status_list.append("매수불가")
+                    reason_list.append("모멘텀/이격도 조건 미달")
+            else:
+                status_list.append("매수불가")
+                reason_list.append("순위 범위 초과")
 
-    status_reason = df_final.apply(assign_status_and_reason, axis=1)
-    df_final["매매상태"] = [x[0] for x in status_reason]
-    df_final["제외사유"] = [x[1] for x in status_reason]
-    df_final["매수추천순위"] = [x[2] for x in status_reason]
-    return df_final.sort_values("순위")
+    df["매매상태"] = status_list
+    df["제외사유"] = reason_list
+
+    # 순위 및 변동폭 가공
+    df["변동"] = 0
+    df["상승금액"] = 0.0
+    df["상승률"] = 0.0
+
+    # 매수 추천 순위 할당
+    buys = df[df["매매상태"] == "매수추천"].copy()
+    buys["이격도_차이"] = (buys["종가"] / buys["MA20"]) - 1.0
+    buys = buys.sort_values(by="이격도_차이", ascending=True)
+
+    buy_ranks = {
+        ticker: i + 1 for i, ticker in enumerate(buys["ticker"].tolist())
+    }
+    df["매수추천순위"] = df["ticker"].map(lambda t: buy_ranks.get(t, ""))
+
+    return df
