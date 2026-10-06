@@ -4,32 +4,19 @@ import numpy as np
 import pandas as pd
 from supabase import create_client, Client
 
-# 📌 1. backtest.py 내부에서 직접 Supabase 클라이언트 독립 로드 (다른 파일 수정 없음)
-def get_backtest_supabase_client() -> Client:
-    url = os.environ.get("SUPABASE_URL")
-    key = os.environ.get("SUPABASE_KEY")
+# 📌 1. db.py 및 strategy.py 로드 전 st.secrets 예외 방지 (다른 파일 수정 0건)
+import streamlit as st
 
-    if not url or not key:
-        try:
-            import streamlit as st
+url = os.environ.get("SUPABASE_URL")
+key = os.environ.get("SUPABASE_KEY")
 
-            url = st.secrets.get("SUPABASE_URL")
-            key = st.secrets.get("SUPABASE_KEY")
-        except Exception:
-            pass
+if url and key:
+    # GitHub Actions 환경 변수를 Streamlit secrets 객체 구조에 주입
+    st.secrets["SUPABASE_URL"] = url
+    st.secrets["SUPABASE_KEY"] = key
 
-    if not url or not key:
-        raise ValueError(
-            "❌ SUPABASE_URL 또는 SUPABASE_KEY를 찾을 수 없습니다. (환경 변수 또는 secrets.toml 확인 필요)"
-        )
-
-    return create_client(url, key)
-
-
-# 독립 접속 클라이언트 생성
-supabase: Client = get_backtest_supabase_client()
-
-# 기존 전략 모듈 임포트
+# 📌 2. 모듈 독립 로드 구문
+from db import supabase
 from strategy import get_data
 
 
