@@ -74,13 +74,12 @@ st.markdown("""
         display: inline-block;
     }
     </style>
-    <a href="#top-section" class="floating-btn-left"><span>⬆️️</span> <span>위로</span></a>
+    <a href="#top-section" class="floating-btn-left"><span>⬆</span> <span>위로</span></a>
 """, unsafe_allow_html=True)
 
 # 📌 2. 5분 비밀번호 유지 세션 및 1분 전 연장 알림 로직
 LOGIN_TIMEOUT_SECONDS = 300  # 5분 (300초)
 
-# 자동 연장 요청 파라미터 처리
 if st.query_params.get("extend_auth") == "true":
     st.session_state['last_auth_time'] = time.time()
     st.query_params.clear()
@@ -99,7 +98,6 @@ if is_authenticated:
         st.session_state['last_auth_time'] = 0
         st.rerun()
     else:
-        # JS 기반 타이머: 남은 시간이 60초가 되면 알림창 출력 후 연장
         js_timer_code = f"""
         <script>
         (function() {{
@@ -121,7 +119,6 @@ if is_authenticated:
         """
         components.html(js_timer_code, height=0)
 
-# 📌 종목 선택 시 2번 탭(알파 시그널)으로 자동 이동시키는 JS 스크립트
 def switch_to_tab2():
     js_code = """
     <script>
@@ -397,7 +394,6 @@ with col_title:
     st.markdown("##### 📈 Quant Alpha Strategy")
 
 with col_auth_status:
-    # 📌 인증 상태 및 수동/자동 5분 연장 버튼
     if is_authenticated:
         elapsed = time.time() - st.session_state.get('last_auth_time', 0)
         remaining_sec = max(0, int(LOGIN_TIMEOUT_SECONDS - elapsed))
@@ -455,7 +451,6 @@ if df_display is not None:
     current_holdings_count = len(holdings_db) if not holdings_db.empty else 0
     needed_slots = max(0, top_n_cfg - current_holdings_count)
 
-    # 📌 [개편] 사용자의 매매 여정(Workflow)에 맞춘 4개 탭 구조
     tab1, tab2, tab3, tab4 = st.tabs([
         "📊 시장 & 수급 종합", 
         "🚀 알파 시그널", 
@@ -469,7 +464,6 @@ if df_display is not None:
     with tab1:
         st.markdown("###### 📊 시장 방향성 & 스마트머니 수급 종합")
         
-        # 📌 상단 Market Regime 및 핵심 KPI 요약 카드
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("전략 엔진", "🔥 전략 3 (Top 7)" if current_engine_key == "strat3_top7" else ("🚀 단기 타점" if current_engine_key == "short_term" else ("🟢 강세장" if is_bull else "🔴 약세장")))
         
@@ -537,7 +531,7 @@ if df_display is not None:
 
             if p_zscore >= 1.5: z_tag = "🔥 강한 수급 유입 (Z ≥ +1.5)"
             elif p_zscore <= -1.5: z_tag = "❄️ 강한 수급 이탈 (Z ≤ -1.5)"
-            else: z_tag = "⚖️ 정상 수급 범위"
+            else: z_tag = "⚖️️ 정상 수급 범위"
 
             divergence_msg = ""
             if market_safe and p_non_5d < 0 and k_f_5d < 0:
@@ -547,7 +541,6 @@ if df_display is not None:
 
             if divergence_msg: st.warning(divergence_msg)
 
-            # 📌 [2단 분할 레이아웃] 좌: 수급강도/연속성 | 우: 당일 수급 TOP10
             col_t1_left, col_t1_right = st.columns([1.1, 0.9])
             
             with col_t1_left:
@@ -604,7 +597,6 @@ if df_display is not None:
                 else:
                     st.info("💡 등록된 수급 TOP 종목 내역이 없습니다.")
 
-            # 📌 하단 수급 AI 종합 분석 Expander
             with st.expander("🤖 Gemini AI 시장 전체 수급 종합 분석 리포트", expanded=False):
                 prompt_text = f"""[Market Regime 및 수급 종합 분석 요청]
 - 분석 일자: {target_date_str}
@@ -667,7 +659,7 @@ if df_display is not None:
 
         st.divider()
 
-        # 📌 선택 종목 통합 분석 센터
+        # 📌 [개편] 갤럭시 폴드 및 대화면 비율 최적화: 수직(통) 배치로 텍스트 좁아짐 및 줄바꿈 왜곡 방지
         is_tab2_auto_expanded = True if st.session_state.get('selected_ticker_from_table') else False
         with st.expander("🔍 선택 종목 통합 분석 센터 (기술적 차트 & Gemini AI 분석)", expanded=is_tab2_auto_expanded):
             top200_tickers = df_display.head(200)['ticker'].tolist()
@@ -686,30 +678,38 @@ if df_display is not None:
             )
             
             if sel_chart_ticker:
-                col_an1, col_an2 = st.columns([1.2, 0.8])
-                with col_an1:
-                    st.markdown("###### 📉 개별 종목 통합 차트")
-                    draw_integrated_chart(sel_chart_ticker, market_type, ticker_name_map)
+                # 1. 차트를 상단 전체 폭으로 배치
+                st.markdown("###### 📉 개별 종목 통합 차트")
+                draw_integrated_chart(sel_chart_ticker, market_type, ticker_name_map)
                 
-                with col_an2:
-                    st.markdown("###### 🤖 Google Gemini AI 개별 종목 분석")
-                    used_cnt, remain_cnt = get_remaining_quota()
-                    st.caption(f"Gemini 잔여 사용량: **{remain_cnt}/{MAX_DAILY_QUOTA}회**")
-                    
+                st.write("")
+                st.divider()
+                
+                # 2. AI 리포트를 하단 전체 폭으로 넓게 배치하여 텍스트 가독성 최적화
+                st.markdown("###### 🤖 Google Gemini AI 개별 종목 분석")
+                used_cnt, remain_cnt = get_remaining_quota()
+                st.caption(f"Gemini 잔여 사용량: **{remain_cnt}/{MAX_DAILY_QUOTA}회**")
+                
+                col_opt, col_btn = st.columns([3, 1])
+                with col_opt:
                     analysis_option = st.selectbox(
                         "분석 항목 선택",
                         ["📋 종합 기본적 분석", "📈 ROE 듀퐁 분석", "🏢 사업 구조", "📊 퀀트 밸류에이션", "🎯 단/중기 시나리오"],
                         key="tab2_gemini_analysis_option_selector"
                     )
+                with col_btn:
+                    st.write("")
+                    st.write("")
+                    run_ai_btn = st.button("✨ Gemini 종목 분석 실행", type="primary", use_container_width=True, key="btn_run_gemini_stock_analysis")
 
-                    if st.button("✨ Gemini 종목 분석 실행", type="primary", use_container_width=True, key="btn_run_gemini_stock_analysis"):
-                        target_row = df_display[df_display['ticker'] == sel_chart_ticker].iloc[0]
-                        stock_nm = target_row['종목명']
-                        
-                        with st.spinner(f"🤖 '{stock_nm}' 분석을 진행 중입니다..."):
-                            analysis_result = analyze_stock_with_gemini(sel_chart_ticker, stock_nm, target_row, analysis_option)
-                        st.success("✅ 분석 완료")
-                        st.markdown(analysis_result)
+                if run_ai_btn:
+                    target_row = df_display[df_display['ticker'] == sel_chart_ticker].iloc[0]
+                    stock_nm = target_row['종목명']
+                    
+                    with st.spinner(f"🤖 '{stock_nm}' 분석을 진행 중입니다..."):
+                        analysis_result = analyze_stock_with_gemini(sel_chart_ticker, stock_nm, target_row, analysis_option)
+                    st.success("✅ 분석 완료")
+                    st.markdown(analysis_result)
 
     # ----------------------------------------------------
     # TAB 3: 💼 시스템 매매 지시서 (실질 매매 & 보유 계좌)
@@ -755,7 +755,6 @@ if df_display is not None:
 
             st.write("")
 
-            # 📌 보유 종목 및 리스크 노출도
             with st.expander(f"💼 현재 보유 종목 ({current_holdings_count}/{top_n_cfg}개 슬롯)", expanded=True):
                 if not holdings_db.empty:
                     df_stocks = pd.DataFrame(supabase.table("stocks").select("ticker, name").execute().data)
@@ -845,7 +844,6 @@ if df_display is not None:
                         hide_index=True, use_container_width=True
                     )
 
-            # 📌 시스템 매도/매수 지시 목록
             df_rebal = df_display[df_display['매매상태'].isin(['매도', '추천'])]
             display_trade_list(df_rebal[df_rebal['매매상태'] == '매도'], "시스템 매도 필요 종목", "매도", "sys_s", target_date_str, is_latest_date, market_type, holdings_db, top_n_cfg, account_total_input, current_engine_key)
             display_trade_list(df_rebal[df_rebal['매매상태'] == '추천'], "시스템 매수 추천 종목", "매수", "sys_b", target_date_str, is_latest_date, market_type, holdings_db, top_n_cfg, account_total_input, current_engine_key)
