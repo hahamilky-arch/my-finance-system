@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-from db import get_holdings_table, get_recently_sold_info, supabase
+from db import get_holdings_table, supabase
 
 
 def get_data(
@@ -35,7 +35,7 @@ def get_data(
         print(f"❌ 데이터 로드 오류: {e}")
         return None
 
-    # 데이터 타입 변환
+    # 데이터 타입 변환 및 필드 가공
     df["ticker"] = df["ticker"].astype(str).str.strip().str.upper()
     df["종가"] = pd.to_numeric(df["close_price"], errors="coerce").fillna(0.0)
     df["MA20"] = pd.to_numeric(df["ma20"], errors="coerce").fillna(0.0)
@@ -48,6 +48,23 @@ def get_data(
         0.0
     )
     df["순위"] = pd.to_numeric(df["momentum_rank"], errors="coerce")
+
+    # 📌 전일 종가 및 상승금액/상승률 정확한 산출
+    if "prev_close_price" in df.columns:
+        df["prev_close"] = pd.to_numeric(
+            df["prev_close_price"], errors="coerce"
+        ).fillna(df["종가"])
+    elif "price_change" in df.columns:
+        df["prev_close"] = df["종가"] - pd.to_numeric(
+            df["price_change"], errors="coerce"
+        ).fillna(0.0)
+    else:
+        df["prev_close"] = df["종가"]
+
+    df["상승금액"] = df["종가"] - df["prev_close"]
+    df["상승률"] = np.where(
+        df["prev_close"] > 0, (df["상승금액"] / df["prev_close"]) * 100.0, 0.0
+    )
 
     # 종목명 맵핑
     try:
@@ -69,7 +86,7 @@ def get_data(
 
     # 이격도 계산
     df["이격도"] = np.where(
-        df["MA20"] > 0, ((df["종가"] / df["MA20"]) - 1.0) * 100, 0.0
+        df["MA20"] > 0, ((df["종가"] / df["MA20"]) - 1.0) * 100.0, 0.0
     )
 
     # 2. 보유 종목 데이터 로드
@@ -99,6 +116,7 @@ def get_data(
         ma20 = row["MA20"]
         atr = row["atr"]
         rank = row["순위"]
+        dispar = row["이격도"]
 
         is_holding = t_code in holdings_dict
 
@@ -107,13 +125,11 @@ def get_data(
             buy_price = float(h_info.get("buy_price", c_price))
             highest_price = float(h_info.get("highest_price", c_price))
 
-            # 📌 청산 개별 조건 검사 (가장 먼저 발동된 실제 조건만 부여)
-            # 조건 1: ATR 손절 (-2.5x)
+            # 보유 종목 매도 조건 검사
             if atr > 0 and c_price <= (buy_price - 2.5 * atr):
                 status_list.append("매도필요")
                 reason_list.append("ATR 손절 (-2.5x ATR 하회)")
 
-            # 조건 2: +8% 달성 후 트레일링 스탑 (최소 본절 보장)
             elif highest_price >= buy_price * 1.08 and c_price <= max(
                 highest_price * 0.92, buy_price
             ):
@@ -127,12 +143,10 @@ def get_data(
                         "익절 스탑 (+8% 달성 후 고점 대비 -8% 하락)"
                     )
 
-            # 조건 3: MA20 이탈
             elif ma20 > 0 and c_price < ma20:
                 status_list.append("매도필요")
                 reason_list.append("MA20 이탈 (20일 이동평균선 하회)")
 
-            # 조건 4: 단기 타점 모멘텀 모드 손절(-5%) / 목표익절(+15%)
             elif (
                 strategy_engine_mode == "short_term"
                 and c_price >= buy_price * 1.15
@@ -146,7 +160,6 @@ def get_data(
                 status_list.append("매도필요")
                 reason_list.append("단기 손절선 이탈 (-5%)")
 
-            # 조건 5: 레짐 전환 (신규 매수 중지 또는 비중 축소)
             elif stop_new_buy or reduce_holdings or not is_bull:
                 status_list.append("매도필요")
                 reason_list.append("레짐 전환 (시장 하락장/리스크 관리 모드)")
@@ -156,33 +169,29 @@ def get_data(
                 reason_list.append("보유 조건 유지")
 
         else:
-            # 신규 매수 조건 판단
+            # 📌 신규 매수 조건 세부 판정 (조건 미달 시 실제 사유 명시)
             if stop_new_buy or reduce_holdings or not is_bull:
                 status_list.append("매수불가")
                 reason_list.append("하락장/리스크 관리 (신규 매수 중지)")
+            elif dispar > 15.0:
+                status_list.append("매수불가")
+                reason_list.append("이격도 범위 초과 (+15% 초과)")
+            elif ma20 > 0 and c_price < ma20:
+                status_list.append("매수불가")
+                reason_list.append("MA20 이탈 종목")
+            elif row["RS(90)"] <= 0 or row["RS(10)"] <= 0:
+                status_list.append("매수불가")
+                reason_list.append("모멘텀/RS 조건 미달")
             elif rank <= (15 if strategy_engine_mode == "strat3_top7" else 200):
-                if (
-                    row["RS(90)"] > 0
-                    and row["RS(10)"] > 0
-                    and ma20 > 0
-                    and c_price > ma20
-                ):
-                    status_list.append("매수추천")
-                    reason_list.append("조건충족")
-                else:
-                    status_list.append("매수불가")
-                    reason_list.append("모멘텀/이격도 조건 미달")
+                status_list.append("매수추천")
+                reason_list.append("조건충족")
             else:
                 status_list.append("매수불가")
                 reason_list.append("순위 범위 초과")
 
     df["매매상태"] = status_list
     df["제외사유"] = reason_list
-
-    # 순위 및 변동폭 가공
-    df["변동"] = 0
-    df["상승금액"] = 0.0
-    df["상승률"] = 0.0
+    df["변동"] = np.where(df["상승금액"] > 0, 1, np.where(df["상승금액"] < 0, -1, 0))
 
     # 매수 추천 순위 할당
     buys = df[df["매매상태"] == "매수추천"].copy()
