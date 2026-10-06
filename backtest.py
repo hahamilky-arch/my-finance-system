@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 from supabase import create_client, Client
 
-# 📌 1. strategy.py 및 db.py 로드 시 st.secrets 에러 방지를 위한 주입
+# 📌 1. db.py 및 strategy.py 로드 시 st.secrets 에러 방지를 위한 주입
 import streamlit as st
 
 url = os.environ.get("SUPABASE_URL")
@@ -23,52 +23,41 @@ def run_backtest(
     start_date="2026-01-01", end_date="2026-09-30", market_type="KR"
 ):
     print("=" * 65)
-    print(f"🚀 Quant Alpha [Top 7 Regime] 일별 상위 50개 정밀 백테스트")
+    print(f"🚀 Quant Alpha [Top 7 Regime] 1월~9월 전체 백테스트")
     print(f"• 테스트 기간       : {start_date} ~ {end_date}")
     print(f"• 대상 시장         : {market_type}")
     print(f"• 핵심 수식         : +8% 달성 시 트레일링 스탑 (max(최고가*0.92, 평단가))")
     print("=" * 65)
 
-    # 1. 1,000건 제한 우회를 위한 전체 영업일(price_date) 페이징 수집
-    print("📅 영업일 목록을 수집 중입니다...")
-    all_dates_set = set()
-    offset = 0
-    page_size = 5000
+    # 1. 1월~9월 사이의 실제 존재하는 전체 영업일(price_date) 날짜 수집
+    print("📅 영업일 목록 수집 중...")
+    
+    # 2026-01-01부터 2026-09-30까지의 모든 날짜 생성 후 DB에 실제 데이터가 있는 날만 추출
+    date_range = pd.date_range(start=start_date, end=end_date, freq='B') # 평일(영업일) 생성
+    all_dates = []
 
-    while True:
-        try:
-            res_dates = (
-                supabase.table("daily_analysis")
-                .select("price_date")
-                .eq("market", market_type)
-                .gte("price_date", start_date)
-                .lte("price_date", end_date)
-                .range(offset, offset + page_size - 1)
-                .execute()
-            )
-            if not res_dates.data:
-                break
-
-            for row in res_dates.data:
-                all_dates_set.add(row["price_date"])
-
-            if len(res_dates.data) < page_size:
-                break
-            offset += page_size
-        except Exception as e:
-            print(f"❌ 영업일 목록 수집 중 오류: {e}")
-            break
-
-    all_dates = sorted(list(all_dates_set))
+    for dt in date_range:
+        d_str = dt.strftime("%Y-%m-%d")
+        # 해당 날짜에 데이터가 1건이라도 존재하는지 고속 확인 (limit 1)
+        res_chk = (
+            supabase.table("daily_analysis")
+            .select("price_date")
+            .eq("market", market_type)
+            .eq("price_date", d_str)
+            .limit(1)
+            .execute()
+        )
+        if res_chk.data:
+            all_dates.append(d_str)
 
     if not all_dates:
         print(f"❌ {start_date} ~ {end_date} 기간 내 영업일 데이터가 없습니다.")
         return
 
-    print(f"📅 총 {len(all_dates)}영업일 확인 완료!")
+    print(f"📅 총 {len(all_dates)}영업일 확인 완료! (1월~9월 전체 영업일 감지)")
 
-    # 2. 영업일별로 정확히 '상위 50개(momentum_rank <= 50)' 레코드만 일괄 수집
-    print("⚡ 영업일별 상위 50개 종목 수집 중...")
+    # 2. 영업일별로 상위 50개(momentum_rank <= 50) 종목만 순차 수집
+    print("⚡ 영업일별 상위 50개 종목 데이터 수집 중...")
     all_data_list = []
 
     for d_str in all_dates:
@@ -94,9 +83,7 @@ def run_backtest(
         return
 
     df_all = pd.DataFrame(all_data_list)
-    df_all["price_date"] = pd.to_datetime(df_all["price_date"]).dt.strftime(
-        "%Y-%m-%d"
-    )
+    df_all["price_date"] = pd.to_datetime(df_all["price_date"]).dt.strftime("%Y-%m-%d")
     df_all["ticker"] = df_all["ticker"].astype(str).str.strip().str.upper()
 
     num_cols = [
@@ -111,20 +98,14 @@ def run_backtest(
     for col in num_cols:
         df_all[col] = pd.to_numeric(df_all[col], errors="coerce")
 
-    print(f"✅ 총 {len(df_all):,d}건 데이터 수집 완료 (영업일당 50개, 메모리 2MB 미만)\n")
+    print(f"✅ 총 {len(df_all):,d}건 데이터 수집 완료 (총 {len(all_dates)}영업일 × 상위 50개)\n")
 
     # 종목 한글명 맵핑 로드
     try:
-        stocks_res = (
-            supabase.table("stocks").select("ticker, name").execute()
-        )
+        stocks_res = supabase.table("stocks").select("ticker, name").execute()
         stock_name_map = (
-            {
-                str(r["ticker"]).strip().upper(): r["name"]
-                for r in stocks_res.data
-            }
-            if stocks_res.data
-            else {}
+            {str(r["ticker"]).strip().upper(): r["name"] for r in stocks_res.data}
+            if stocks_res.data else {}
         )
     except Exception:
         stock_name_map = {}
@@ -182,8 +163,7 @@ def run_backtest(
                 profit_amt = (sell_price - p_item["buy_price"]) * p_item["qty"]
                 profit_rate = (
                     ((sell_price / p_item["buy_price"]) - 1.0) * 100
-                    if p_item["buy_price"] > 0
-                    else 0.0
+                    if p_item["buy_price"] > 0 else 0.0
                 )
 
                 current_cash += sell_price * p_item["qty"]
@@ -208,9 +188,7 @@ def run_backtest(
             & (df_daily["close_price"] > df_daily["ma20"])
         )
         candidates = df_daily[cond_buy].copy()
-        candidates["이격도"] = (
-            (candidates["close_price"] / candidates["ma20"]) - 1.0
-        ) * 100
+        candidates["이격도"] = ((candidates["close_price"] / candidates["ma20"]) - 1.0) * 100
         candidates = candidates.sort_values(by="이격도", ascending=True)
 
         empty_slots = top_n_cfg - len(portfolio)
@@ -263,14 +241,10 @@ def run_backtest(
         return
 
     final_equity = df_equity.iloc[-1]["equity"]
-    cumulative_return = (
-        (final_equity - initial_capital) / initial_capital
-    ) * 100
+    cumulative_return = ((final_equity - initial_capital) / initial_capital) * 100
 
     df_equity["peak"] = df_equity["equity"].cummax()
-    df_equity["drawdown"] = (
-        (df_equity["equity"] - df_equity["peak"]) / df_equity["peak"]
-    ) * 100
+    df_equity["drawdown"] = ((df_equity["equity"] - df_equity["peak"]) / df_equity["peak"]) * 100
     mdd = df_equity["drawdown"].min()
 
     df_trades = pd.DataFrame(closed_trades)
@@ -282,9 +256,7 @@ def run_backtest(
 
         win_rate = (len(wins) / total_trades_count) * 100
         avg_profit = wins["profit_amt"].mean() if not wins.empty else 0.0
-        avg_loss = (
-            abs(losses["profit_amt"].mean()) if not losses.empty else 0.0
-        )
+        avg_loss = abs(losses["profit_amt"].mean()) if not losses.empty else 0.0
         profit_factor = (avg_profit / avg_loss) if avg_loss > 0 else 999.0
         avg_return_per_trade = df_trades["profit_rate"].mean()
     else:
