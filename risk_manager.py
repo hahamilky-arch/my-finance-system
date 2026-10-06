@@ -65,30 +65,28 @@ def calculate_holdings_risk(
             ((curr_price / buy_price) - 1) * 100 if buy_price > 0 else 0.0
         )
 
-        # 📌 1번(익절 스탑) / 2번(ATR 손절 스탑) 산출 공식
+        # 📌 1번 / 2번 스톱기준 산출 (+8% 이상 시 최소 본절 보장)
         max_return = (
             (highest_price / buy_price) - 1.0 if buy_price > 0 else 0.0
         )
-        tp_stop_price = highest_price * 0.92  # 1번: 최고가 대비 -8% 반락
+        tp_stop_price = max(highest_price * 0.92, buy_price)  # 1번: 익절/본절 스탑가
 
         if atr_val > 0 and current_engine_key == "strat3_top7":
             atr_stop_price = max(
                 buy_price - (2.5 * atr_val), highest_price - (2.5 * atr_val)
-            )
+            )  # 2번: ATR 손절 스탑가
         else:
             atr_stop_price = max(
                 buy_price * (1 + (sl_cfg / 100.0)), highest_price * 0.95
             )
 
-        # 🎯 1번 vs 2번 적용 스톱 판정
-        if max_return >= 0.15:
+        if max_return >= 0.08:
             stop_type_label = "🎯 1번(익절)"
             effective_stop_price = tp_stop_price
         else:
             stop_type_label = "🛡️ 2번(손절)"
             effective_stop_price = atr_stop_price
 
-        # 🔒 2% Rule 리스크 계산
         max_loss_amt = max(0.0, (buy_price - effective_stop_price) * qty)
         stock_risk_pct = (
             (max_loss_amt / account_total_input * 100)
@@ -98,9 +96,8 @@ def calculate_holdings_risk(
         if stock_risk_pct > 2.0:
             risk_violations.append(f"{ticker} ({stock_risk_pct:.1f}%)")
 
-        # 상태 표기
-        if max_return >= 0.15 and curr_price <= tp_stop_price:
-            status = "🎯 익절 이탈 (+15% 도달 후 -8% 반락)"
+        if max_return >= 0.08 and curr_price <= tp_stop_price:
+            status = "🎯 익절 이탈 (+8% 도달 후 반락)"
         elif engine_status == "매도" or curr_price <= atr_stop_price:
             status = "🟢 익절 이탈" if profit_rate > 0 else "🚨 손절 이탈"
         else:
@@ -137,4 +134,3 @@ def calculate_holdings_risk(
     )
 
     return holdings_list, total_risk_pct, risk_violations
-
