@@ -28,7 +28,8 @@ jobs:
     - name: 📦 의존성 패키지 설치
       run: |
         python -m pip install --upgrade pip
-        pip install pandas numpy supabase
+        # 📌 streamlit 및 기타 필요 패키지 추가
+        pip install pandas numpy supabase streamlit plotly
 
     - name: 🚀 기간별 백테스트 실행
       env:
