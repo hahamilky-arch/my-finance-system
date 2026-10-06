@@ -531,7 +531,7 @@ if df_display is not None:
 
             if p_zscore >= 1.5: z_tag = "🔥 강한 수급 유입 (Z ≥ +1.5)"
             elif p_zscore <= -1.5: z_tag = "❄️ 강한 수급 이탈 (Z ≤ -1.5)"
-            else: z_tag = "⚖️️ 정상 수급 범위"
+            else: z_tag = "⚖ 정상 수급 범위"
 
             divergence_msg = ""
             if market_safe and p_non_5d < 0 and k_f_5d < 0:
@@ -577,8 +577,9 @@ if df_display is not None:
                     hide_index=True, use_container_width=True
                 )
 
+            # 📌 [개편] 외국인 순매수 TOP 5 & 기관 순매수 TOP 5를 탭(Tab)으로 깔끔하게 구분하여 표시
             with col_t1_right:
-                st.markdown("###### 🏆 당일 외국인 / 기관 순매수 TOP 10")
+                st.markdown("###### 🏆 당일 외국인 / 기관 순매수 TOP 5")
                 try:
                     res_stock_liq = supabase.table("daily_top_liquidity").select("*").eq("trade_date", target_date_str).order("rank").execute()
                     df_stock_liq = pd.DataFrame(res_stock_liq.data) if res_stock_liq.data else pd.DataFrame()
@@ -586,14 +587,25 @@ if df_display is not None:
                     df_stock_liq = pd.DataFrame()
 
                 if not df_stock_liq.empty:
-                    df_f_top = df_stock_liq.sort_values('foreign_net', ascending=False).head(5)[['rank', 'name', 'close_price', 'change_rate', 'foreign_net', 'inst_net']]
-                    df_f_top = df_f_top.rename(columns={'rank': '순위', 'name': '종목명', 'close_price': '종가', 'change_rate': '등락률', 'foreign_net': '외인', 'inst_net': '기관'})
-                    st.caption("🔥 외국인 순매수 상위 TOP 5")
-                    st.dataframe(
-                        df_f_top.style.format({'종가': '{:,.0f}', '등락률': '{:+.2f}%', '외인': '{:+,.0f}', '기관': '{:+,.0f}'})
-                        .map(lambda v: 'color: red;' if float(v) > 0 else ('color: blue;' if float(v) < 0 else ''), subset=['등락률', '외인', '기관']),
-                        hide_index=True, use_container_width=True
-                    )
+                    tab_foreign, tab_inst = st.tabs(["🔥 외국인 TOP 5", "🏛 기관 TOP 5"])
+                    
+                    with tab_foreign:
+                        df_f_top = df_stock_liq.sort_values('foreign_net', ascending=False).head(5)[['rank', 'name', 'close_price', 'change_rate', 'foreign_net', 'inst_net']]
+                        df_f_top = df_f_top.rename(columns={'rank': '순위', 'name': '종목명', 'close_price': '종가', 'change_rate': '등락률', 'foreign_net': '외인', 'inst_net': '기관'})
+                        st.dataframe(
+                            df_f_top.style.format({'종가': '{:,.0f}', '등락률': '{:+.2f}%', '외인': '{:+,.0f}', '기관': '{:+,.0f}'})
+                            .map(lambda v: 'color: red;' if float(v) > 0 else ('color: blue;' if float(v) < 0 else ''), subset=['등락률', '외인', '기관']),
+                            hide_index=True, use_container_width=True
+                        )
+                        
+                    with tab_inst:
+                        df_i_top = df_stock_liq.sort_values('inst_net', ascending=False).head(5)[['rank', 'name', 'close_price', 'change_rate', 'foreign_net', 'inst_net']]
+                        df_i_top = df_i_top.rename(columns={'rank': '순위', 'name': '종목명', 'close_price': '종가', 'change_rate': '등락률', 'foreign_net': '외인', 'inst_net': '기관'})
+                        st.dataframe(
+                            df_i_top.style.format({'종가': '{:,.0f}', '등락률': '{:+.2f}%', '외인': '{:+,.0f}', '기관': '{:+,.0f}'})
+                            .map(lambda v: 'color: red;' if float(v) > 0 else ('color: blue;' if float(v) < 0 else ''), subset=['등락률', '외인', '기관']),
+                            hide_index=True, use_container_width=True
+                        )
                 else:
                     st.info("💡 등록된 수급 TOP 종목 내역이 없습니다.")
 
@@ -659,7 +671,6 @@ if df_display is not None:
 
         st.divider()
 
-        # 📌 [개편] 갤럭시 폴드 및 대화면 비율 최적화: 수직(통) 배치로 텍스트 좁아짐 및 줄바꿈 왜곡 방지
         is_tab2_auto_expanded = True if st.session_state.get('selected_ticker_from_table') else False
         with st.expander("🔍 선택 종목 통합 분석 센터 (기술적 차트 & Gemini AI 분석)", expanded=is_tab2_auto_expanded):
             top200_tickers = df_display.head(200)['ticker'].tolist()
@@ -678,14 +689,12 @@ if df_display is not None:
             )
             
             if sel_chart_ticker:
-                # 1. 차트를 상단 전체 폭으로 배치
                 st.markdown("###### 📉 개별 종목 통합 차트")
                 draw_integrated_chart(sel_chart_ticker, market_type, ticker_name_map)
                 
                 st.write("")
                 st.divider()
                 
-                # 2. AI 리포트를 하단 전체 폭으로 넓게 배치하여 텍스트 가독성 최적화
                 st.markdown("###### 🤖 Google Gemini AI 개별 종목 분석")
                 used_cnt, remain_cnt = get_remaining_quota()
                 st.caption(f"Gemini 잔여 사용량: **{remain_cnt}/{MAX_DAILY_QUOTA}회**")
@@ -863,7 +872,7 @@ if df_display is not None:
                         if st.button("수동 매수 실행", use_container_width=True, type="primary"):
                             if m_ticker and m_price > 0 and m_qty > 0: update_holdings(m_ticker, 'BUY', m_price, m_date, m_qty, market_type)
                 with col_m_right:
-                    st.markdown("###### 🗑️ 수동 매도")
+                    st.markdown("###### 🗑️️ 수동 매도")
                     with st.container(border=True):
                         ms_ticker = st.text_input("매도 종목코드", key="ms_ticker").strip().upper()
                         c1, c2 = st.columns(2)
