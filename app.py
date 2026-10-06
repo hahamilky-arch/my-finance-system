@@ -243,12 +243,25 @@ def display_trade_list(
                 f"{rec_rank_val}위" if rec_rank_val != "" else "-"
             )
 
+            # 📌 동적 매도/매수 사유 가공 (실제 적용 사유만 노출)
             if "매도" in title:
-                reason_desc = "지수 2일선 이탈, ATR손절(-2.5x) 또는 익절 스탑(+8% 달성 후 트레일링/본절)"
+                # DB/전략에서 전달된 '제외사유' 우선 참조
+                raw_reason = str(row.get("제외사유", "")).strip()
+                if raw_reason and raw_reason not in ["조건충족", "nan", "None"]:
+                    reason_desc = f"청산 조건 발생 ({raw_reason})"
+                else:
+                    if strategy_engine_mode == "short_term":
+                        reason_desc = "단기 목표익절(+15%) 달성 또는 손절(-5%) / MA20 이탈"
+                    else:
+                        reason_desc = "MA20 이탈, ATR손절(-2.5x) 또는 익절/본절 트레일링스탑(+8% 달성)"
                 position_info = ""
                 tag_html = ""
             else:
-                reason_desc = f"진입 조건 충족 (지수 2일 안착 완료) [추천순위: {rec_rank_display}]"
+                if strategy_engine_mode == "short_term":
+                    reason_desc = f"단기 모멘텀 타점 포착 (상위 200위 / 목표익절 +15% / 손절 -5%) [추천순위: {rec_rank_display}]"
+                else:
+                    reason_desc = f"진입 조건 충족 (지수 2일 안착 완료) [추천순위: {rec_rank_display}]"
+
                 target_pct = (100.0 / top_n_cfg) if top_n_cfg > 0 else 0.0
                 atr_val = float(row.get("atr", 0.0))
                 atr_str = (
@@ -546,7 +559,7 @@ with st.sidebar:
         rank_exit_limit = 15
     elif current_engine_key == "short_term":
         st.info(
-            "🚀 단기 타점 모드: 상위 200위 / 15% 목표익절 / -5% 손절"
+            "🚀 단기 타점 모드(미국장 기본): 상위 200위 / 목표익절 +15% / 손절 -5%"
         )
         top_n_cfg = st.session_state.get("bull_top_n", 4)
         sl_cfg = st.session_state.get("bull_sl", -5.0)
@@ -725,14 +738,14 @@ if df_display is not None:
 
     # TAB 1: 📊 시장 & 수급 종합
     with tab1:
-        st.markdown("###### 📊 시장 방향성 & 스마트머니 수급 종합")
+        st.markdown("###### 📊 시장 방향성 & 수급 종합")
         c1, c2, c3, c4 = st.columns(4)
         c1.metric(
             "전략 엔진",
             "🔥 전략 3 (Top 7)"
             if current_engine_key == "strat3_top7"
             else (
-                "🚀 단기 타점"
+                "🚀 단기 타점 (+15% 목표)"
                 if current_engine_key == "short_term"
                 else ("🟢 강세장" if is_bull else "🔴 약세장")
             ),
@@ -763,358 +776,364 @@ if df_display is not None:
 
         st.divider()
 
-        if not is_authenticated:
+        # 📌 [요청 반영] 미국장일 때는 수급 데이터 제외 처리
+        if market_type == "US":
             st.info(
-                "🔒 상세 투자자별/프로그램 매매동향 및 수급 지표는 우측 상단 **[🔑 잠금 해제]** 후 확인하실 수 있습니다."
+                "💡 **미국 시장 안내**: 현재 한국장(KR)의 외국인/기관/비차익 수급 데이터만 수집하고 있습니다. 미국 시장(US)은 지수 추세 및 종목별 모멘텀 지표(Rank, RS)를 기준으로 전략이 동작합니다."
             )
         else:
-            try:
-                res_inv_all = (
-                    supabase.table("market_investor_trends")
-                    .select("*")
-                    .lte("trade_date", target_date_str)
-                    .order("trade_date", desc=True)
-                    .limit(60)
-                    .execute()
-                )
-                df_inv_all = (
-                    pd.DataFrame(res_inv_all.data)
-                    if res_inv_all.data
-                    else pd.DataFrame()
-                )
-            except Exception:
-                df_inv_all = pd.DataFrame()
-
-            try:
-                res_prog_all = (
-                    supabase.table("market_program_trends")
-                    .select("*")
-                    .lte("trade_date", target_date_str)
-                    .order("trade_date", desc=True)
-                    .limit(60)
-                    .execute()
-                )
-                df_prog_all = (
-                    pd.DataFrame(res_prog_all.data)
-                    if res_prog_all.data
-                    else pd.DataFrame()
-                )
-            except Exception:
-                df_prog_all = pd.DataFrame()
-
-            df_inv = (
-                df_inv_all[df_inv_all["trade_date"] == target_date_str]
-                if not df_inv_all.empty
-                else pd.DataFrame()
-            )
-            df_prog = (
-                df_prog_all[df_prog_all["trade_date"] == target_date_str]
-                if not df_prog_all.empty
-                else pd.DataFrame()
-            )
-
-            k_row = (
-                df_inv[df_inv["market_type"] == "KOSPI"].iloc[0]
-                if not df_inv.empty
-                and not df_inv[df_inv["market_type"] == "KOSPI"].empty
-                else {}
-            )
-            kq_row = (
-                df_inv[df_inv["market_type"] == "KOSDAQ"].iloc[0]
-                if not df_inv.empty
-                and not df_inv[df_inv["market_type"] == "KOSDAQ"].empty
-                else {}
-            )
-            p_row = df_prog.iloc[0] if not df_prog.empty else {}
-
-            p_non_val = (
-                float(p_row.get("non_arbitrage_net", 0))
-                if not df_prog.empty and not p_row.empty
-                else 0.0
-            )
-
-            df_k_all = (
-                df_inv_all[df_inv_all["market_type"] == "KOSPI"].sort_values(
-                    "trade_date", ascending=False
-                )
-                if not df_inv_all.empty
-                else pd.DataFrame()
-            )
-            df_kq_all = (
-                df_inv_all[df_inv_all["market_type"] == "KOSDAQ"].sort_values(
-                    "trade_date", ascending=False
-                )
-                if not df_inv_all.empty
-                else pd.DataFrame()
-            )
-            df_p_sorted = (
-                df_prog_all.sort_values("trade_date", ascending=False)
-                if not df_prog_all.empty
-                else pd.DataFrame()
-            )
-
-            k_f_5d = (
-                int(df_k_all.head(5)["foreign_net"].sum())
-                if not df_k_all.empty
-                else 0
-            )
-            k_inst_5d = (
-                int(df_k_all.head(5)["institution_net"].sum())
-                if not df_k_all.empty
-                else 0
-            )
-            kq_f_5d = (
-                int(df_kq_all.head(5)["foreign_net"].sum())
-                if not df_kq_all.empty
-                else 0
-            )
-            kq_inst_5d = (
-                int(df_kq_all.head(5)["institution_net"].sum())
-                if not df_kq_all.empty
-                else 0
-            )
-            p_non_5d = (
-                int(df_p_sorted.head(5)["non_arbitrage_net"].sum())
-                if not df_p_sorted.empty
-                else 0
-            )
-
-            k_f_days = (
-                int((df_k_all.head(5)["foreign_net"] > 0).sum())
-                if not df_k_all.empty
-                else 0
-            )
-            k_inst_days = (
-                int((df_k_all.head(5)["institution_net"] > 0).sum())
-                if not df_k_all.empty
-                else 0
-            )
-            kq_f_days = (
-                int((df_kq_all.head(5)["foreign_net"] > 0).sum())
-                if not df_kq_all.empty
-                else 0
-            )
-            kq_inst_days = (
-                int((df_kq_all.head(5)["institution_net"] > 0).sum())
-                if not df_kq_all.empty
-                else 0
-            )
-            p_non_days = (
-                int((df_p_sorted.head(5)["non_arbitrage_net"] > 0).sum())
-                if not df_p_sorted.empty
-                else 0
-            )
-
-            if not df_p_sorted.empty and len(df_p_sorted) >= 5:
-                p_non_20_series = df_p_sorted.head(20)[
-                    "non_arbitrage_net"
-                ].astype(float)
-                mean_20 = p_non_20_series.mean()
-                std_20 = p_non_20_series.std()
-                p_zscore = (
-                    ((p_non_val - mean_20) / std_20) if std_20 > 0 else 0.0
+            if not is_authenticated:
+                st.info(
+                    "🔒 상세 투자자별/프로그램 매매동향 및 수급 지표는 우측 상단 **[🔑 잠금 해제]** 후 확인하실 수 있습니다."
                 )
             else:
-                p_zscore = 0.0
-
-            if p_zscore >= 1.5:
-                z_tag = "🔥 강한 수급 유입 (Z ≥ +1.5)"
-            elif p_zscore <= -1.5:
-                z_tag = "❄️ 강한 수급 이탈 (Z ≤ -1.5)"
-            else:
-                z_tag = "⚖ 정상 수급 범위"
-
-            divergence_msg = ""
-            if market_safe and p_non_5d < 0 and k_f_5d < 0:
-                divergence_msg = "⚠️ [약세 다이버전스] 지수는 MA20 위에 있으나, 최근 5일 비차익/외국인 누적 수급이 연속 유출 중입니다."
-            elif not market_safe and p_non_5d > 0 and k_f_5d > 0:
-                divergence_msg = "💡 [강세 다이버전스] 지수는 MA20 밑에 있으나, 최근 5일 스마트머니가 지속 저점 매수 중입니다."
-
-            if divergence_msg:
-                st.warning(divergence_msg)
-
-            col_t1_left, col_t1_right = st.columns([1.1, 0.9])
-            with col_t1_left:
-                st.markdown("###### 🏛 수급 강도 & 연속성 지표 (20일 기준)")
-                z_help_text = (
-                    "💡 **비차익 수급 Z-Score 안내**\n"
-                    "• **개념**: 당일 비차익 순매수 금액이 최근 20영업일 평균 대비 몇 표준편차(σ) 떨어져 있는지 나타냅니다.\n"
-                    "• **판독 기준**:\n"
-                    "  - Z ≥ +1.5: 🔥 강한 스마트머니 유입\n"
-                    "  - Z ≤ -1.5: ❄️ 강한 수급 이탈\n"
-                    "  - -0.5 < Z < +0.5: ⚖️ 정상 범위"
-                )
-
-                r1_1, r1_2, r1_3 = st.columns(3)
-                r1_1.metric(
-                    "비차익 Z-Score",
-                    f"{p_zscore:+.2f}",
-                    delta=z_tag,
-                    delta_color="off",
-                    help=z_help_text,
-                )
-                r1_2.metric(
-                    "비차익 5일 누적",
-                    f"{p_non_5d:+,d} 백만원",
-                    delta=f"5일 중 {p_non_days}일 순매수",
-                )
-                r1_3.metric(
-                    "KOSPI 외인 5일",
-                    f"{k_f_5d:+,d} 백만원",
-                    delta=f"5일 중 {k_f_days}일 순매수",
-                )
-
-                st.write("")
-                r2_1, r2_2, r2_3 = st.columns(3)
-                r2_1.metric(
-                    "KOSPI 기관 5일",
-                    f"{k_inst_5d:+,d} 백만원",
-                    delta=f"5일 중 {k_inst_days}일 순매수",
-                )
-                r2_2.metric(
-                    "KOSDAQ 외인 5일",
-                    f"{kq_f_5d:+,d} 백만원",
-                    delta=f"5일 중 {kq_f_days}일 순매수",
-                )
-                r2_3.metric(
-                    "KOSDAQ 기관 5일",
-                    f"{kq_inst_5d:+,d} 백만원",
-                    delta=f"5일 중 {kq_inst_days}일 순매수",
-                )
-
-                st.write("")
-                st.markdown("###### 📊 당일 주체별 매매 동향 (백만원)")
-                disp_inv_summary = pd.DataFrame([
-                    {
-                        "시장": "KOSPI",
-                        "외국인": int(k_row.get("foreign_net", 0)),
-                        "개인": int(k_row.get("individual_net", 0)),
-                        "기관계": int(k_row.get("institution_net", 0)),
-                    },
-                    {
-                        "시장": "KOSDAQ",
-                        "외국인": int(kq_row.get("foreign_net", 0)),
-                        "개인": int(kq_row.get("individual_net", 0)),
-                        "기관계": int(kq_row.get("institution_net", 0)),
-                    },
-                ])
-                st.dataframe(
-                    disp_inv_summary.style.format({
-                        "외국인": "{:+,d}",
-                        "개인": "{:+,d}",
-                        "기관계": "{:+,d}",
-                    }).map(
-                        lambda v: "color: red;"
-                        if v > 0
-                        else ("color: blue;" if v < 0 else ""),
-                        subset=["외국인", "개인", "기관계"],
-                    ),
-                    hide_index=True,
-                    use_container_width=True,
-                )
-
-            with col_t1_right:
-                st.markdown("###### 🏆 당일 외국인 / 기관 순매수 TOP 5")
                 try:
-                    res_stock_liq = (
-                        supabase.table("daily_top_liquidity")
+                    res_inv_all = (
+                        supabase.table("market_investor_trends")
                         .select("*")
-                        .eq("trade_date", target_date_str)
-                        .order("rank")
+                        .lte("trade_date", target_date_str)
+                        .order("trade_date", desc=True)
+                        .limit(60)
                         .execute()
                     )
-                    df_stock_liq = (
-                        pd.DataFrame(res_stock_liq.data)
-                        if res_stock_liq.data
+                    df_inv_all = (
+                        pd.DataFrame(res_inv_all.data)
+                        if res_inv_all.data
                         else pd.DataFrame()
                     )
                 except Exception:
-                    df_stock_liq = pd.DataFrame()
+                    df_inv_all = pd.DataFrame()
 
-                if not df_stock_liq.empty:
-                    tab_foreign, tab_inst = st.tabs(
-                        ["🔥 외국인 TOP 5", "🏛 기관 TOP 5"]
+                try:
+                    res_prog_all = (
+                        supabase.table("market_program_trends")
+                        .select("*")
+                        .lte("trade_date", target_date_str)
+                        .order("trade_date", desc=True)
+                        .limit(60)
+                        .execute()
                     )
-                    with tab_foreign:
-                        df_f_top = df_stock_liq.sort_values(
-                            "foreign_net", ascending=False
-                        ).head(5)[
-                            [
-                                "rank",
-                                "name",
-                                "close_price",
-                                "change_rate",
-                                "foreign_net",
-                                "inst_net",
-                            ]
-                        ]
-                        df_f_top = df_f_top.rename(columns={
-                            "rank": "순위",
-                            "name": "종목명",
-                            "close_price": "종가",
-                            "change_rate": "등락률",
-                            "foreign_net": "외인",
-                            "inst_net": "기관",
-                        })
-                        st.dataframe(
-                            df_f_top.style.format({
-                                "종가": "{:,.0f}",
-                                "등락률": "{:+.2f}%",
-                                "외인": "{:+,.0f}",
-                                "기관": "{:+,.0f}",
-                            }).map(
-                                lambda v: "color: red;"
-                                if float(v) > 0
-                                else ("color: blue;" if float(v) < 0 else ""),
-                                subset=["등락률", "외인", "기관"],
-                            ),
-                            hide_index=True,
-                            use_container_width=True,
-                        )
+                    df_prog_all = (
+                        pd.DataFrame(res_prog_all.data)
+                        if res_prog_all.data
+                        else pd.DataFrame()
+                    )
+                except Exception:
+                    df_prog_all = pd.DataFrame()
 
-                    with tab_inst:
-                        df_i_top = df_stock_liq.sort_values(
-                            "inst_net", ascending=False
-                        ).head(5)[
-                            [
-                                "rank",
-                                "name",
-                                "close_price",
-                                "change_rate",
-                                "foreign_net",
-                                "inst_net",
-                            ]
-                        ]
-                        df_i_top = df_i_top.rename(columns={
-                            "rank": "순위",
-                            "name": "종목명",
-                            "close_price": "종가",
-                            "change_rate": "등락률",
-                            "foreign_net": "외인",
-                            "inst_net": "기관",
-                        })
-                        st.dataframe(
-                            df_i_top.style.format({
-                                "종가": "{:,.0f}",
-                                "등락률": "{:+.2f}%",
-                                "외인": "{:+,.0f}",
-                                "기관": "{:+,.0f}",
-                            }).map(
-                                lambda v: "color: red;"
-                                if float(v) > 0
-                                else ("color: blue;" if float(v) < 0 else ""),
-                                subset=["등락률", "외인", "기관"],
-                            ),
-                            hide_index=True,
-                            use_container_width=True,
-                        )
+                df_inv = (
+                    df_inv_all[df_inv_all["trade_date"] == target_date_str]
+                    if not df_inv_all.empty
+                    else pd.DataFrame()
+                )
+                df_prog = (
+                    df_prog_all[df_prog_all["trade_date"] == target_date_str]
+                    if not df_prog_all.empty
+                    else pd.DataFrame()
+                )
+
+                k_row = (
+                    df_inv[df_inv["market_type"] == "KOSPI"].iloc[0]
+                    if not df_inv.empty
+                    and not df_inv[df_inv["market_type"] == "KOSPI"].empty
+                    else {}
+                )
+                kq_row = (
+                    df_inv[df_inv["market_type"] == "KOSDAQ"].iloc[0]
+                    if not df_inv.empty
+                    and not df_inv[df_inv["market_type"] == "KOSDAQ"].empty
+                    else {}
+                )
+                p_row = df_prog.iloc[0] if not df_prog.empty else {}
+
+                p_non_val = (
+                    float(p_row.get("non_arbitrage_net", 0))
+                    if not df_prog.empty and not p_row.empty
+                    else 0.0
+                )
+
+                df_k_all = (
+                    df_inv_all[df_inv_all["market_type"] == "KOSPI"].sort_values(
+                        "trade_date", ascending=False
+                    )
+                    if not df_inv_all.empty
+                    else pd.DataFrame()
+                )
+                df_kq_all = (
+                    df_inv_all[df_inv_all["market_type"] == "KOSDAQ"].sort_values(
+                        "trade_date", ascending=False
+                    )
+                    if not df_inv_all.empty
+                    else pd.DataFrame()
+                )
+                df_p_sorted = (
+                    df_prog_all.sort_values("trade_date", ascending=False)
+                    if not df_prog_all.empty
+                    else pd.DataFrame()
+                )
+
+                k_f_5d = (
+                    int(df_k_all.head(5)["foreign_net"].sum())
+                    if not df_k_all.empty
+                    else 0
+                )
+                k_inst_5d = (
+                    int(df_k_all.head(5)["institution_net"].sum())
+                    if not df_k_all.empty
+                    else 0
+                )
+                kq_f_5d = (
+                    int(df_kq_all.head(5)["foreign_net"].sum())
+                    if not df_kq_all.empty
+                    else 0
+                )
+                kq_inst_5d = (
+                    int(df_kq_all.head(5)["institution_net"].sum())
+                    if not df_kq_all.empty
+                    else 0
+                )
+                p_non_5d = (
+                    int(df_p_sorted.head(5)["non_arbitrage_net"].sum())
+                    if not df_p_sorted.empty
+                    else 0
+                )
+
+                k_f_days = (
+                    int((df_k_all.head(5)["foreign_net"] > 0).sum())
+                    if not df_k_all.empty
+                    else 0
+                )
+                k_inst_days = (
+                    int((df_k_all.head(5)["institution_net"] > 0).sum())
+                    if not df_k_all.empty
+                    else 0
+                )
+                kq_f_days = (
+                    int((df_kq_all.head(5)["foreign_net"] > 0).sum())
+                    if not df_kq_all.empty
+                    else 0
+                )
+                kq_inst_days = (
+                    int((df_kq_all.head(5)["institution_net"] > 0).sum())
+                    if not df_kq_all.empty
+                    else 0
+                )
+                p_non_days = (
+                    int((df_p_sorted.head(5)["non_arbitrage_net"] > 0).sum())
+                    if not df_p_sorted.empty
+                    else 0
+                )
+
+                if not df_p_sorted.empty and len(df_p_sorted) >= 5:
+                    p_non_20_series = df_p_sorted.head(20)[
+                        "non_arbitrage_net"
+                    ].astype(float)
+                    mean_20 = p_non_20_series.mean()
+                    std_20 = p_non_20_series.std()
+                    p_zscore = (
+                        ((p_non_val - mean_20) / std_20) if std_20 > 0 else 0.0
+                    )
                 else:
-                    st.info("💡 등록된 수급 TOP 종목 내역이 없습니다.")
+                    p_zscore = 0.0
 
-            with st.expander(
-                "🤖 Gemini AI 시장 전체 수급 종합 분석 리포트", expanded=False
-            ):
-                prompt_text = f"""[Market Regime 및 수급 종합 분석 요청]
+                if p_zscore >= 1.5:
+                    z_tag = "🔥 강한 수급 유입 (Z ≥ +1.5)"
+                elif p_zscore <= -1.5:
+                    z_tag = "❄️ 강한 수급 이탈 (Z ≤ -1.5)"
+                else:
+                    z_tag = "⚖ 정상 수급 범위"
+
+                divergence_msg = ""
+                if market_safe and p_non_5d < 0 and k_f_5d < 0:
+                    divergence_msg = "⚠️ [약세 다이버전스] 지수는 MA20 위에 있으나, 최근 5일 비차익/외국인 누적 수급이 연속 유출 중입니다."
+                elif not market_safe and p_non_5d > 0 and k_f_5d > 0:
+                    divergence_msg = "💡 [강세 다이버전스] 지수는 MA20 밑에 있으나, 최근 5일 스마트머니가 지속 저점 매수 중입니다."
+
+                if divergence_msg:
+                    st.warning(divergence_msg)
+
+                col_t1_left, col_t1_right = st.columns([1.1, 0.9])
+                with col_t1_left:
+                    st.markdown("###### 🏛 수급 강도 & 연속성 지표 (20일 기준)")
+                    z_help_text = (
+                        "💡 **비차익 수급 Z-Score 안내**\n"
+                        "• **개념**: 당일 비차익 순매수 금액이 최근 20영업일 평균 대비 몇 표준편차(σ) 떨어져 있는지 나타냅니다.\n"
+                        "• **판독 기준**:\n"
+                        "  - Z ≥ +1.5: 🔥 강한 스마트머니 유입\n"
+                        "  - Z ≤ -1.5: ❄️ 강한 수급 이탈\n"
+                        "  - -0.5 < Z < +0.5: ⚖️ 정상 범위"
+                    )
+
+                    r1_1, r1_2, r1_3 = st.columns(3)
+                    r1_1.metric(
+                        "비차익 Z-Score",
+                        f"{p_zscore:+.2f}",
+                        delta=z_tag,
+                        delta_color="off",
+                        help=z_help_text,
+                    )
+                    r1_2.metric(
+                        "비차익 5일 누적",
+                        f"{p_non_5d:+,d} 백만원",
+                        delta=f"5일 중 {p_non_days}일 순매수",
+                    )
+                    r1_3.metric(
+                        "KOSPI 외인 5일",
+                        f"{k_f_5d:+,d} 백만원",
+                        delta=f"5일 중 {k_f_days}일 순매수",
+                    )
+
+                    st.write("")
+                    r2_1, r2_2, r2_3 = st.columns(3)
+                    r2_1.metric(
+                        "KOSPI 기관 5일",
+                        f"{k_inst_5d:+,d} 백만원",
+                        delta=f"5일 중 {k_inst_days}일 순매수",
+                    )
+                    r2_2.metric(
+                        "KOSDAQ 외인 5일",
+                        f"{kq_f_5d:+,d} 백만원",
+                        delta=f"5일 중 {kq_f_days}일 순매수",
+                    )
+                    r2_3.metric(
+                        "KOSDAQ 기관 5일",
+                        f"{kq_inst_5d:+,d} 백만원",
+                        delta=f"5일 중 {kq_inst_days}일 순매수",
+                    )
+
+                    st.write("")
+                    st.markdown("###### 📊 당일 주체별 매매 동향 (백만원)")
+                    disp_inv_summary = pd.DataFrame([
+                        {
+                            "시장": "KOSPI",
+                            "외국인": int(k_row.get("foreign_net", 0)),
+                            "개인": int(k_row.get("individual_net", 0)),
+                            "기관계": int(k_row.get("institution_net", 0)),
+                        },
+                        {
+                            "시장": "KOSDAQ",
+                            "외국인": int(kq_row.get("foreign_net", 0)),
+                            "개인": int(kq_row.get("individual_net", 0)),
+                            "기관계": int(kq_row.get("institution_net", 0)),
+                        },
+                    ])
+                    st.dataframe(
+                        disp_inv_summary.style.format({
+                            "외국인": "{:+,d}",
+                            "개인": "{:+,d}",
+                            "기관계": "{:+,d}",
+                        }).map(
+                            lambda v: "color: red;"
+                            if v > 0
+                            else ("color: blue;" if v < 0 else ""),
+                            subset=["외국인", "개인", "기관계"],
+                        ),
+                        hide_index=True,
+                        use_container_width=True,
+                    )
+
+                with col_t1_right:
+                    st.markdown("###### 🏆 당일 외국인 / 기관 순매수 TOP 5")
+                    try:
+                        res_stock_liq = (
+                            supabase.table("daily_top_liquidity")
+                            .select("*")
+                            .eq("trade_date", target_date_str)
+                            .order("rank")
+                            .execute()
+                        )
+                        df_stock_liq = (
+                            pd.DataFrame(res_stock_liq.data)
+                            if res_stock_liq.data
+                            else pd.DataFrame()
+                        )
+                    except Exception:
+                        df_stock_liq = pd.DataFrame()
+
+                    if not df_stock_liq.empty:
+                        tab_foreign, tab_inst = st.tabs(
+                            ["🔥 외국인 TOP 5", "🏛 기관 TOP 5"]
+                        )
+                        with tab_foreign:
+                            df_f_top = df_stock_liq.sort_values(
+                                "foreign_net", ascending=False
+                            ).head(5)[
+                                [
+                                    "rank",
+                                    "name",
+                                    "close_price",
+                                    "change_rate",
+                                    "foreign_net",
+                                    "inst_net",
+                                ]
+                            ]
+                            df_f_top = df_f_top.rename(columns={
+                                "rank": "순위",
+                                "name": "종목명",
+                                "close_price": "종가",
+                                "change_rate": "등락률",
+                                "foreign_net": "외인",
+                                "inst_net": "기관",
+                            })
+                            st.dataframe(
+                                df_f_top.style.format({
+                                    "종가": "{:,.0f}",
+                                    "등락률": "{:+.2f}%",
+                                    "외인": "{:+,.0f}",
+                                    "기관": "{:+,.0f}",
+                                }).map(
+                                    lambda v: "color: red;"
+                                    if float(v) > 0
+                                    else ("color: blue;" if float(v) < 0 else ""),
+                                    subset=["등락률", "외인", "기관"],
+                                ),
+                                hide_index=True,
+                                use_container_width=True,
+                            )
+
+                        with tab_inst:
+                            df_i_top = df_stock_liq.sort_values(
+                                "inst_net", ascending=False
+                            ).head(5)[
+                                [
+                                    "rank",
+                                    "name",
+                                    "close_price",
+                                    "change_rate",
+                                    "foreign_net",
+                                    "inst_net",
+                                ]
+                            ]
+                            df_i_top = df_i_top.rename(columns={
+                                "rank": "순위",
+                                "name": "종목명",
+                                "close_price": "종가",
+                                "change_rate": "등락률",
+                                "foreign_net": "외인",
+                                "inst_net": "기관",
+                            })
+                            st.dataframe(
+                                df_i_top.style.format({
+                                    "종가": "{:,.0f}",
+                                    "등락률": "{:+.2f}%",
+                                    "외인": "{:+,.0f}",
+                                    "기관": "{:+,.0f}",
+                                }).map(
+                                    lambda v: "color: red;"
+                                    if float(v) > 0
+                                    else ("color: blue;" if float(v) < 0 else ""),
+                                    subset=["등락률", "외인", "기관"],
+                                ),
+                                hide_index=True,
+                                use_container_width=True,
+                            )
+                    else:
+                        st.info("💡 등록된 수급 TOP 종목 내역이 없습니다.")
+
+                with st.expander(
+                    "🤖 Gemini AI 시장 전체 수급 종합 분석 리포트", expanded=False
+                ):
+                    prompt_text = f"""[Market Regime 및 수급 종합 분석 요청]
 - 분석 일자: {target_date_str}
 - Market Regime 상태: {regime_status_str}
 - 비차익 Z-Score: {p_zscore:+.2f} ({z_tag})
@@ -1122,22 +1141,22 @@ if df_display is not None:
 - KOSPI 기관 5일 누적: {k_inst_5d:+,d} 백만원 (5일 중 {k_inst_days}일 순매수)
 - 지수-수급 다이버전스: {divergence_msg if divergence_msg else "특이사항 없음"}"""
 
-                st.code(prompt_text, language="markdown")
-                if st.button(
-                    "✨ Gemini AI 수급 종합 분석 실행",
-                    type="primary",
-                    use_container_width=True,
-                    key="btn_run_gemini_market_analysis",
-                ):
-                    with st.spinner("🤖 수급 흐름을 종합 분석 중입니다..."):
-                        analysis_res = analyze_stock_with_gemini(
-                            "MARKET_TREND",
-                            "코스피/코스닥 수급동향",
-                            {"MOT": 0, "RS(90)": 0, "이격도": 0, "종가": 0},
-                            prompt_text,
-                        )
-                    st.success("✅ 수급 분석 완료")
-                    st.markdown(analysis_res)
+                    st.code(prompt_text, language="markdown")
+                    if st.button(
+                        "✨ Gemini AI 수급 종합 분석 실행",
+                        type="primary",
+                        use_container_width=True,
+                        key="btn_run_gemini_market_analysis",
+                    ):
+                        with st.spinner("🤖 수급 흐름을 종합 분석 중입니다..."):
+                            analysis_res = analyze_stock_with_gemini(
+                                "MARKET_TREND",
+                                "코스피/코스닥 수급동향",
+                                {"MOT": 0, "RS(90)": 0, "이격도": 0, "종가": 0},
+                                prompt_text,
+                            )
+                        st.success("✅ 수급 분석 완료")
+                        st.markdown(analysis_res)
 
     # TAB 2: 🚀 알파 시그널
     with tab2:
@@ -1542,7 +1561,7 @@ if df_display is not None:
                                 )
 
             st.markdown("---")
-            # 📌 [요청 반영] 운용 자금 설정 및 리스크 관리 영역 맨 아래로 이동
+            # 📌 운용 자금 설정 및 리스크 관리 영역 맨 아래 배치
             with st.expander(
                 f"💰 [{market_type}] 운용 자금 설정 및 리스크 관리",
                 expanded=False,
@@ -1817,7 +1836,7 @@ if df_display is not None:
                         use_container_width=True,
                     )
 
-    # 📌 [신규 추가] TAB 5: 🧪 백테스트 리포트
+    # TAB 5: 🧪 백테스트 리포트
     with tab5:
         st.markdown("##### 🧪 [Top 7 Regime] 자동 백테스트 검증 리포트")
         st.caption(
