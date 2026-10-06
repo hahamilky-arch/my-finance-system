@@ -243,12 +243,16 @@ def display_trade_list(
                 f"{rec_rank_val}위" if rec_rank_val != "" else "-"
             )
 
-            # 📌 동적 매도/매수 사유 가공 (실제 적용 사유만 노출)
+            # 📌 실제 발동된 단일 사유 동적 바인딩
+            raw_reason = str(row.get("제외사유", "")).strip()
+
             if "매도" in title:
-                # DB/전략에서 전달된 '제외사유' 우선 참조
-                raw_reason = str(row.get("제외사유", "")).strip()
-                if raw_reason and raw_reason not in ["조건충족", "nan", "None"]:
-                    reason_desc = f"청산 조건 발생 ({raw_reason})"
+                if (
+                    raw_reason
+                    and raw_reason not in ["조건충족", "nan", "None"]
+                    and "/" not in raw_reason
+                ):
+                    reason_desc = f"{raw_reason}"
                 else:
                     if strategy_engine_mode == "short_term":
                         reason_desc = "단기 목표익절(+15%) 달성 또는 손절(-5%) / MA20 이탈"
@@ -776,7 +780,7 @@ if df_display is not None:
 
         st.divider()
 
-        # 📌 [요청 반영] 미국장일 때는 수급 데이터 제외 처리
+        # 미국장일 때는 수급 데이터 제외 처리
         if market_type == "US":
             st.info(
                 "💡 **미국 시장 안내**: 현재 한국장(KR)의 외국인/기관/비차익 수급 데이터만 수집하고 있습니다. 미국 시장(US)은 지수 추세 및 종목별 모멘텀 지표(Rank, RS)를 기준으로 전략이 동작합니다."
