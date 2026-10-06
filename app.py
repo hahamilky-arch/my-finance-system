@@ -32,7 +32,7 @@ components.html(
     <script>
     const preventReload = function (e) {
         e.preventDefault();
-        e.returnValue = ''; // 브라우저 표준 경고 팝업 활성화
+        e.returnValue = '';
     };
     window.parent.addEventListener('beforeunload', preventReload);
     </script>
@@ -244,7 +244,7 @@ def display_trade_list(
             )
 
             if "매도" in title:
-                reason_desc = "지수 2일선 이탈, ATR손절(-2.5x) 또는 익절 트레일링스탑(+15% 달성 후 -8% 반락)"
+                reason_desc = "지수 2일선 이탈, ATR손절(-2.5x) 또는 익절 스탑(+8% 달성 후 트레일링/본절)"
                 position_info = ""
                 tag_html = ""
             else:
@@ -539,7 +539,7 @@ with st.sidebar:
 
     if current_engine_key == "strat3_top7":
         st.success(
-            "🔥 전략 3 모드: Top 7 / Rank≤15 / ATR 2.5x손절 / +15%달성시 -8%익절스탑"
+            "🔥 전략 3 모드: Top 7 / Rank≤15 / ATR 2.5x손절 / +8%달성시 본절·익절스탑"
         )
         top_n_cfg = 7
         sl_cfg = -2.5
@@ -1407,7 +1407,6 @@ if df_display is not None:
                         holdings_merged = holdings_db
                         holdings_merged["name"] = holdings_merged["ticker"]
 
-                    # 📌 분리된 risk_manager 모듈로 리스크 & 스톱가 계산
                     holdings_list, total_risk_pct, risk_violations = (
                         calculate_holdings_risk(
                             holdings_merged,
