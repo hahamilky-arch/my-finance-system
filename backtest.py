@@ -1,182 +1,211 @@
-import pandas as pd
+import os
+import sys
 import numpy as np
-import warnings
-warnings.filterwarnings('ignore')
+import pandas as pd
+from db import supabase
+from strategy import get_data
 
-# 1. 데이터 불러오기 (선생님의 실제 파일명으로 지정)
-file_path = "20260102-0807_dailyAnalysis_KR_6.csv"
-df = pd.read_csv(file_path, encoding='utf-8', on_bad_lines='skip')
 
-# 컬럼명 정리 및 날짜, 숫자형 변환
-df.columns = [c.replace('\\_', '_').strip() for c in df.columns]
-df['price_date'] = pd.to_datetime(df['price_date'], errors='coerce')
-df = df.dropna(subset=['price_date'])
+def run_backtest(start_date="2026-01-01", end_date="2026-09-30", market_type="KR"):
+    print("=" * 65)
+    print(f"🚀 Quant Alpha [Top 7 Regime] 백테스트 실행")
+    print(f"• 테스트 기간: {start_date} ~ {end_date}")
+    print(f"• 대상 시장: {market_type}")
+    print(f"• 핵심 수식: +8% 달성 시 트레일링 스탑 (max(최고가*0.92, 평단가))")
+    print("=" * 65)
 
-num_cols = ['close_price', 'ma10', 'ma20', 'rs_score', 'rs_score_10', 'momentum_rank', 'high_price', 'low_price']
-for c in num_cols:
-    if c in df.columns:
-        df[c] = pd.to_numeric(df[c], errors='coerce')
+    # 1. Supabase에서 해당 기간 내 전체 영업일 조회
+    try:
+        res_dates = (
+            supabase.table("daily_analysis")
+            .select("price_date")
+            .eq("market", market_type)
+            .gte("price_date", start_date)
+            .lte("price_date", end_date)
+            .order("price_date", ascending=True)
+            .execute()
+        )
+    except Exception as e:
+        print(f"❌ DB 접속 및 날짜 조회 실패: {e}")
+        return
 
-df = df.sort_values(['price_date', 'ticker'])
+    if not res_dates.data:
+        print(f"❌ {start_date} ~ {end_date} 기간 내 백테스트 데이터가 존재하지 않습니다.")
+        return
 
-# 💡 이격도 계산 (가장 핵심적인 타이밍 지표)
-df['disp_20'] = (df['close_price'] / df['ma20']) - 1
+    all_dates = sorted(list(set(row["price_date"] for row in res_dates.data)))
+    print(f"📅 총 {len(all_dates)}영업일 데이터 수집 완료\n")
 
-# ==========================================
-# ⚙️ 2. 백테스트 환경 설정 (알파 시스템)
-# ==========================================
-SLIPPAGE = 0.003       # 매수/매도 시 각각 0.3% 불리하게 체결 (왕복 0.6%)
-TOP_N = 3              # 포트폴리오 최대 편입 종목 수 (국장 기준)
-SL = -0.06             # 고정 손절선 (-6%)
-TRIG = 0.12            # 트레일링 스탑 트리거 (+12% 이상 상승 시)
-STOP = -0.05           # 트레일링 스탑 익절선 (고점 대비 -5% 하락 시)
-START_CASH = 100000000 # 초기 투자금 (1억 원)
+    # 2. 백테스트 계좌 상태 초기화
+    initial_capital = 20000000.0  # 초기 자본금 (2,000만원)
+    current_cash = initial_capital
+    portfolio = {}  # {ticker: {'buy_price': float, 'qty': float, 'buy_date': str, 'highest_price': float, 'name': str}}
+    closed_trades = []  # 청산 내역 저장
+    daily_equity_history = []  # 일별 계좌 총 자산 기록
 
-dates = sorted(df['price_date'].unique())
-portfolio = {} 
-cash = START_CASH
-trade_log = []
-equity_curve = []
-sold_history = {} # 쿨다운 체크용 (매도 후 3일)
+    top_n_cfg = 7
+    sl_cfg = -2.5
 
-# ==========================================
-# 🔄 3. 일별 시뮬레이션 엔진 가동
-# ==========================================
-for dt in dates:
-    daily_data = df[df['price_date'] == dt].drop_duplicates('ticker').set_index('ticker')
-    
-    # [현재 총 자산 계산]
-    current_equity = cash
-    for tk, pos in portfolio.items():
-        if tk in daily_data.index:
-            current_equity += pos['qty'] * daily_data.loc[tk, 'close_price']
-        else:
-            current_equity += pos['qty'] * pos['buy_price']
-            
-    # [매도 로직 평가]
-    for tk, pos in list(portfolio.items()):
-        if tk not in daily_data.index:
+    # 3. 일별 백테스트 시뮬레이션 루프 실행
+    for target_date in all_dates:
+        # 매일 매일 Top7 전략 엔진 실행
+        df_daily = get_data(
+            target_date=target_date,
+            all_dates=all_dates,
+            market_type=market_type,
+            top_n_cfg=top_n_cfg,
+            sl_cfg=sl_cfg,
+            rebalance_cycle="상시 (빈자리 즉시 채우기)",
+            is_bull_mode=True,
+            stop_new_buy=False,
+            reduce_holdings=False,
+            strategy_engine_mode="strat3_top7",
+        )
+
+        if df_daily is None or df_daily.empty:
             continue
-        row = daily_data.loc[tk]
-        curr_price = row['close_price']
-        curr_high = row['high_price'] if pd.notna(row['high_price']) else curr_price
-        curr_low = row['low_price'] if pd.notna(row['low_price']) else curr_price
-        
-        # 고점 갱신
-        if curr_high > pos['peak']:
-            pos['peak'] = curr_high
-            
-        sell_price = None
-        reason = ""
-        
-        # 1) 손절가 도달 (-6%)
-        sl_price = pos['buy_price'] * (1 + SL)
-        if curr_low <= sl_price:
-            sell_price = sl_price * (1 - SLIPPAGE)
-            reason = "Stop Loss"
-        # 2) 트레일링 스탑 도달
-        elif pos['peak'] >= pos['buy_price'] * (1 + TRIG):
-            ts_price = pos['peak'] * (1 - abs(STOP))
-            if curr_low <= ts_price:
-                sell_price = ts_price * (1 - SLIPPAGE)
-                reason = "Trailing Stop"
-        # 3) 추세 이탈 (30위 밖 밀림 or MA20 하향 이탈)
-        elif row['momentum_rank'] > 30 or curr_price < row['ma20']:
-            sell_price = curr_price * (1 - SLIPPAGE)
-            reason = "Trend Exit"
-            
-        if sell_price:
-            cash += pos['qty'] * sell_price
-            ret = (sell_price / pos['buy_price']) - 1
-            trade_log.append({
-                'ticker': tk, 'buy_date': pos['buy_date'], 'sell_date': dt,
-                'buy_price': pos['buy_price'], 'sell_price': sell_price,
-                'return': ret, 'reason': reason
-            })
-            sold_history[tk] = {'sell_date': dt, 'sell_price': sell_price}
-            del portfolio[tk]
-    
-    # [매수 로직 평가]
-    slots_available = TOP_N - len(portfolio)
-    if slots_available > 0:
-        # 필터링: 순위<=20 & RS(90, 10)>0 & MA20 위 (밴드 제한 없음)
-        cond = (daily_data['momentum_rank'] <= 20) & \
-               (daily_data['rs_score'] > 0) & \
-               (daily_data['rs_score_10'] > 0) & \
-               (daily_data['close_price'] > daily_data['ma20'])
-        
-        candidates = daily_data[cond].copy()
-        
-        # 💡 핵심 로직: 이격도 오름차순(가장 MA에 잘 붙은 종목) 최우선 정렬!
-        candidates = candidates.sort_values(by=['disp_20', 'momentum_rank'], ascending=[True, True])
-        
-        for tk, row in candidates.iterrows():
-            if len(portfolio) >= TOP_N:
-                break
-            if tk in portfolio:
-                continue
-                
-            # 쿨다운 필터 (직전 매도가 재돌파 시에는 허용)
-            if tk in sold_history:
-                days_since_sell = (pd.to_datetime(dt) - pd.to_datetime(sold_history[tk]['sell_date'])).days
-                if days_since_sell <= 3:
-                    if row['close_price'] <= sold_history[tk]['sell_price']:
-                        continue
-                        
-            # 슬리피지를 더하여 비싸게 매수
-            buy_price = row['close_price'] * (1 + SLIPPAGE)
-            
-            # 자산 3등분 분산 매수
-            buy_val = current_equity / TOP_N 
-            buy_val = min(cash, buy_val)
-            if buy_val < (current_equity * 0.1): 
-                continue # 현금이 너무 적으면 패스
-                
-            qty = buy_val / buy_price
-            cash -= buy_val
-            portfolio[tk] = {'buy_price': buy_price, 'qty': qty, 'peak': buy_price, 'buy_date': dt}
-            
-    # [일마감 자산 기록]
-    eod_equity = cash
-    for tk, pos in portfolio.items():
-        if tk in daily_data.index:
-            eod_equity += pos['qty'] * daily_data.loc[tk, 'close_price']
-        else:
-            eod_equity += pos['qty'] * pos['buy_price']
-    equity_curve.append({'date': dt, 'equity': eod_equity})
 
-# ==========================================
-# 📊 4. 결과 출력
-# ==========================================
-eq_df = pd.DataFrame(equity_curve)
-eq_df['cum_max'] = eq_df['equity'].cummax()
-eq_df['drawdown'] = eq_df['equity'] / eq_df['cum_max'] - 1
-mdd = eq_df['drawdown'].min()
-total_ret = (eq_df['equity'].iloc[-1] / eq_df['equity'].iloc[0]) - 1
+        # 3-1. 현재 보유 종목의 평가금액 및 최고가 갱신
+        holdings_eval_total = 0.0
+        daily_prices = dict(zip(df_daily["ticker"], df_daily["종가"]))
+        daily_names = dict(zip(df_daily["ticker"], df_daily["종목명"]))
 
-trades_df = pd.DataFrame(trade_log)
-if not trades_df.empty:
-    win_rate = (trades_df['return'] > 0).mean()
-    win_trades = trades_df[trades_df['return'] > 0]
-    loss_trades = trades_df[trades_df['return'] <= 0]
-    avg_win = win_trades['return'].mean() if not win_trades.empty else 0
-    avg_loss = abs(loss_trades['return'].mean()) if not loss_trades.empty else 0
-    pf = avg_win / avg_loss if avg_loss != 0 else np.inf
-    
-    print("=" * 40)
-    print("🏆 [알파 시스템 최종 백테스트 결과] 🏆")
-    print(f"기간: {eq_df['date'].min().date()} ~ {eq_df['date'].max().date()}")
-    print(f"💰 누적 수익률 : {total_ret*100:.2f} %")
-    print(f"📉 최악의 낙폭(MDD) : {mdd*100:.2f} %")
-    print(f"⚖️ 손익비(PF) : {pf:.2f}")
-    print(f"🎯 총 매매 횟수 : {len(trades_df)}회 (승률 {win_rate*100:.1f}%)")
-    print("=" * 40)
-    print("\n[매도(청산) 사유별 횟수]")
-    print(trades_df['reason'].value_counts())
-    
-    eq_df['month'] = pd.to_datetime(eq_df['date']).dt.strftime('%Y-%m')
-    monthly = eq_df.groupby('month').apply(lambda x: (x['equity'].iloc[-1] / x['equity'].iloc[0]) - 1)
-    print("\n[📅 월별 수익률]")
-    print((monthly * 100).apply(lambda x: f"{x:+.2f}%"))
-else:
-    print("해당 기간 동안 거래 내역이 발생하지 않았습니다.")
+        for t_code, p_info in list(portfolio.items()):
+            curr_price = daily_prices.get(t_code, p_info["buy_price"])
+            p_info["highest_price"] = max(p_info["highest_price"], curr_price)
+            holdings_eval_total += curr_price * p_info["qty"]
+
+        # 3-2. 매도 필요 종목 청산 처리 (기존 보유 종목 중 매도필요 판정 종목)
+        sells = df_daily[df_daily["매매상태"] == "매도필요"]
+        for _, sell_row in sells.iterrows():
+            sticker = sell_row["ticker"]
+            if sticker in portfolio:
+                p_item = portfolio.pop(sticker)
+                sell_price = float(sell_row["종가"])
+                profit_amt = (sell_price - p_item["buy_price"]) * p_item["qty"]
+                profit_rate = (
+                    ((sell_price / p_item["buy_price"]) - 1.0) * 100
+                    if p_item["buy_price"] > 0
+                    else 0.0
+                )
+
+                current_cash += sell_price * p_item["qty"]
+
+                closed_trades.append({
+                    "ticker": sticker,
+                    "name": p_item["name"],
+                    "buy_date": p_item["buy_date"],
+                    "sell_date": target_date,
+                    "buy_price": p_item["buy_price"],
+                    "sell_price": sell_price,
+                    "highest_price": p_item["highest_price"],
+                    "qty": p_item["qty"],
+                    "profit_amt": profit_amt,
+                    "profit_rate": profit_rate,
+                })
+
+        # 3-3. 신규 매수 추천 종목 진입 처리
+        buys = df_daily[df_daily["매매상태"] == "매수추천"]
+        empty_slots = top_n_cfg - len(portfolio)
+
+        if empty_slots > 0 and not buys.empty:
+            target_buys = buys.head(empty_slots)
+            total_account_val = current_cash + holdings_eval_total
+            slot_budget = total_account_val / top_n_cfg  # 슬롯 당 등가 분산
+
+            for _, buy_row in target_buys.iterrows():
+                bticker = buy_row["ticker"]
+                buy_price = float(buy_row["종가"])
+
+                if buy_price > 0 and current_cash >= slot_budget:
+                    buy_qty = slot_budget / buy_price
+                    current_cash -= slot_budget
+
+                    portfolio[bticker] = {
+                        "buy_price": buy_price,
+                        "qty": buy_qty,
+                        "buy_date": target_date,
+                        "highest_price": buy_price,
+                        "name": daily_names.get(bticker, bticker),
+                    }
+
+        # 3-4. 당일 총 자산 기록
+        daily_total_equity = current_cash + sum(
+            daily_prices.get(t, info["buy_price"]) * info["qty"]
+            for t, info in portfolio.items()
+        )
+        daily_equity_history.append({
+            "date": target_date,
+            "equity": daily_total_equity,
+        })
+
+    # 4. 종합 백테스트 성과 지표 계산
+    df_equity = pd.DataFrame(daily_equity_history)
+    if df_equity.empty:
+        print("❌ 성과 데이터를 집계할 수 없습니다.")
+        return
+
+    final_equity = df_equity.iloc[-1]["equity"]
+    cumulative_return = (
+        (final_equity - initial_capital) / initial_capital
+    ) * 100
+
+    # MDD (최대 낙폭) 계산
+    df_equity["peak"] = df_equity["equity"].cummax()
+    df_equity["drawdown"] = (
+        (df_equity["equity"] - df_equity["peak"]) / df_equity["peak"]
+    ) * 100
+    mdd = df_equity["drawdown"].min()
+
+    # 청산 거래 성과 집계
+    df_trades = pd.DataFrame(closed_trades)
+    total_trades_count = len(df_trades)
+
+    if total_trades_count > 0:
+        wins = df_trades[df_trades["profit_amt"] > 0]
+        losses = df_trades[df_trades["profit_amt"] < 0]
+
+        win_rate = (len(wins) / total_trades_count) * 100
+        avg_profit = (
+            wins["profit_amt"].mean() if not wins.empty else 0.0
+        )
+        avg_loss = (
+            abs(losses["profit_amt"].mean()) if not losses.empty else 0.0
+        )
+        profit_factor = (
+            (avg_profit / avg_loss) if avg_loss > 0 else 999.0
+        )
+        avg_return_per_trade = df_trades["profit_rate"].mean()
+    else:
+        win_rate = avg_return_per_trade = profit_factor = 0.0
+
+    # 5. 백테스트 결과 리포트 출력
+    print("\n" + "=" * 65)
+    print("📊 Top 7 전략 백테스트 종합 성과 리포트")
+    print("=" * 65)
+    print(f"• 테스트 기간       : {start_date} ~ {end_date}")
+    print(f"• 총 영업일 수     : {len(all_dates)}일")
+    print(f"• 초기 자본금       : {initial_capital:,.0f}원")
+    print(f"• 최종 평가 자산    : {final_equity:,.0f}원")
+    print(
+        f"• 누적 수익률       : {cumulative_return:+.2f}%"
+    )
+    print(f"• 최대 낙폭 (MDD)  : {mdd:.2f}%")
+    print("-" * 65)
+    print(f"• 총 청산 거래 건수 : {total_trades_count}건")
+    print(f"• 승률 (Win Rate)   : {win_rate:.1f}%")
+    print(
+        f"• 건당 평균 수익률  : {avg_return_per_trade:+.2f}%"
+    )
+    print(
+        f"• 손익비 (Profit Factor): {profit_factor:.2f}"
+    )
+    print("=" * 65)
+
+
+if __name__ == "__main__":
+    # 터미널 실행 인자 처리 (예: python backtest.py 2026-01-01 2026-09-30)
+    s_date = sys.argv[1] if len(sys.argv) > 1 else "2026-01-01"
+    e_date = sys.argv[2] if len(sys.argv) > 2 else "2026-09-30"
+
+    run_backtest(start_date=s_date, end_date=e_date)
