@@ -29,27 +29,42 @@ def run_backtest(
     print(f"• 핵심 수식         : +8% 달성 시 트레일링 스탑 (max(최고가*0.92, 평단가))")
     print("=" * 65)
 
-    # 1. 대상 기간의 전체 영업일(price_date) 목록 우선 수집
+    # 1. 1,000건 제한 우회를 위한 전체 영업일(price_date) 페이징 수집
     print("📅 영업일 목록을 수집 중입니다...")
-    try:
-        res_dates = (
-            supabase.table("daily_analysis")
-            .select("price_date")
-            .eq("market", market_type)
-            .gte("price_date", start_date)
-            .lte("price_date", end_date)
-            .order("price_date", desc=False)
-            .execute()
-        )
-    except Exception as e:
-        print(f"❌ 영업일 목록 조회 실패: {e}")
-        return
+    all_dates_set = set()
+    offset = 0
+    page_size = 5000
 
-    if not res_dates.data:
+    while True:
+        try:
+            res_dates = (
+                supabase.table("daily_analysis")
+                .select("price_date")
+                .eq("market", market_type)
+                .gte("price_date", start_date)
+                .lte("price_date", end_date)
+                .range(offset, offset + page_size - 1)
+                .execute()
+            )
+            if not res_dates.data:
+                break
+
+            for row in res_dates.data:
+                all_dates_set.add(row["price_date"])
+
+            if len(res_dates.data) < page_size:
+                break
+            offset += page_size
+        except Exception as e:
+            print(f"❌ 영업일 목록 수집 중 오류: {e}")
+            break
+
+    all_dates = sorted(list(all_dates_set))
+
+    if not all_dates:
         print(f"❌ {start_date} ~ {end_date} 기간 내 영업일 데이터가 없습니다.")
         return
 
-    all_dates = sorted(list(set(row["price_date"] for row in res_dates.data)))
     print(f"📅 총 {len(all_dates)}영업일 확인 완료!")
 
     # 2. 영업일별로 정확히 '상위 50개(momentum_rank <= 50)' 레코드만 일괄 수집
@@ -65,7 +80,7 @@ def run_backtest(
                 )
                 .eq("market", market_type)
                 .eq("price_date", d_str)
-                .lte("momentum_rank", 50)  # 👈 일별 상위 50개 정확히 필터링
+                .lte("momentum_rank", 50)
                 .order("momentum_rank", desc=False)
                 .execute()
             )
