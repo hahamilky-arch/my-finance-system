@@ -2,16 +2,45 @@ import os
 import sys
 import numpy as np
 import pandas as pd
-from db import supabase
+from supabase import create_client, Client
+
+# 📌 1. backtest.py 내부에서 직접 Supabase 클라이언트 독립 로드 (다른 파일 수정 없음)
+def get_backtest_supabase_client() -> Client:
+    url = os.environ.get("SUPABASE_URL")
+    key = os.environ.get("SUPABASE_KEY")
+
+    if not url or not key:
+        try:
+            import streamlit as st
+
+            url = st.secrets.get("SUPABASE_URL")
+            key = st.secrets.get("SUPABASE_KEY")
+        except Exception:
+            pass
+
+    if not url or not key:
+        raise ValueError(
+            "❌ SUPABASE_URL 또는 SUPABASE_KEY를 찾을 수 없습니다. (환경 변수 또는 secrets.toml 확인 필요)"
+        )
+
+    return create_client(url, key)
+
+
+# 독립 접속 클라이언트 생성
+supabase: Client = get_backtest_supabase_client()
+
+# 기존 전략 모듈 임포트
 from strategy import get_data
 
 
-def run_backtest(start_date="2026-01-01", end_date="2026-09-30", market_type="KR"):
+def run_backtest(
+    start_date="2026-01-01", end_date="2026-09-30", market_type="KR"
+):
     print("=" * 65)
     print(f"🚀 Quant Alpha [Top 7 Regime] 백테스트 실행")
-    print(f"• 테스트 기간: {start_date} ~ {end_date}")
-    print(f"• 대상 시장: {market_type}")
-    print(f"• 핵심 수식: +8% 달성 시 트레일링 스탑 (max(최고가*0.92, 평단가))")
+    print(f"• 테스트 기간       : {start_date} ~ {end_date}")
+    print(f"• 대상 시장         : {market_type}")
+    print(f"• 핵심 수식         : +8% 달성 시 트레일링 스탑 (max(최고가*0.92, 평단가))")
     print("=" * 65)
 
     # 1. Supabase에서 해당 기간 내 전체 영업일 조회
@@ -30,7 +59,9 @@ def run_backtest(start_date="2026-01-01", end_date="2026-09-30", market_type="KR
         return
 
     if not res_dates.data:
-        print(f"❌ {start_date} ~ {end_date} 기간 내 백테스트 데이터가 존재하지 않습니다.")
+        print(
+            f"❌ {start_date} ~ {end_date} 기간 내 백테스트 데이터가 존재하지 않습니다."
+        )
         return
 
     all_dates = sorted(list(set(row["price_date"] for row in res_dates.data)))
@@ -39,7 +70,7 @@ def run_backtest(start_date="2026-01-01", end_date="2026-09-30", market_type="KR
     # 2. 백테스트 계좌 상태 초기화
     initial_capital = 20000000.0  # 초기 자본금 (2,000만원)
     current_cash = initial_capital
-    portfolio = {}  # {ticker: {'buy_price': float, 'qty': float, 'buy_date': str, 'highest_price': float, 'name': str}}
+    portfolio = {}  # 보유 종목 {ticker: {'buy_price', 'qty', 'buy_date', 'highest_price', 'name'}}
     closed_trades = []  # 청산 내역 저장
     daily_equity_history = []  # 일별 계좌 총 자산 기록
 
@@ -48,7 +79,7 @@ def run_backtest(start_date="2026-01-01", end_date="2026-09-30", market_type="KR
 
     # 3. 일별 백테스트 시뮬레이션 루프 실행
     for target_date in all_dates:
-        # 매일 매일 Top7 전략 엔진 실행
+        # 매일 Top7 전략 엔진 실행
         df_daily = get_data(
             target_date=target_date,
             all_dates=all_dates,
@@ -75,7 +106,7 @@ def run_backtest(start_date="2026-01-01", end_date="2026-09-30", market_type="KR
             p_info["highest_price"] = max(p_info["highest_price"], curr_price)
             holdings_eval_total += curr_price * p_info["qty"]
 
-        # 3-2. 매도 필요 종목 청산 처리 (기존 보유 종목 중 매도필요 판정 종목)
+        # 3-2. 매도 필요 종목 청산 처리
         sells = df_daily[df_daily["매매상태"] == "매도필요"]
         for _, sell_row in sells.iterrows():
             sticker = sell_row["ticker"]
@@ -166,15 +197,11 @@ def run_backtest(start_date="2026-01-01", end_date="2026-09-30", market_type="KR
         losses = df_trades[df_trades["profit_amt"] < 0]
 
         win_rate = (len(wins) / total_trades_count) * 100
-        avg_profit = (
-            wins["profit_amt"].mean() if not wins.empty else 0.0
-        )
+        avg_profit = wins["profit_amt"].mean() if not wins.empty else 0.0
         avg_loss = (
             abs(losses["profit_amt"].mean()) if not losses.empty else 0.0
         )
-        profit_factor = (
-            (avg_profit / avg_loss) if avg_loss > 0 else 999.0
-        )
+        profit_factor = (avg_profit / avg_loss) if avg_loss > 0 else 999.0
         avg_return_per_trade = df_trades["profit_rate"].mean()
     else:
         win_rate = avg_return_per_trade = profit_factor = 0.0
@@ -184,27 +211,20 @@ def run_backtest(start_date="2026-01-01", end_date="2026-09-30", market_type="KR
     print("📊 Top 7 전략 백테스트 종합 성과 리포트")
     print("=" * 65)
     print(f"• 테스트 기간       : {start_date} ~ {end_date}")
-    print(f"• 총 영업일 수     : {len(all_dates)}일")
+    print(f"• 총 영업일 수       : {len(all_dates)}일")
     print(f"• 초기 자본금       : {initial_capital:,.0f}원")
     print(f"• 최종 평가 자산    : {final_equity:,.0f}원")
-    print(
-        f"• 누적 수익률       : {cumulative_return:+.2f}%"
-    )
-    print(f"• 최대 낙폭 (MDD)  : {mdd:.2f}%")
+    print(f"• 누적 수익률       : {cumulative_return:+.2f}%")
+    print(f"• 최대 낙폭 (MDD)    : {mdd:.2f}%")
     print("-" * 65)
     print(f"• 총 청산 거래 건수 : {total_trades_count}건")
     print(f"• 승률 (Win Rate)   : {win_rate:.1f}%")
-    print(
-        f"• 건당 평균 수익률  : {avg_return_per_trade:+.2f}%"
-    )
-    print(
-        f"• 손익비 (Profit Factor): {profit_factor:.2f}"
-    )
+    print(f"• 건당 평균 수익률  : {avg_return_per_trade:+.2f}%")
+    print(f"• 손익비 (PF)       : {profit_factor:.2f}")
     print("=" * 65)
 
 
 if __name__ == "__main__":
-    # 터미널 실행 인자 처리 (예: python backtest.py 2026-01-01 2026-09-30)
     s_date = sys.argv[1] if len(sys.argv) > 1 else "2026-01-01"
     e_date = sys.argv[2] if len(sys.argv) > 2 else "2026-09-30"
 
