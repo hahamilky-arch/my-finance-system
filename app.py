@@ -737,7 +737,7 @@ if df_display is not None:
         "🧪 백테스트 리포트",
     ])
 
-    # 📌 TAB 1: 📊 시장 & 수급 종합 (최근 10일 빈도수 및 수급 차트 복원)
+    # 📌 TAB 1: 📊 시장 & 수급 종합
     with tab1:
         st.markdown("###### 📊 시장 방향성 & 수급 종합")
 
@@ -890,7 +890,18 @@ if df_display is not None:
                     else pd.DataFrame()
                 )
 
-                # 📌 [요청 반영 2] 최근 10일 기준 수급 순매수 빈도수(일수) 계산 복원
+                # 📌 최근 5일 / 10일 순매수 일수(빈도수) 계산
+                k_f_days = (
+                    int((df_k_all.head(5)["foreign_net"] > 0).sum())
+                    if not df_k_all.empty
+                    else 0
+                )
+                k_inst_days = (
+                    int((df_k_all.head(5)["institution_net"] > 0).sum())
+                    if not df_k_all.empty
+                    else 0
+                )
+
                 k_f_10d_cnt = (
                     int((df_k_all.head(10)["foreign_net"] > 0).sum())
                     if not df_k_all.empty
@@ -1153,33 +1164,51 @@ if df_display is not None:
                             f"💡 {supply_target_date_str} 일자의 수급 TOP 종목 내역이 없습니다."
                         )
 
-                # 📌 [요청 반영 3] 시장 전체 투자자별 & 프로그램 매매동향 차트 복원
+                # 📌 코스피 / 코스닥 주체별 누적 차트 및 프로그램 차트 (날짜 yyyymmdd 형식 포맷팅)
                 st.divider()
-                st.markdown("###### 📈 최근 시장 투자자별 & 프로그램 매매 추이 차트")
+                st.markdown("###### 📈 최근 시장 투자자별 & 프로그램 매매 추이 차트 (최근 20영업일)")
                 
-                col_chart_inv, col_chart_prog = st.columns(2)
+                col_chart_k, col_chart_kq, col_chart_prog = st.columns(3)
                 
-                with col_chart_inv:
+                # 1. 코스피 주체별 누적 차트
+                with col_chart_k:
                     if not df_k_all.empty:
-                        df_k_chart = df_k_all.head(20).sort_values("trade_date")
+                        df_k_chart = df_k_all.head(20).sort_values("trade_date").copy()
+                        df_k_chart["date_fmt"] = pd.to_datetime(df_k_chart["trade_date"]).dt.strftime("%Y%m%d")
                         fig_inv = gg.Figure()
-                        fig_inv.add_trace(gg.Scatter(x=df_k_chart["trade_date"], y=df_k_chart["foreign_net"].cumsum(), mode="lines+markers", name="KOSPI 외인 누적", line=dict(color="#d62728")))
-                        fig_inv.add_trace(gg.Scatter(x=df_k_chart["trade_date"], y=df_k_chart["institution_net"].cumsum(), mode="lines+markers", name="KOSPI 기관 누적", line=dict(color="#1f77b4")))
-                        fig_inv.add_trace(gg.Scatter(x=df_k_chart["trade_date"], y=df_k_chart["individual_net"].cumsum(), mode="lines+markers", name="KOSPI 개인 누적", line=dict(color="#2ca02c")))
-                        fig_inv.update_layout(title="KOSPI 주체별 누적 매매 추이 (20일)", height=260, margin=dict(l=20, r=20, t=35, b=20), legend=dict(orientation="h", y=1.1))
+                        fig_inv.add_trace(gg.Scatter(x=df_k_chart["date_fmt"], y=df_k_chart["foreign_net"].cumsum(), mode="lines+markers", name="외인", line=dict(color="#d62728")))
+                        fig_inv.add_trace(gg.Scatter(x=df_k_chart["date_fmt"], y=df_k_chart["institution_net"].cumsum(), mode="lines+markers", name="기관", line=dict(color="#1f77b4")))
+                        fig_inv.add_trace(gg.Scatter(x=df_k_chart["date_fmt"], y=df_k_chart["individual_net"].cumsum(), mode="lines+markers", name="개인", line=dict(color="#2ca02c")))
+                        fig_inv.update_layout(title="KOSPI 주체별 누적 (백만원)", height=260, margin=dict(l=10, r=10, t=35, b=20), xaxis=dict(type="category"), legend=dict(orientation="h", y=1.12))
                         st.plotly_chart(fig_inv, use_container_width=True)
                     else:
-                        st.caption("투자자별 추이 차트 데이터 없음")
+                        st.caption("KOSPI 차트 데이터 없음")
 
+                # 2. [요청 반영] 코스닥 주체별 누적 차트
+                with col_chart_kq:
+                    if not df_kq_all.empty:
+                        df_kq_chart = df_kq_all.head(20).sort_values("trade_date").copy()
+                        df_kq_chart["date_fmt"] = pd.to_datetime(df_kq_chart["trade_date"]).dt.strftime("%Y%m%d")
+                        fig_kq = gg.Figure()
+                        fig_kq.add_trace(gg.Scatter(x=df_kq_chart["date_fmt"], y=df_kq_chart["foreign_net"].cumsum(), mode="lines+markers", name="외인", line=dict(color="#d62728")))
+                        fig_kq.add_trace(gg.Scatter(x=df_kq_chart["date_fmt"], y=df_kq_chart["institution_net"].cumsum(), mode="lines+markers", name="기관", line=dict(color="#1f77b4")))
+                        fig_kq.add_trace(gg.Scatter(x=df_kq_chart["date_fmt"], y=df_kq_chart["individual_net"].cumsum(), mode="lines+markers", name="개인", line=dict(color="#2ca02c")))
+                        fig_kq.update_layout(title="KOSDAQ 주체별 누적 (백만원)", height=260, margin=dict(l=10, r=10, t=35, b=20), xaxis=dict(type="category"), legend=dict(orientation="h", y=1.12))
+                        st.plotly_chart(fig_kq, use_container_width=True)
+                    else:
+                        st.caption("KOSDAQ 차트 데이터 없음")
+
+                # 3. 프로그램 비차익 차트
                 with col_chart_prog:
                     if not df_p_sorted.empty:
-                        df_p_chart = df_p_sorted.head(20).sort_values("trade_date")
+                        df_p_chart = df_p_sorted.head(20).sort_values("trade_date").copy()
+                        df_p_chart["date_fmt"] = pd.to_datetime(df_p_chart["trade_date"]).dt.strftime("%Y%m%d")
                         fig_prog = gg.Figure()
-                        fig_prog.add_trace(gg.Bar(x=df_p_chart["trade_date"], y=df_p_chart["non_arbitrage_net"], name="비차익 순매수", marker_color=np.where(df_p_chart["non_arbitrage_net"] > 0, "#d62728", "#1f77b4")))
-                        fig_prog.update_layout(title="프로그램 비차익 순매수 추이 (20일)", height=260, margin=dict(l=20, r=20, t=35, b=20))
+                        fig_prog.add_trace(gg.Bar(x=df_p_chart["date_fmt"], y=df_p_chart["non_arbitrage_net"], name="비차익", marker_color=np.where(df_p_chart["non_arbitrage_net"] > 0, "#d62728", "#1f77b4")))
+                        fig_prog.update_layout(title="프로그램 비차익 (백만원)", height=260, margin=dict(l=10, r=10, t=35, b=20), xaxis=dict(type="category"))
                         st.plotly_chart(fig_prog, use_container_width=True)
                     else:
-                        st.caption("프로그램 추이 차트 데이터 없음")
+                        st.caption("프로그램 차트 데이터 없음")
 
                 # 해당 일자의 전체 수급 데이터 표 전체 노출
                 st.divider()
@@ -1229,6 +1258,7 @@ if df_display is not None:
                         f"💡 {supply_target_date_str} 일자에 수집된 전체 수급 종목 내역이 존재하지 않습니다."
                     )
 
+                # 📌 NameError 방지를 위해 k_f_days 변수가 포함된 Gemini 분석 프롬프트
                 with st.expander(
                     "🤖 Gemini AI 시장 전체 수급 종합 분석 리포트", expanded=False
                 ):
@@ -1257,7 +1287,7 @@ if df_display is not None:
                         st.success("✅ 수급 분석 완료")
                         st.markdown(analysis_res)
 
-    # 📌 TAB 2: 🚀 알파 시그널 (행 선택 동기화 연동 보완)
+    # 📌 TAB 2: 🚀 알파 시그널
     with tab2:
         st.markdown("###### 📋 알파 시그널 스크리닝 (모멘텀 순위 상위 200위)")
         filter_opt = st.radio(
@@ -1327,7 +1357,6 @@ if df_display is not None:
                 key="overview_table_selection",
             )
 
-            # 📌 [요청 반영 1] 행 선택 시 선택 Ticker 세션 상태 저장 및 하단 동기화
             if event and event.get("selection", {}).get("rows"):
                 selected_row_idx = event["selection"]["rows"][0]
                 selected_row = df_target.iloc[selected_row_idx]
@@ -1395,7 +1424,7 @@ if df_display is not None:
                 st.write("")
                 st.divider()
 
-                # 2. 선택 종목 수급 동향 (표 & 차트 동기화)
+                # 2. 선택 종목 수급 동향 (표 & 차트 동기화 + 날짜 yyyymmdd 포맷)
                 st.markdown("###### 🏛️ 선택 종목 외국인/기관 수급 동향")
 
                 if market_type == "US":
@@ -1421,20 +1450,21 @@ if df_display is not None:
                         df_supply = pd.DataFrame()
 
                     if not df_supply.empty:
-                        df_supply = df_supply.sort_values("trade_date")
+                        df_supply = df_supply.sort_values("trade_date").copy()
                         df_supply["foreign_cum"] = (
                             df_supply["foreign_net"].cumsum()
                         )
                         df_supply["inst_cum"] = df_supply["inst_net"].cumsum()
+                        df_supply["date_fmt"] = pd.to_datetime(df_supply["trade_date"]).dt.strftime("%Y%m%d")
 
                         col_s_chart, col_s_table = st.columns([1.2, 1])
 
-                        # 수급 누적 추이 차트
+                        # 수급 누적 추이 차트 (yyyymmdd 형식 적용)
                         with col_s_chart:
                             fig_supply = gg.Figure()
                             fig_supply.add_trace(
                                 gg.Scatter(
-                                    x=df_supply["trade_date"],
+                                    x=df_supply["date_fmt"],
                                     y=df_supply["foreign_cum"],
                                     mode="lines+markers",
                                     name="외국인 누적수급",
@@ -1443,7 +1473,7 @@ if df_display is not None:
                             )
                             fig_supply.add_trace(
                                 gg.Scatter(
-                                    x=df_supply["trade_date"],
+                                    x=df_supply["date_fmt"],
                                     y=df_supply["inst_cum"],
                                     mode="lines+markers",
                                     name="기관 누적수급",
@@ -1454,6 +1484,7 @@ if df_display is not None:
                                 title=f"[{sel_chart_ticker}] 최근 외국인 vs 기관 누적 수급 추이 (백만원)",
                                 height=280,
                                 margin=dict(l=20, r=20, t=40, b=20),
+                                xaxis=dict(type="category"),
                                 legend=dict(
                                     orientation="h",
                                     yanchor="bottom",
