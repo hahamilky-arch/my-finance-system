@@ -626,7 +626,7 @@ with st.sidebar:
     col_side_kr.metric("KR추천", f"{kr_buy_count}개")
     col_side_us.metric("US추천", f"{us_buy_count}개")
 
-# 📌 2. 상단 헤더 & 정돈된 잠금해제 UI
+# 📌 상단 헤더 & 잠금해제 UI
 col_title, col_auth_status = st.columns([2.5, 1.5])
 with col_title:
     st.markdown("##### 📈 Quant Alpha Strategy")
@@ -737,11 +737,11 @@ if df_display is not None:
         "🧪 백테스트 리포트",
     ])
 
-    # 📌 TAB 1: 📊 시장 & 수급 종합
+    # 📌 TAB 1: 📊 시장 & 수급 종합 (최근 10일 빈도수 및 수급 차트 복원)
     with tab1:
         st.markdown("###### 📊 시장 방향성 & 수급 종합")
 
-        # 📌 상단 수급 날짜 피커 및 핵심 메트릭 1줄 배치
+        # 상단 수급 날짜 피커 및 핵심 메트릭 1줄 배치
         c0, c1, c2, c3, c4 = st.columns([1.2, 1, 1, 1, 1])
 
         with c0:
@@ -890,6 +890,38 @@ if df_display is not None:
                     else pd.DataFrame()
                 )
 
+                # 📌 [요청 반영 2] 최근 10일 기준 수급 순매수 빈도수(일수) 계산 복원
+                k_f_10d_cnt = (
+                    int((df_k_all.head(10)["foreign_net"] > 0).sum())
+                    if not df_k_all.empty
+                    else 0
+                )
+                k_i_10d_cnt = (
+                    int((df_k_all.head(10)["institution_net"] > 0).sum())
+                    if not df_k_all.empty
+                    else 0
+                )
+                kq_f_10d_cnt = (
+                    int((df_kq_all.head(10)["foreign_net"] > 0).sum())
+                    if not df_kq_all.empty
+                    else 0
+                )
+                kq_i_10d_cnt = (
+                    int((df_kq_all.head(10)["institution_net"] > 0).sum())
+                    if not df_kq_all.empty
+                    else 0
+                )
+                p_non_10d_cnt = (
+                    int((df_p_sorted.head(10)["non_arbitrage_net"] > 0).sum())
+                    if not df_p_sorted.empty
+                    else 0
+                )
+
+                p_non_5d = (
+                    int(df_p_sorted.head(5)["non_arbitrage_net"].sum())
+                    if not df_p_sorted.empty
+                    else 0
+                )
                 k_f_5d = (
                     int(df_k_all.head(5)["foreign_net"].sum())
                     if not df_k_all.empty
@@ -908,37 +940,6 @@ if df_display is not None:
                 kq_inst_5d = (
                     int(df_kq_all.head(5)["institution_net"].sum())
                     if not df_kq_all.empty
-                    else 0
-                )
-                p_non_5d = (
-                    int(df_p_sorted.head(5)["non_arbitrage_net"].sum())
-                    if not df_p_sorted.empty
-                    else 0
-                )
-
-                k_f_days = (
-                    int((df_k_all.head(5)["foreign_net"] > 0).sum())
-                    if not df_k_all.empty
-                    else 0
-                )
-                k_inst_days = (
-                    int((df_k_all.head(5)["institution_net"] > 0).sum())
-                    if not df_k_all.empty
-                    else 0
-                )
-                kq_f_days = (
-                    int((df_kq_all.head(5)["foreign_net"] > 0).sum())
-                    if not df_kq_all.empty
-                    else 0
-                )
-                kq_inst_days = (
-                    int((df_kq_all.head(5)["institution_net"] > 0).sum())
-                    if not df_kq_all.empty
-                    else 0
-                )
-                p_non_days = (
-                    int((df_p_sorted.head(5)["non_arbitrage_net"] > 0).sum())
-                    if not df_p_sorted.empty
                     else 0
                 )
 
@@ -972,7 +973,7 @@ if df_display is not None:
 
                 col_t1_left, col_t1_right = st.columns([1.1, 0.9])
                 with col_t1_left:
-                    st.markdown("###### 🏛 수급 강도 & 연속성 지표 (20일 기준)")
+                    st.markdown("###### 🏛 수급 강도 & 연속성 지표 (최근 10일 빈도수 포함)")
                     z_help_text = (
                         "💡 **비차익 수급 Z-Score 안내**\n"
                         "• **개념**: 당일 비차익 순매수 금액이 최근 20영업일 평균 대비 몇 표준편차(σ) 떨어져 있는지 나타냅니다.\n"
@@ -992,31 +993,31 @@ if df_display is not None:
                     )
                     r1_2.metric(
                         "비차익 5일 누적",
-                        f"{p_non_5d:+,d} 백만원",
-                        delta=f"5일 중 {p_non_days}일 순매수",
+                        f"{p_non_5d:+,d} 백만",
+                        delta=f"10일 중 {p_non_10d_cnt}일 순매수",
                     )
                     r1_3.metric(
                         "KOSPI 외인 5일",
-                        f"{k_f_5d:+,d} 백만원",
-                        delta=f"5일 중 {k_f_days}일 순매수",
+                        f"{k_f_5d:+,d} 백만",
+                        delta=f"10일 중 {k_f_10d_cnt}일 순매수",
                     )
 
                     st.write("")
                     r2_1, r2_2, r2_3 = st.columns(3)
                     r2_1.metric(
                         "KOSPI 기관 5일",
-                        f"{k_inst_5d:+,d} 백만원",
-                        delta=f"5일 중 {k_inst_days}일 순매수",
+                        f"{k_inst_5d:+,d} 백만",
+                        delta=f"10일 중 {k_i_10d_cnt}일 순매수",
                     )
                     r2_2.metric(
                         "KOSDAQ 외인 5일",
-                        f"{kq_f_5d:+,d} 백만원",
-                        delta=f"5일 중 {kq_f_days}일 순매수",
+                        f"{kq_f_5d:+,d} 백만",
+                        delta=f"10일 중 {kq_f_10d_cnt}일 순매수",
                     )
                     r2_3.metric(
                         "KOSDAQ 기관 5일",
-                        f"{kq_inst_5d:+,d} 백만원",
-                        delta=f"5일 중 {kq_inst_days}일 순매수",
+                        f"{kq_inst_5d:+,d} 백만",
+                        delta=f"10일 중 {kq_i_10d_cnt}일 순매수",
                     )
 
                     st.write("")
@@ -1152,7 +1153,35 @@ if df_display is not None:
                             f"💡 {supply_target_date_str} 일자의 수급 TOP 종목 내역이 없습니다."
                         )
 
-                # 📌 해당 일자의 전체 수급 데이터 표 전체 노출
+                # 📌 [요청 반영 3] 시장 전체 투자자별 & 프로그램 매매동향 차트 복원
+                st.divider()
+                st.markdown("###### 📈 최근 시장 투자자별 & 프로그램 매매 추이 차트")
+                
+                col_chart_inv, col_chart_prog = st.columns(2)
+                
+                with col_chart_inv:
+                    if not df_k_all.empty:
+                        df_k_chart = df_k_all.head(20).sort_values("trade_date")
+                        fig_inv = gg.Figure()
+                        fig_inv.add_trace(gg.Scatter(x=df_k_chart["trade_date"], y=df_k_chart["foreign_net"].cumsum(), mode="lines+markers", name="KOSPI 외인 누적", line=dict(color="#d62728")))
+                        fig_inv.add_trace(gg.Scatter(x=df_k_chart["trade_date"], y=df_k_chart["institution_net"].cumsum(), mode="lines+markers", name="KOSPI 기관 누적", line=dict(color="#1f77b4")))
+                        fig_inv.add_trace(gg.Scatter(x=df_k_chart["trade_date"], y=df_k_chart["individual_net"].cumsum(), mode="lines+markers", name="KOSPI 개인 누적", line=dict(color="#2ca02c")))
+                        fig_inv.update_layout(title="KOSPI 주체별 누적 매매 추이 (20일)", height=260, margin=dict(l=20, r=20, t=35, b=20), legend=dict(orientation="h", y=1.1))
+                        st.plotly_chart(fig_inv, use_container_width=True)
+                    else:
+                        st.caption("투자자별 추이 차트 데이터 없음")
+
+                with col_chart_prog:
+                    if not df_p_sorted.empty:
+                        df_p_chart = df_p_sorted.head(20).sort_values("trade_date")
+                        fig_prog = gg.Figure()
+                        fig_prog.add_trace(gg.Bar(x=df_p_chart["trade_date"], y=df_p_chart["non_arbitrage_net"], name="비차익 순매수", marker_color=np.where(df_p_chart["non_arbitrage_net"] > 0, "#d62728", "#1f77b4")))
+                        fig_prog.update_layout(title="프로그램 비차익 순매수 추이 (20일)", height=260, margin=dict(l=20, r=20, t=35, b=20))
+                        st.plotly_chart(fig_prog, use_container_width=True)
+                    else:
+                        st.caption("프로그램 추이 차트 데이터 없음")
+
+                # 해당 일자의 전체 수급 데이터 표 전체 노출
                 st.divider()
                 st.markdown(
                     f"###### 📋 {supply_target_date_str} 해당 일자 전체 수급 데이터 현황"
@@ -1228,7 +1257,7 @@ if df_display is not None:
                         st.success("✅ 수급 분석 완료")
                         st.markdown(analysis_res)
 
-    # 📌 TAB 2: 🚀 알파 시그널
+    # 📌 TAB 2: 🚀 알파 시그널 (행 선택 동기화 연동 보완)
     with tab2:
         st.markdown("###### 📋 알파 시그널 스크리닝 (모멘텀 순위 상위 200위)")
         filter_opt = st.radio(
@@ -1298,51 +1327,60 @@ if df_display is not None:
                 key="overview_table_selection",
             )
 
+            # 📌 [요청 반영 1] 행 선택 시 선택 Ticker 세션 상태 저장 및 하단 동기화
             if event and event.get("selection", {}).get("rows"):
-                selected_row = df_target.iloc[event["selection"]["rows"][0]]
-                st.session_state["selected_ticker_from_table"] = selected_row[
-                    "ticker"
-                ]
+                selected_row_idx = event["selection"]["rows"][0]
+                selected_row = df_target.iloc[selected_row_idx]
+                st.session_state["selected_ticker_from_table"] = str(
+                    selected_row["ticker"]
+                ).strip().upper()
                 st.session_state["tab2_selected_stock_name"] = selected_row[
                     "종목명"
                 ]
 
         st.divider()
 
-        is_tab2_auto_expanded = (
-            True if st.session_state.get("selected_ticker_from_table") else False
-        )
+        selected_ticker_state = st.session_state.get("selected_ticker_from_table")
+        is_tab2_auto_expanded = True if selected_ticker_state else False
 
         with st.expander(
             "🔍 선택 종목 통합 분석 센터 (기술적 차트 & 수급 동향 & Gemini AI 분석)",
             expanded=is_tab2_auto_expanded,
         ):
-            top200_tickers = df_display.head(200)["ticker"].tolist()
-            sel_ticker_from_tab1 = st.session_state.get(
-                "selected_ticker_from_table"
-            )
+            top200_tickers = [
+                str(t).strip().upper()
+                for t in df_display.head(200)["ticker"].tolist()
+            ]
 
             if (
-                sel_ticker_from_tab1
-                and sel_ticker_from_tab1 not in top200_tickers
+                selected_ticker_state
+                and selected_ticker_state not in top200_tickers
             ):
-                top200_tickers.insert(0, sel_ticker_from_tab1)
+                top200_tickers.insert(0, selected_ticker_state)
 
             ticker_name_map = dict(
-                zip(df_display["ticker"], df_display["종목명"])
+                zip(
+                    df_display["ticker"].astype(str).str.strip().str.upper(),
+                    df_display["종목명"],
+                )
             )
+
             default_ticker = (
-                sel_ticker_from_tab1
-                if sel_ticker_from_tab1 in top200_tickers
+                selected_ticker_state
+                if selected_ticker_state in top200_tickers
                 else (top200_tickers[0] if top200_tickers else None)
+            )
+
+            target_idx = (
+                top200_tickers.index(default_ticker)
+                if default_ticker in top200_tickers
+                else 0
             )
 
             sel_chart_ticker = st.selectbox(
                 "분석 대상 종목 선택",
                 options=top200_tickers,
-                index=top200_tickers.index(default_ticker)
-                if default_ticker in top200_tickers
-                else 0,
+                index=target_idx,
                 format_func=lambda x: f"[{x}] {ticker_name_map.get(x, x)}",
                 key="tab2_integrated_chart_selector",
             )
