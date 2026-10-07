@@ -129,7 +129,7 @@ def draw_integrated_chart(
 
     chart_price = alt.layer(line_stock, line_ma20)
 
-    # 📌 4. 매수/매도 타점 요소 생성 (종목용 & 지수용)
+    # 4. 매수/매도 타점 수직선 & 삼각형 마커 (종목 차트 및 지수 차트 공유)
     trade_elements_stock = []
     trade_elements_index = []
 
@@ -227,7 +227,7 @@ def draw_integrated_chart(
         .interactive(bind_y=False)
     )
 
-    # 5. 지수 차트 생성
+    # 5. 지수 차트
     line_idx = (
         alt.Chart(df_merged)
         .mark_line(color="#2ca02c", strokeWidth=2.5)
