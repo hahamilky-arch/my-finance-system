@@ -733,7 +733,6 @@ if df_display is not None:
     with tab1:
         st.markdown("###### 📊 시장 방향성 & 수급 종합")
 
-        # 상단 수급 날짜 피커 및 핵심 메트릭 1줄 배치
         c0, c1, c2, c3, c4 = st.columns([1.2, 1, 1, 1, 1])
 
         with c0:
@@ -882,7 +881,6 @@ if df_display is not None:
                     else pd.DataFrame()
                 )
 
-                # 최근 5일 / 10일 순매수 일수(빈도수) 계산
                 k_f_days = (
                     int((df_k_all.head(5)["foreign_net"] > 0).sum())
                     if not df_k_all.empty
@@ -1156,13 +1154,11 @@ if df_display is not None:
                             f"💡 {supply_target_date_str} 일자의 수급 TOP 종목 내역이 없습니다."
                         )
 
-                # 📌 차트 범례 색상: 개인=파란색(#1f77b4), 기관=초록색(#2ca02c), 외국인=빨간색(#d62728)
                 st.divider()
                 st.markdown("###### 📈 최근 시장 투자자별 & 프로그램 매매 추이 차트 (최근 20영업일)")
                 
                 col_chart_k, col_chart_kq, col_chart_prog = st.columns(3)
                 
-                # 1. 코스피 주체별 누적 차트
                 with col_chart_k:
                     if not df_k_all.empty:
                         df_k_chart = df_k_all.head(20).sort_values("trade_date").copy()
@@ -1176,7 +1172,6 @@ if df_display is not None:
                     else:
                         st.caption("KOSPI 차트 데이터 없음")
 
-                # 2. 코스닥 주체별 누적 차트
                 with col_chart_kq:
                     if not df_kq_all.empty:
                         df_kq_chart = df_kq_all.head(20).sort_values("trade_date").copy()
@@ -1190,7 +1185,6 @@ if df_display is not None:
                     else:
                         st.caption("KOSDAQ 차트 데이터 없음")
 
-                # 3. 프로그램 비차익 차트
                 with col_chart_prog:
                     if not df_p_sorted.empty:
                         df_p_chart = df_p_sorted.head(20).sort_values("trade_date").copy()
@@ -1202,7 +1196,6 @@ if df_display is not None:
                     else:
                         st.caption("프로그램 차트 데이터 없음")
 
-                # 해당 일자의 전체 수급 데이터 표 전체 노출
                 st.divider()
                 st.markdown(
                     f"###### 📋 {supply_target_date_str} 해당 일자 전체 수급 데이터 현황"
@@ -1348,7 +1341,6 @@ if df_display is not None:
                 key="overview_table_selection",
             )
 
-            # 행 선택 시 종목 자동 동기화
             if event and event.get("selection", {}).get("rows"):
                 selected_row_idx = event["selection"]["rows"][0]
                 selected_row = df_target.iloc[selected_row_idx]
@@ -1360,7 +1352,6 @@ if df_display is not None:
 
         st.divider()
 
-        # 페이지 인라인 "위로 가기" 버튼 및 앵커
         st.markdown("<div id='analysis-center-section'></div>", unsafe_allow_html=True)
         col_center_title, col_top_btn = st.columns([4, 1])
         with col_center_title:
@@ -1400,7 +1391,6 @@ if df_display is not None:
             )
 
             if sel_chart_ticker:
-                # 1. 기술적 주가 차트
                 st.markdown("###### 📉 개별 종목 기술적 차트")
                 draw_integrated_chart(
                     sel_chart_ticker, market_type, ticker_name_map
@@ -1409,7 +1399,6 @@ if df_display is not None:
                 st.write("")
                 st.divider()
 
-                # 2. 선택 종목 수급 동향 (표 & 차트 동기화 + 범례 색상 적용)
                 st.markdown("###### 🏛️ 선택 종목 외국인/기관 수급 동향")
 
                 if market_type == "US":
@@ -1444,7 +1433,6 @@ if df_display is not None:
 
                         col_s_chart, col_s_table = st.columns([1.2, 1])
 
-                        # 수급 누적 추이 차트 (기관=초록색 #2ca02c)
                         with col_s_chart:
                             fig_supply = gg.Figure()
                             fig_supply.add_trace(
@@ -1482,7 +1470,6 @@ if df_display is not None:
                                 fig_supply, use_container_width=True
                             )
 
-                        # 최근 일자별 수급 상세 표
                         with col_s_table:
                             disp_supply_table = (
                                 df_supply[
@@ -1524,7 +1511,6 @@ if df_display is not None:
                 st.write("")
                 st.divider()
 
-                # 3. Google Gemini AI 개별 종목 분석
                 st.markdown("###### 🤖 Google Gemini AI 개별 종목 분석")
                 used_cnt, remain_cnt = get_remaining_quota()
                 st.caption(
@@ -1806,7 +1792,6 @@ if df_display is not None:
 
             st.markdown("---")
 
-            # 운용 자금 설정 및 리스크 관리
             with st.expander(
                 f"💰 [{market_type}] 운용 자금 설정 및 리스크 관리",
                 expanded=False,
@@ -1873,7 +1858,6 @@ if df_display is not None:
                 )
                 account_total_input = new_capital_input
 
-            # 매매지시서 탭 하단: 보유 종목 스톱기준(1번/2번) 및 전략 조건 명시
             st.markdown("###### 🌐 전략 매매 기준 및 스톱기준 상세 가이드")
 
             st.markdown(
@@ -1914,7 +1898,7 @@ if df_display is not None:
                     """
                 )
 
-    # 📌 TAB 4: 📈 성과 분석 (매매 복기 자동 분석 기능 탑재)
+    # 📌 TAB 4: 📈 성과 분석 (단일 복기 센터로 정돈)
     with tab4:
         st.markdown(f"##### 📊 {market_type} 시장 성과 분석 리포트")
 
@@ -2085,7 +2069,6 @@ if df_display is not None:
                     st.markdown("###### 🔍 수익 기여도 시각화 차트")
                     draw_attribution_charts(df_hist, market_type)
 
-                    # 📌 매매 청산 목록 및 종목 클릭 시 자동 복기 연동
                     st.write("")
                     st.markdown("###### 📜 상세 청산 매매 내역 (종목 클릭 시 하단 자동 복기 분석)")
                     
@@ -2132,74 +2115,7 @@ if df_display is not None:
                             st.session_state["selected_perf_trade_data"] = selected_trade.to_dict()
                             st.rerun()
 
-                    # 3. 선택된 종목 복기 상세 분석 센터 (차트 타점 표시 & 당시 지표 연동 보완)
-                    st.divider()
-                    sel_trade_data = st.session_state.get("selected_perf_trade_data")
-
-                    if sel_trade_data:
-                        stock_nm = sel_trade_data.get("종목명", sel_trade_data.get("ticker"))
-                        ticker_code = str(sel_trade_data.get("ticker")).strip().upper()
-                        buy_date_str = str(sel_trade_data.get("buy_date"))
-                        sell_date_str = str(sel_trade_data.get("sell_date"))
-                        p_amt = float(sel_trade_data.get("profit_amount", 0))
-                        p_rate = float(sel_trade_data.get("profit_rate", 0))
-                        h_days = int(sel_trade_data.get("holding_days", 0))
-                        b_price = float(sel_trade_data.get("buy_price", 0))
-                        s_price = float(sel_trade_data.get("sell_price", 0))
-
-                        # DB 데이터 및 백업 지표 탐색 (키 값 대응)
-                        matched_display = df_display[df_display["ticker"] == ticker_code]
-                        target_row_info = matched_display.iloc[0] if not matched_display.empty else {}
-
-                        exit_reason = sel_trade_data.get("exit_reason", sel_trade_data.get("sell_reason", "시스템 조건 청산"))
-                        buy_rank = sel_trade_data.get("buy_rank", sel_trade_data.get("rank", target_row_info.get("순위", "-")))
-                        buy_mot = sel_trade_data.get("buy_mot", sel_trade_data.get("MOT", target_row_info.get("MOT", "-")))
-                        buy_rs90 = sel_trade_data.get("buy_rs90", sel_trade_data.get("RS(90)", target_row_info.get("RS(90)", "-")))
-                        buy_dispar = sel_trade_data.get("buy_dispar", sel_trade_data.get("이격도", target_row_info.get("이격도", "-")))
-
-                        # 포맷 변환 안전 처리
-                        buy_mot_str = f"{float(buy_mot):.2f}" if isinstance(buy_mot, (int, float)) and buy_mot != "-" else str(buy_mot)
-                        buy_rs90_str = f"{float(buy_rs90):.2f}" if isinstance(buy_rs90, (int, float)) and buy_rs90 != "-" else str(buy_rs90)
-                        buy_dispar_str = f"{float(buy_dispar):+.2f}%" if isinstance(buy_dispar, (int, float)) and buy_dispar != "-" else str(buy_dispar)
-
-                        st.markdown(f"###### 🔍 [{stock_nm} ({ticker_code})] 매매 복기 상세 분석")
-
-                        # 정량적 데이터 요약 카드
-                        c_r1, c_r2, c_r3, c_r4, c_r5 = st.columns(5)
-                        c_r1.metric("실현 손익", profit_fmt(p_amt), delta=f"{p_rate:+.2f}%")
-                        c_r2.metric("매수 단가 / 일자", price_fmt.format(b_price), delta=buy_date_str, delta_color="off")
-                        c_r3.metric("매도 단가 / 일자", price_fmt.format(s_price), delta=sell_date_str, delta_color="off")
-                        c_r4.metric("보유 기간", f"{h_days}일")
-                        c_r5.metric("청산 사유", str(exit_reason))
-
-                        # 진입/청산 당시 핵심 지표 카드
-                        st.write("")
-                        st.markdown("###### 📊 진입/청산 당시 퀀트 지표 현황")
-                        m_m1, m_m2, m_m3, m_m4 = st.columns(4)
-                        m_m1.metric("진입 순위", f"{buy_rank}위" if str(buy_rank) != "-" else "-")
-                        m_m2.metric("모멘텀 점수 (MOT)", buy_mot_str)
-                        m_m3.metric("상대강도 (RS 90)", buy_rs90_str)
-                        m_m4.metric("이격도 (MA20 대비)", buy_dispar_str)
-
-                        # 📌 기술적 차트에 매수/매도 타점 수직선 & 마커 추가
-                        st.write("")
-                        st.markdown("###### 📉 매매 당시 주가 차트 및 진입/청산 타점 (🔴 매수 / 🔵 매도)")
-                        
-                        # 1. 차트 기본 생성
-                        #
-                        # 기술적 차트 동기화 (매수/매도 타점 및 가격 전달)
-                        #st.write("")
-                        #st.markdown("###### 📉 매매 당시 주가 차트 및 진입/청산 타점 (🔴 매수 / 🔵 매도)")
-                        draw_integrated_chart(
-                            ticker_code,
-                            market_type,
-                            {ticker_code: stock_nm},
-                            buy_date=buy_date_str,
-                            sell_date=sell_date_str,
-                            buy_price=b_price,
-                        )
-                    
-                    # 3. 선택된 종목 복기 상세 분석 센터 (진입 & 청산 지표 비교 출력)
+                    # 3. 선택된 종목 복기 상세 분석 센터 (단일화)
                     st.divider()
                     sel_trade_data = st.session_state.get("selected_perf_trade_data")
 
