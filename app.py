@@ -42,14 +42,14 @@ components.html(
 
 st.markdown("<div id='top-section'></div>", unsafe_allow_html=True)
 
-# 📌 1. 상단 탭 Sticky 설정 및 스타일
+# 📌 1. 상단 탭 Sticky 설정 및 정돈된 스타일
 st.markdown(
     """
     <style>
     [data-testid="stMainBlockContainer"], .main, .main .block-container {
         overflow: visible !important;
     }
-    .block-container { padding-top: 1.5rem !important; padding-bottom: 2rem !important; }
+    .block-container { padding-top: 1rem !important; padding-bottom: 2rem !important; }
     html, body, [class*="st-"] { font-size: 14px !important; }
     h5 { font-size: 1.2rem !important; margin-bottom: 0.5rem !important; }
     
@@ -60,8 +60,8 @@ st.markdown(
         top: 0px !important;
         background-color: #ffffff !important;
         z-index: 99999 !important;
-        padding-top: 10px !important;
-        padding-bottom: 6px !important;
+        padding-top: 8px !important;
+        padding-bottom: 4px !important;
         border-bottom: 2px solid #e0e0e0 !important;
         box-shadow: 0px 4px 10px rgba(0,0,0,0.05);
     }
@@ -626,7 +626,8 @@ with st.sidebar:
     col_side_kr.metric("KR추천", f"{kr_buy_count}개")
     col_side_us.metric("US추천", f"{us_buy_count}개")
 
-col_title, col_auth_status = st.columns([3, 1])
+# 📌 2. 상단 헤더 & 간소화된 잠금해제 UI
+col_title, col_auth_status = st.columns([2.5, 1.5])
 with col_title:
     st.markdown("##### 📈 Quant Alpha Strategy")
 
@@ -635,29 +636,32 @@ with col_auth_status:
         elapsed = time.time() - st.session_state.get("last_auth_time", 0)
         remaining_sec = max(0, int(LOGIN_TIMEOUT_SECONDS - elapsed))
         rem_min, rem_sec = remaining_sec // 60, remaining_sec % 60
-        st.caption(f"🔓 인증됨 (남은 시간: {rem_min}분 {rem_sec}초)")
 
-        c_ext, c_lock = st.columns(2)
+        c_time, c_ext, c_lock = st.columns([1.5, 1, 1])
+        c_time.markdown(
+            f"<div style='margin-top:6px; font-size:0.85em; color:#2e7d32; font-weight:bold;'>🔓 인증됨 ({rem_min}:{rem_sec:02d})</div>",
+            unsafe_allow_html=True,
+        )
         with c_ext:
-            if st.button(
-                "🔄 5분 연장",
-                key="btn_extend_auth",
-                use_container_width=True,
-            ):
+            if st.button("연장", key="btn_extend_auth", use_container_width=True):
                 st.session_state["last_auth_time"] = time.time()
                 st.rerun()
         with c_lock:
-            if st.button(
-                "🔒 잠금", key="btn_global_lock", use_container_width=True
-            ):
+            if st.button("잠금", key="btn_global_lock", use_container_width=True):
                 st.session_state["trade_authenticated"] = False
                 st.session_state["last_auth_time"] = 0
                 st.rerun()
     else:
-        with st.popover("🔑 잠금 해제", use_container_width=True):
+        c_p1, c_p2 = st.columns([2, 1])
+        with c_p1:
             input_pwd_global = st.text_input(
-                "매매 비밀번호", type="password", key="global_pwd_input"
+                "PW",
+                type="password",
+                key="global_pwd_input",
+                label_visibility="collapsed",
+                placeholder="비밀번호",
             )
+        with c_p2:
             if st.button(
                 "해제",
                 key="btn_global_unlock",
@@ -669,7 +673,7 @@ with col_auth_status:
                     st.session_state["last_auth_time"] = time.time()
                     st.rerun()
                 else:
-                    st.error("비밀번호 불일치")
+                    st.error("불일치")
 
 cap_key = "us_capital" if market_type == "US" else "kr_capital"
 default_cap = st.session_state.get(
@@ -733,9 +737,22 @@ if df_display is not None:
         "🧪 백테스트 리포트",
     ])
 
-    # TAB 1: 📊 시장 & 수급 종합
+    # 📌 TAB 1: 📊 시장 & 수급 종합 (별도 날짜 조회 조건 추가)
     with tab1:
         st.markdown("###### 📊 시장 방향성 & 수급 종합")
+
+        # 📌 [요청 반영 1] 시장 수급 전용 독립 날짜 선택기
+        col_m_reg, col_m_picker = st.columns([3, 1])
+        with col_m_picker:
+            market_supply_date = st.date_input(
+                "📅 수급 조회 날짜",
+                value=selected_date,
+                key="tab1_market_supply_date_picker",
+            )
+            supply_target_date_str = pd.to_datetime(
+                market_supply_date
+            ).strftime("%Y-%m-%d")
+
         c1, c2, c3, c4 = st.columns(4)
         c1.metric(
             "전략 엔진",
@@ -780,14 +797,14 @@ if df_display is not None:
         else:
             if not is_authenticated:
                 st.info(
-                    "🔒 상세 투자자별/프로그램 매매동향 및 수급 지표는 우측 상단 **[🔑 잠금 해제]** 후 확인하실 수 있습니다."
+                    "🔒 상세 투자자별/프로그램 매매동향 및 수급 지표는 우측 상단 **[비밀번호 해제]** 후 확인하실 수 있습니다."
                 )
             else:
                 try:
                     res_inv_all = (
                         supabase.table("market_investor_trends")
                         .select("*")
-                        .lte("trade_date", target_date_str)
+                        .lte("trade_date", supply_target_date_str)
                         .order("trade_date", desc=True)
                         .limit(60)
                         .execute()
@@ -804,7 +821,7 @@ if df_display is not None:
                     res_prog_all = (
                         supabase.table("market_program_trends")
                         .select("*")
-                        .lte("trade_date", target_date_str)
+                        .lte("trade_date", supply_target_date_str)
                         .order("trade_date", desc=True)
                         .limit(60)
                         .execute()
@@ -818,12 +835,16 @@ if df_display is not None:
                     df_prog_all = pd.DataFrame()
 
                 df_inv = (
-                    df_inv_all[df_inv_all["trade_date"] == target_date_str]
+                    df_inv_all[
+                        df_inv_all["trade_date"] == supply_target_date_str
+                    ]
                     if not df_inv_all.empty
                     else pd.DataFrame()
                 )
                 df_prog = (
-                    df_prog_all[df_prog_all["trade_date"] == target_date_str]
+                    df_prog_all[
+                        df_prog_all["trade_date"] == supply_target_date_str
+                    ]
                     if not df_prog_all.empty
                     else pd.DataFrame()
                 )
@@ -998,7 +1019,9 @@ if df_display is not None:
                     )
 
                     st.write("")
-                    st.markdown("###### 📊 당일 주체별 매매 동향 (백만원)")
+                    st.markdown(
+                        f"###### 📊 주체별 매매 동향 ({supply_target_date_str} 기준 / 백만원)"
+                    )
                     disp_inv_summary = pd.DataFrame([
                         {
                             "시장": "KOSPI",
@@ -1029,12 +1052,12 @@ if df_display is not None:
                     )
 
                 with col_t1_right:
-                    st.markdown("###### 🏆 당일 외국인 / 기관 순매수 TOP 5")
+                    st.markdown("###### 🏆 외국인 / 기관 순매수 TOP 5")
                     try:
                         res_stock_liq = (
                             supabase.table("daily_top_liquidity")
                             .select("*")
-                            .eq("trade_date", target_date_str)
+                            .eq("trade_date", supply_target_date_str)
                             .order("rank")
                             .execute()
                         )
@@ -1124,13 +1147,15 @@ if df_display is not None:
                                 use_container_width=True,
                             )
                     else:
-                        st.info("💡 등록된 수급 TOP 종목 내역이 없습니다.")
+                        st.info(
+                            f"💡 {supply_target_date_str} 일자의 수급 TOP 종목 내역이 없습니다."
+                        )
 
                 with st.expander(
                     "🤖 Gemini AI 시장 전체 수급 종합 분석 리포트", expanded=False
                 ):
                     prompt_text = f"""[Market Regime 및 수급 종합 분석 요청]
-- 분석 일자: {target_date_str}
+- 분석 일자: {supply_target_date_str}
 - Market Regime 상태: {regime_status_str}
 - 비차익 Z-Score: {p_zscore:+.2f} ({z_tag})
 - KOSPI 외인 5일 누적: {k_f_5d:+,d} 백만원 (5일 중 {k_f_days}일 순매수)
@@ -1154,7 +1179,7 @@ if df_display is not None:
                         st.success("✅ 수급 분석 완료")
                         st.markdown(analysis_res)
 
-    # TAB 2: 🚀 알파 시그널
+    # 📌 TAB 2: 🚀 알파 시그널 (행 클릭 시 하단 분석 센터 동기화)
     with tab2:
         st.markdown("###### 📋 알파 시그널 스크리닝 (모멘텀 순위 상위 200위)")
         filter_opt = st.radio(
@@ -1224,6 +1249,7 @@ if df_display is not None:
                 key="overview_table_selection",
             )
 
+            # 📌 [요청 반영 3] 행 선택 시 하단 통합 분석 센터로 Ticker 자동 동기화
             if event and event.get("selection", {}).get("rows"):
                 selected_row = df_target.iloc[event["selection"]["rows"][0]]
                 st.session_state["selected_ticker_from_table"] = selected_row[
@@ -1238,6 +1264,7 @@ if df_display is not None:
         is_tab2_auto_expanded = (
             True if st.session_state.get("selected_ticker_from_table") else False
         )
+
         with st.expander(
             "🔍 선택 종목 통합 분석 센터 (기술적 차트 & 수급 동향 & Gemini AI 분석)",
             expanded=is_tab2_auto_expanded,
@@ -1246,6 +1273,7 @@ if df_display is not None:
             sel_ticker_from_tab1 = st.session_state.get(
                 "selected_ticker_from_table"
             )
+
             if (
                 sel_ticker_from_tab1
                 and sel_ticker_from_tab1 not in top200_tickers
@@ -1281,7 +1309,7 @@ if df_display is not None:
                 st.write("")
                 st.divider()
 
-                # 2. 🏛️ [요청 반영] 선택 종목 수급 동향 (표 & 차트)
+                # 2. 선택 종목 수급 동향 (표 & 차트 동기화)
                 st.markdown("###### 🏛️ 선택 종목 외국인/기관 수급 동향")
 
                 if market_type == "US":
@@ -1448,7 +1476,7 @@ if df_display is not None:
 
         if not is_authenticated:
             st.info(
-                "🔒 실제 매매 신호 확인 및 주문 실행을 위해 우측 상단 **[🔑 잠금 해제]** 버튼을 클릭해 주십시오."
+                "🔒 실제 매매 신호 확인 및 주문 실행을 위해 우측 상단 **[비밀번호 해제]** 버튼을 클릭해 주십시오."
             )
         else:
             with st.expander(
@@ -1753,7 +1781,7 @@ if df_display is not None:
                     <ul style="margin-bottom: 0; padding-left: 20px;">
                         <li><b>🎯 1번(익절 - 트레일링 스탑)</b>: 보유 종목이 <b>매수가 대비 +8% 이상 상승 달성 후 적용</b>되는 익절가입니다.<br>
                         <code>스톱가 = max(최고가 × 0.92, 매수가)</code> (최고가 대비 -8% 하락 지점 또는 최소 본절가 보장)</li>
-                        <li style="margin-top: 8px;"><b>🛡️️ 2번(손절 - ATR 손절가)</b>: 아직 +8% 수익에 도달하지 못한 경우 적용되는 원천 손절가입니다.<br>
+                        <li style="margin-top: 8px;"><b>🛡 2번(손절 - ATR 손절가)</b>: 아직 +8% 수익에 도달하지 못한 경우 적용되는 원천 손절가입니다.<br>
                         <code>스톱가 = 매수가 - (2.5 × 진입시 ATR)</code></li>
                     </ul>
                 </div>
@@ -1790,7 +1818,7 @@ if df_display is not None:
 
         if not is_authenticated:
             st.info(
-                "🔒 상세 성과 내역 확인을 위해 우측 상단 **[🔑 잠금 해제]** 버튼을 클릭해 주십시오."
+                "🔒 상세 성과 내역 확인을 위해 우측 상단 **[비밀번호 해제]** 버튼을 클릭해 주십시오."
             )
         else:
             current_table_name = get_holdings_table(market_type)
