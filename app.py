@@ -26,7 +26,7 @@ from strategy import get_data
 
 st.set_page_config(layout="wide")
 
-# 📌 0. 새로고침 및 페이지 이탈 방지 컨펌 팝업 스크립트
+# 📌 0. 새로고침 및 페이지 이탈 방지 스크립트
 components.html(
     """
     <script>
@@ -42,7 +42,7 @@ components.html(
 
 st.markdown("<div id='top-section'></div>", unsafe_allow_html=True)
 
-# 📌 1. 상단 탭 완벽 고정(Sticky) 및 기본 스타일 적용
+# 📌 1. 상단 탭 Sticky 설정 및 스타일
 st.markdown(
     """
     <style>
@@ -89,7 +89,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# 📌 2. 5분 비밀번호 유지 세션 및 연장 알림 로직
+# 📌 2. 5분 인증 타이머 세션
 LOGIN_TIMEOUT_SECONDS = 300
 
 if st.query_params.get("extend_auth") == "true":
@@ -246,22 +246,16 @@ def display_trade_list(
             raw_reason = str(row.get("제외사유", "")).strip()
 
             if "매도" in title:
-                if (
-                    raw_reason
-                    and raw_reason not in ["조건충족", "nan", "None"]
-                    and "/" not in raw_reason
-                ):
-                    reason_desc = f"{raw_reason}"
-                else:
-                    if strategy_engine_mode == "short_term":
-                        reason_desc = "단기 목표익절(+15%) 달성 또는 손절(-5%) / MA20 이탈"
-                    else:
-                        reason_desc = "MA20 이탈, ATR손절(-2.5x) 또는 익절/본절 트레일링스탑(+8% 달성)"
+                reason_desc = (
+                    f"{raw_reason}"
+                    if (raw_reason and raw_reason not in ["조건충족", "nan", "None"])
+                    else "청산 조건 발생"
+                )
                 position_info = ""
                 tag_html = ""
             else:
                 if strategy_engine_mode == "short_term":
-                    reason_desc = f"단기 모멘텀 타점 포착 (상위 200위 / 목표익절 +15% / 손절 -5%) [추천순위: {rec_rank_display}]"
+                    reason_desc = f"단기 모멘텀 타점 포착 (상위 200위 / 익절 +15% / 손절 -5%) [추천순위: {rec_rank_display}]"
                 else:
                     reason_desc = f"진입 조건 충족 (지수 2일 안착 완료) [추천순위: {rec_rank_display}]"
 
@@ -1563,6 +1557,8 @@ if df_display is not None:
                                 )
 
             st.markdown("---")
+
+            # 📌 [요청 반영] 매매지시서 탭 하단: 운용 자금 설정 및 전략 매매 기준 명시
             with st.expander(
                 f"💰 [{market_type}] 운용 자금 설정 및 리스크 관리",
                 expanded=False,
@@ -1628,6 +1624,33 @@ if df_display is not None:
                     f"🔒 **단일 종목 최대 허용 손실 (2% Rule)**: {risk_fmt}"
                 )
                 account_total_input = new_capital_input
+
+            # 📌 [요청 반영] 미국장 및 단기 모멘텀 전략 매매 기준 가이드 카드 (하단 고정)
+            st.markdown("###### 🌐 전략 매매 기준 가이드 리포트")
+            if market_type == "US" or current_engine_key == "short_term":
+                st.info(
+                    """
+                    **🚀 미국장 단기 타점 모멘텀 전략 (목표익절 +15%) 매매 기준**
+                    * **매수 조건**:
+                        1. 모멘텀 순위 **상위 200위** 이내 진입
+                        2. 모멘텀 점수(MOT) **≥ 0.9** 및 이격도 **-5.0% ~ +7.0%** 범위 안착
+                    * **매도/청산 조건**:
+                        1. **목표 익절**: 진입가 대비 **+15.0%** 달성 시 즉시 익절
+                        2. **손절선 이탈**: 진입가 대비 **-5.0%** 하락 또는 **20일 이동평균선(MA20)** 이탈 시 청산
+                        3. **수익률 연계 기간 초과**: 보유 **14일 경과** 시점 수익률이 **+5.0% 미만**으로 정체된 경우 청산 (수익률 +5.0% 이상 시 추세 유지)
+                    """
+                )
+            else:
+                st.success(
+                    """
+                    **🔥 전략 3: Top 7 Regime (한국장 기본) 매매 기준**
+                    * **매수 조건**: 모멘텀 순위 **상위 15위** 이내, RS(90) > 0, RS(10) > 0 및 지수 20일선 안착 종목 중 이격도 낮은 순 7개 선택
+                    * **매도/청산 조건**:
+                        1. **ATR 손절**: 진입가 대비 **-2.5x ATR** 이탈 시
+                        2. **트레일링 스탑**: 수익률 **+8.0%** 달성 후 최고가 대비 **-8.0%** 밀릴 시 (최소 본절가 보장)
+                        3. **MA20 이탈**: 20일 이동평균선 하회 시 즉시 매도
+                    """
+                )
 
     # TAB 4: 📈 성과 분석
     with tab4:
