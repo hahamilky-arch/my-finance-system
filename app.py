@@ -2132,7 +2132,7 @@ if df_display is not None:
                             st.session_state["selected_perf_trade_data"] = selected_trade.to_dict()
                             st.rerun()
 
-                    # 3. 선택된 종목 복기 상세 분석 센터
+                    # 3. 선택된 종목 복기 상세 분석 센터 (당시 지표 및 매도사유 포함)
                     st.divider()
                     sel_trade_data = st.session_state.get("selected_perf_trade_data")
 
@@ -2147,6 +2147,13 @@ if df_display is not None:
                         b_price = float(sel_trade_data.get("buy_price", 0))
                         s_price = float(sel_trade_data.get("sell_price", 0))
 
+                        # 매매 당시 저장된 정량 지표 및 매도 사유 추출 (DB 필드 연동)
+                        exit_reason = sel_trade_data.get("exit_reason", sel_trade_data.get("sell_reason", "시스템 조건 청산"))
+                        buy_rank = sel_trade_data.get("buy_rank", sel_trade_data.get("rank", "-"))
+                        buy_mot = sel_trade_data.get("buy_mot", sel_trade_data.get("MOT", "-"))
+                        buy_rs90 = sel_trade_data.get("buy_rs90", sel_trade_data.get("RS(90)", "-"))
+                        buy_dispar = sel_trade_data.get("buy_dispar", sel_trade_data.get("이격도", "-"))
+
                         st.markdown(f"###### 🔍 [{stock_nm} ({ticker_code})] 매매 복기 상세 분석")
 
                         # 정량적 데이터 요약 카드
@@ -2155,7 +2162,16 @@ if df_display is not None:
                         c_r2.metric("매수 단가 / 일자", price_fmt.format(b_price), delta=buy_date_str, delta_color="off")
                         c_r3.metric("매도 단가 / 일자", price_fmt.format(s_price), delta=sell_date_str, delta_color="off")
                         c_r4.metric("보유 기간", f"{h_days}일")
-                        c_r5.metric("매매 결과", "🎉 익절" if p_amt > 0 else ("🛡️ 손절" if p_amt < 0 else "⚖️ 본절"))
+                        c_r5.metric("청산 사유", str(exit_reason))
+
+                        # 진입/청산 당시 핵심 지표 카드
+                        st.write("")
+                        st.markdown("###### 📊 진입/청산 당시 퀀트 지표 현황")
+                        m_m1, m_m2, m_m3, m_m4 = st.columns(4)
+                        m_m1.metric("진입 순위", f"{buy_rank}위" if buy_rank != "-" else "-")
+                        m_m2.metric("모멘텀 점수 (MOT)", f"{buy_mot}")
+                        m_m3.metric("상대강도 (RS 90)", f"{buy_rs90}")
+                        m_m4.metric("이격도 (MA20 대비)", f"{buy_dispar}%" if buy_dispar != "-" else "-")
 
                         # 기술적 차트 동기화
                         st.write("")
@@ -2165,19 +2181,27 @@ if df_display is not None:
                         st.write("")
                         st.markdown("###### 🤖 Gemini AI 매매 원칙 복기 리포트")
                         
-                        review_prompt = f"""[매매 복기(Post-Trade Review) 요청]
+                        review_prompt = f"""[매매 복기(Post-Trade Review) 정밀 요청]
 - 종목명: {stock_nm} ({ticker_code})
-- 매수일자/매수가: {buy_date_str} / {b_price}
-- 매도일자/매도가: {sell_date_str} / {s_price}
+- 매수일 / 매수가: {buy_date_str} / {b_price}
+- 매도일 / 매도가: {sell_date_str} / {s_price}
 - 보유기간: {h_days}일
 - 실현손익: {p_amt} ({p_rate:+.2f}%)
-- 적용 전략: {current_engine_key}
+- 적용 전략 엔진: {current_engine_key}
 
-다음 4가지 핵심 원칙에 따라 이번 매매를 정밀 평가 및 복기해 주세요:
-1. **진입/청산 적절성**: 시스템 시그널(모멘텀 순위, RS, 이격도, 스탑 조건)에 부합했는가?
-2. **리스크 및 자금 관리**: 손실폭 제어 및 포지션 사이징이 적절했는가?
-3. **심리/원칙 준수**: 뇌동매수나 조기 손절/탐욕 등 감정적 개입 여부 평가
-4. **Actionable Feedback (Keep / Problem / Try)**: 다음 매매에 적용할 핵심 피드백"""
+[진입 및 청산 당시 데이터]
+1. 진입 모멘텀 순위: {buy_rank}위
+2. 진입 MOT: {buy_mot}
+3. 진입 RS(90): {buy_rs90}
+4. 진입 이격도: {buy_dispar}%
+5. 체결된 청산 사유: {exit_reason}
+
+[복기 요청 사항]
+위의 당시 데이터와 전략 규칙(전략3: Top15 이내, RS>0, ATR 2.5x 손절, +8% 달성 후 트레일링 스탑)을 비교하여 정밀 평가해 주세요:
+1. **진입 적절성**: 당시 순위, MOT, RS, 이격도 조건이 진입 기준에 충족했는가?
+2. **청산 적절성**: 발생한 매도 사유({exit_reason})가 원칙에 맞는 청산인가?
+3. **리스크 통제**: 손실폭 제어 및 보유 기간 관리가 적절했는가?
+4. **Actionable Feedback**: Keep(유지) / Problem(문제) / Try(시도) 형태의 피드백"""
 
                         st.code(review_prompt, language="markdown")
 
@@ -2186,13 +2210,13 @@ if df_display is not None:
                                 review_result = analyze_stock_with_gemini(
                                     ticker_code,
                                     stock_nm,
-                                    {"MOT": 0, "RS(90)": 0, "이격도": 0, "종가": s_price},
+                                    {"MOT": buy_mot, "RS(90)": buy_rs90, "이격도": buy_dispar, "종가": s_price},
                                     review_prompt,
                                 )
                             st.success("✅ 복기 분석 완료")
                             st.markdown(review_result)
                     else:
-                        st.info("💡 위의 상세 청산 매매 내역 표에서 복기하고자 하는 **종목 행을 클릭**하면 하단에 기술적 차트 및 Gemini AI 복기 리포트가 자동으로 생성됩니다.")
+                        st.info("💡 위의 상세 청산 매매 내역 표에서 복기하고자 하는 **종목 행을 클릭**하면 하단에 당사의 지표 데이터와 AI 복기 리포트가 자동으로 생성됩니다.")
 
     # 📌 TAB 5: 🧪 백테스트 리포트
     with tab5:
