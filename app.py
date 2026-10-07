@@ -2177,14 +2177,16 @@ if df_display is not None:
                         c_r4.metric("보유 기간", f"{h_days}일")
                         c_r5.metric("청산 사유", str(exit_reason))
 
-                        # 진입/청산 당시 핵심 지표 카드 비교 출력
+                        # 진입/청산 당시 핵심 지표 카드 비교 출력                 
                         st.write("")
                         st.markdown("###### 📊 진입 & 청산 시점 퀀트 지표 비교")
                         m_m1, m_m2, m_m3, m_m4 = st.columns(4)
+                        
                         m_m1.metric("모멘텀 순위", f"진입 {buy_rank}위", delta=f"청산 {sell_rank}위", delta_color="off")
                         m_m2.metric("MOT 점수", f"진입 {buy_mot_str}", delta=f"청산 {sell_mot_str}", delta_color="off")
                         m_m3.metric("상대강도 (RS 90)", f"진입 {buy_rs90_str}", delta=f"청산 {sell_rs90_str}", delta_color="off")
                         m_m4.metric("이격도 (MA20 대비)", f"진입 {buy_dispar_str}", delta=f"청산 {sell_dispar_str}", delta_color="off")
+
 
                         # 기술적 차트에 매수/매도 타점 수직선 & 마커 추가
                         st.write("")
