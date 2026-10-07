@@ -1627,6 +1627,22 @@ if df_display is not None:
 
             # 📌 [요청 반영] 미국장 및 단기 모멘텀 전략 매매 기준 가이드 카드 (하단 고정)
             st.markdown("###### 🌐 전략 매매 기준 가이드 리포트")
+
+            st.markdown(
+                """
+                <div style="background-color: #f8f9fa; padding: 15px; border-radius: 8px; border: 1px solid #e9ecef; margin-bottom: 15px;">
+                    <h6 style="margin-top: 0; color: #1f77b4;">📊 보유 종목 스톱기준(1번/2번) 산출 공식</h6>
+                    <ul style="margin-bottom: 0; padding-left: 20px;">
+                        <li><b>🎯 1번(익절 - 트레일링 스탑)</b>: 보유 종목이 <b>매수가 대비 +8% 이상 상승 달성 후 적용</b>되는 익절가입니다.<br>
+                        <code>스톱가 = max(최고가 × 0.92, 매수가)</code> (최고가 대비 -8% 하락 지점 또는 최소 본절가 보장)</li>
+                        <li style="margin-top: 8px;"><b>🛡️ 2번(손절 - ATR 손절가)</b>: 아직 +8% 수익에 도달하지 못한 경우 적용되는 원천 손절가입니다.<br>
+                        <code>스톱가 = 매수가 - (2.5 × 진입시 ATR)</code></li>
+                    </ul>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            
             if market_type == "US" or current_engine_key == "short_term":
                 st.info(
                     """
