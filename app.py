@@ -1239,14 +1239,17 @@ if df_display is not None:
             True if st.session_state.get("selected_ticker_from_table") else False
         )
         with st.expander(
-            "🔍 선택 종목 통합 분석 센터 (기술적 차트 & Gemini AI 분석)",
+            "🔍 선택 종목 통합 분석 센터 (기술적 차트 & 수급 동향 & Gemini AI 분석)",
             expanded=is_tab2_auto_expanded,
         ):
             top200_tickers = df_display.head(200)["ticker"].tolist()
             sel_ticker_from_tab1 = st.session_state.get(
                 "selected_ticker_from_table"
             )
-            if sel_ticker_from_tab1 and sel_ticker_from_tab1 not in top200_tickers:
+            if (
+                sel_ticker_from_tab1
+                and sel_ticker_from_tab1 not in top200_tickers
+            ):
                 top200_tickers.insert(0, sel_ticker_from_tab1)
 
             ticker_name_map = dict(
@@ -1269,7 +1272,8 @@ if df_display is not None:
             )
 
             if sel_chart_ticker:
-                st.markdown("###### 📉 개별 종목 통합 차트")
+                # 1. 기술적 주가 차트
+                st.markdown("###### 📉 개별 종목 기술적 차트")
                 draw_integrated_chart(
                     sel_chart_ticker, market_type, ticker_name_map
                 )
@@ -1277,6 +1281,120 @@ if df_display is not None:
                 st.write("")
                 st.divider()
 
+                # 2. 🏛️ [요청 반영] 선택 종목 수급 동향 (표 & 차트)
+                st.markdown("###### 🏛️ 선택 종목 외국인/기관 수급 동향")
+
+                if market_type == "US":
+                    st.info(
+                        "💡 **미국 시장 안내**: 현재 미국 주식은 외국인/기관 수급 데이터를 별도 수집하지 않습니다."
+                    )
+                else:
+                    try:
+                        res_supply = (
+                            supabase.table("daily_top_liquidity")
+                            .select("*")
+                            .eq("ticker", sel_chart_ticker)
+                            .order("trade_date", desc=True)
+                            .limit(15)
+                            .execute()
+                        )
+                        df_supply = (
+                            pd.DataFrame(res_supply.data)
+                            if res_supply.data
+                            else pd.DataFrame()
+                        )
+                    except Exception:
+                        df_supply = pd.DataFrame()
+
+                    if not df_supply.empty:
+                        df_supply = df_supply.sort_values("trade_date")
+                        df_supply["foreign_cum"] = (
+                            df_supply["foreign_net"].cumsum()
+                        )
+                        df_supply["inst_cum"] = df_supply["inst_net"].cumsum()
+
+                        col_s_chart, col_s_table = st.columns([1.2, 1])
+
+                        # 수급 누적 추이 차트
+                        with col_s_chart:
+                            fig_supply = gg.Figure()
+                            fig_supply.add_trace(
+                                gg.Scatter(
+                                    x=df_supply["trade_date"],
+                                    y=df_supply["foreign_cum"],
+                                    mode="lines+markers",
+                                    name="외국인 누적수급",
+                                    line=dict(color="#d62728", width=2),
+                                )
+                            )
+                            fig_supply.add_trace(
+                                gg.Scatter(
+                                    x=df_supply["trade_date"],
+                                    y=df_supply["inst_cum"],
+                                    mode="lines+markers",
+                                    name="기관 누적수급",
+                                    line=dict(color="#1f77b4", width=2),
+                                )
+                            )
+                            fig_supply.update_layout(
+                                title=f"[{sel_chart_ticker}] 최근 외국인 vs 기관 누적 수급 추이 (백만원)",
+                                height=280,
+                                margin=dict(l=20, r=20, t=40, b=20),
+                                legend=dict(
+                                    orientation="h",
+                                    yanchor="bottom",
+                                    y=1.02,
+                                    xanchor="right",
+                                    x=1,
+                                ),
+                            )
+                            st.plotly_chart(
+                                fig_supply, use_container_width=True
+                            )
+
+                        # 최근 일자별 수급 상세 표
+                        with col_s_table:
+                            disp_supply_table = (
+                                df_supply[
+                                    [
+                                        "trade_date",
+                                        "close_price",
+                                        "foreign_net",
+                                        "inst_net",
+                                    ]
+                                ]
+                                .sort_values("trade_date", ascending=False)
+                                .rename(columns={
+                                    "trade_date": "일자",
+                                    "close_price": "종가",
+                                    "foreign_net": "외국인",
+                                    "inst_net": "기관",
+                                })
+                            )
+
+                            st.dataframe(
+                                disp_supply_table.style.format({
+                                    "종가": "{:,.0f}원",
+                                    "외국인": "{:+,.0f}",
+                                    "기관": "{:+,.0f}",
+                                }).map(
+                                    lambda v: "color: red;"
+                                    if float(v) > 0
+                                    else ("color: blue;" if float(v) < 0 else ""),
+                                    subset=["외국인", "기관"],
+                                ),
+                                hide_index=True,
+                                use_container_width=True,
+                            )
+                    else:
+                        st.info(
+                            f"💡 [{sel_chart_ticker}] 종목의 최근 외국인/기관 수급 내역이 존재하지 않습니다."
+                        )
+
+                st.write("")
+                st.divider()
+
+                # 3. Google Gemini AI 개별 종목 분석
                 st.markdown("###### 🤖 Google Gemini AI 개별 종목 분석")
                 used_cnt, remain_cnt = get_remaining_quota()
                 st.caption(
@@ -1558,7 +1676,7 @@ if df_display is not None:
 
             st.markdown("---")
 
-            # 📌 [요청 반영] 매매지시서 탭 하단: 운용 자금 설정 및 전략 매매 기준 명시
+            # 운용 자금 설정 및 리스크 관리
             with st.expander(
                 f"💰 [{market_type}] 운용 자금 설정 및 리스크 관리",
                 expanded=False,
@@ -1625,8 +1743,8 @@ if df_display is not None:
                 )
                 account_total_input = new_capital_input
 
-            # 📌 [요청 반영] 미국장 및 단기 모멘텀 전략 매매 기준 가이드 카드 (하단 고정)
-            st.markdown("###### 🌐 전략 매매 기준 가이드 리포트")
+            # 매매지시서 탭 하단: 보유 종목 스톱기준(1번/2번) 및 전략 조건 명시
+            st.markdown("###### 🌐 전략 매매 기준 및 스톱기준 상세 가이드")
 
             st.markdown(
                 """
@@ -1635,35 +1753,33 @@ if df_display is not None:
                     <ul style="margin-bottom: 0; padding-left: 20px;">
                         <li><b>🎯 1번(익절 - 트레일링 스탑)</b>: 보유 종목이 <b>매수가 대비 +8% 이상 상승 달성 후 적용</b>되는 익절가입니다.<br>
                         <code>스톱가 = max(최고가 × 0.92, 매수가)</code> (최고가 대비 -8% 하락 지점 또는 최소 본절가 보장)</li>
-                        <li style="margin-top: 8px;"><b>🛡️ 2번(손절 - ATR 손절가)</b>: 아직 +8% 수익에 도달하지 못한 경우 적용되는 원천 손절가입니다.<br>
+                        <li style="margin-top: 8px;"><b>🛡️️ 2번(손절 - ATR 손절가)</b>: 아직 +8% 수익에 도달하지 못한 경우 적용되는 원천 손절가입니다.<br>
                         <code>스톱가 = 매수가 - (2.5 × 진입시 ATR)</code></li>
                     </ul>
                 </div>
                 """,
                 unsafe_allow_html=True,
             )
-            
+
             if market_type == "US" or current_engine_key == "short_term":
                 st.info(
                     """
                     **🚀 미국장 단기 타점 모멘텀 전략 (목표익절 +15%) 매매 기준**
-                    * **매수 조건**:
-                        1. 모멘텀 순위 **상위 200위** 이내 진입
-                        2. 모멘텀 점수(MOT) **≥ 0.9** 및 이격도 **-5.0% ~ +7.0%** 범위 안착
+                    * **매수 조건**: 모멘텀 순위 **상위 200위** 이내 & 모멘텀 점수(MOT) **≥ 0.9** & 이격도 **-5.0% ~ +7.0%** 안착
                     * **매도/청산 조건**:
-                        1. **목표 익절**: 진입가 대비 **+15.0%** 달성 시 즉시 익절
-                        2. **손절선 이탈**: 진입가 대비 **-5.0%** 하락 또는 **20일 이동평균선(MA20)** 이탈 시 청산
-                        3. **수익률 연계 기간 초과**: 보유 **14일 경과** 시점 수익률이 **+5.0% 미만**으로 정체된 경우 청산 (수익률 +5.0% 이상 시 추세 유지)
+                        1. **목표 익절**: 진입가 대비 **+15.0%** 달성 시
+                        2. **손절/이탈**: 진입가 대비 **-5.0%** 하락 또는 **20일선(MA20)** 이탈 시
+                        3. **기간 초과**: 보유 **14일 경과** 시점 수익률 **+5.0% 미만** 정체 시 청산 (+5.0% 이상 시 추세 계속 유지)
                     """
                 )
             else:
                 st.success(
                     """
                     **🔥 전략 3: Top 7 Regime (한국장 기본) 매매 기준**
-                    * **매수 조건**: 모멘텀 순위 **상위 15위** 이내, RS(90) > 0, RS(10) > 0 및 지수 20일선 안착 종목 중 이격도 낮은 순 7개 선택
+                    * **매수 조건**: 모멘텀 순위 **상위 15위** 이내 & RS(90) > 0, RS(10) > 0 & 지수 20일선 안착 종목 중 이격도 낮은 순 7개 선택
                     * **매도/청산 조건**:
-                        1. **ATR 손절**: 진입가 대비 **-2.5x ATR** 이탈 시
-                        2. **트레일링 스탑**: 수익률 **+8.0%** 달성 후 최고가 대비 **-8.0%** 밀릴 시 (최소 본절가 보장)
+                        1. **ATR 손절(2번)**: 진입가 대비 **-2.5x ATR** 이탈 시
+                        2. **트레일링 스탑(1번)**: 수익률 **+8.0%** 달성 후 최고가 대비 **-8.0%** 밀릴 시 (최소 본절가 보장)
                         3. **MA20 이탈**: 20일 이동평균선 하회 시 즉시 매도
                     """
                 )
