@@ -68,7 +68,7 @@ def draw_integrated_chart(
         selected_chart_ticker, selected_chart_ticker
     )
 
-    # 1. 주가 선 (포맷 오류 수정: ,.2f)
+    # 1. 주가 선
     line_stock = (
         alt.Chart(df_merged)
         .mark_line(color="#1f77b4", strokeWidth=3)
@@ -129,8 +129,10 @@ def draw_integrated_chart(
 
     chart_price = alt.layer(line_stock, line_ma20)
 
-    # 📌 4. 매수 / 매도 타점 수직선 및 삼각 마커
-    trade_elements = []
+    # 📌 4. 매수/매도 타점 요소 생성 (종목용 & 지수용)
+    trade_elements_stock = []
+    trade_elements_index = []
+
     if buy_date:
         df_buy = pd.DataFrame([{
             "price_date": pd.to_datetime(buy_date),
@@ -140,7 +142,12 @@ def draw_integrated_chart(
             "label": "🔴 매수",
         }])
 
-        vline_buy = (
+        vline_buy_stock = (
+            alt.Chart(df_buy)
+            .mark_rule(color="#d62728", strokeWidth=2, strokeDash=[3, 3])
+            .encode(x="price_date:T")
+        )
+        vline_buy_index = (
             alt.Chart(df_buy)
             .mark_rule(color="#d62728", strokeWidth=2, strokeDash=[3, 3])
             .encode(x="price_date:T")
@@ -165,7 +172,8 @@ def draw_integrated_chart(
                 ],
             )
         )
-        trade_elements.extend([vline_buy, marker_buy])
+        trade_elements_stock.extend([vline_buy_stock, marker_buy])
+        trade_elements_index.append(vline_buy_index)
 
     if sell_date:
         df_sell = pd.DataFrame([{
@@ -176,7 +184,12 @@ def draw_integrated_chart(
             "label": "🔵 매도",
         }])
 
-        vline_sell = (
+        vline_sell_stock = (
+            alt.Chart(df_sell)
+            .mark_rule(color="#1f77b4", strokeWidth=2, strokeDash=[3, 3])
+            .encode(x="price_date:T")
+        )
+        vline_sell_index = (
             alt.Chart(df_sell)
             .mark_rule(color="#1f77b4", strokeWidth=2, strokeDash=[3, 3])
             .encode(x="price_date:T")
@@ -201,10 +214,11 @@ def draw_integrated_chart(
                 ],
             )
         )
-        trade_elements.extend([vline_sell, marker_sell])
+        trade_elements_stock.extend([vline_sell_stock, marker_sell])
+        trade_elements_index.append(vline_sell_index)
 
-    if trade_elements:
-        chart_price = alt.layer(chart_price, *trade_elements)
+    if trade_elements_stock:
+        chart_price = alt.layer(chart_price, *trade_elements_stock)
 
     chart_top = (
         alt.layer(chart_price, line_rank)
@@ -213,6 +227,7 @@ def draw_integrated_chart(
         .interactive(bind_y=False)
     )
 
+    # 5. 지수 차트 생성
     line_idx = (
         alt.Chart(df_merged)
         .mark_line(color="#2ca02c", strokeWidth=2.5)
@@ -254,9 +269,12 @@ def draw_integrated_chart(
         )
     )
 
+    chart_index = alt.layer(line_idx, line_idx_ma50)
+    if trade_elements_index:
+        chart_index = alt.layer(chart_index, *trade_elements_index)
+
     chart_bottom = (
-        alt.layer(line_idx, line_idx_ma50)
-        .resolve_scale(y="shared")
+        chart_index.resolve_scale(y="shared")
         .properties(height=400)
         .interactive(bind_y=False)
     )
@@ -280,6 +298,7 @@ def draw_integrated_chart(
     <div style="text-align: center; margin-top: 5px; margin-bottom: 10px; font-size: 0.9em; color: #555555;">
         <span style="color:#2ca02c; font-weight:bold;">━</span> {idx_name} 지수 종가 | 
         <span style="color:#d62728; font-weight:bold;">---</span> MA50
+        {" | <span style='color:#d62728; font-weight:bold;'>--- 🔴 매수일</span> | <span style='color:#1f77b4; font-weight:bold;'>--- 🔵 매도일</span>" if buy_date or sell_date else ""}
     </div>
     """,
         unsafe_allow_html=True,
