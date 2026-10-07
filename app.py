@@ -2197,9 +2197,90 @@ if df_display is not None:
                             buy_date=buy_date_str,
                             sell_date=sell_date_str,
                             buy_price=b_price,
+                    
+                    # 3. 선택된 종목 복기 상세 분석 센터 (진입 & 청산 지표 비교 출력)
+                    st.divider()
+                    sel_trade_data = st.session_state.get("selected_perf_trade_data")
+
+                    if sel_trade_data:
+                        stock_nm = sel_trade_data.get("종목명", sel_trade_data.get("ticker"))
+                        ticker_code = str(sel_trade_data.get("ticker")).strip().upper()
+                        buy_date_str = str(sel_trade_data.get("buy_date"))
+                        sell_date_str = str(sel_trade_data.get("sell_date"))
+                        p_amt = float(sel_trade_data.get("profit_amount", 0))
+                        p_rate = float(sel_trade_data.get("profit_rate", 0))
+                        h_days = int(sel_trade_data.get("holding_days", 0))
+                        b_price = float(sel_trade_data.get("buy_price", 0))
+                        s_price = float(sel_trade_data.get("sell_price", 0))
+
+                        # DB 데이터 및 백업 지표 탐색 (진입 시점)
+                        matched_display = df_display[df_display["ticker"] == ticker_code]
+                        target_row_info = matched_display.iloc[0] if not matched_display.empty else {}
+
+                        exit_reason = sel_trade_data.get("exit_reason", sel_trade_data.get("sell_reason", "시스템 조건 청산"))
+                        buy_rank = sel_trade_data.get("buy_rank", sel_trade_data.get("rank", target_row_info.get("순위", "-")))
+                        buy_mot = sel_trade_data.get("buy_mot", sel_trade_data.get("MOT", target_row_info.get("MOT", "-")))
+                        buy_rs90 = sel_trade_data.get("buy_rs90", sel_trade_data.get("RS(90)", target_row_info.get("RS(90)", "-")))
+                        buy_dispar = sel_trade_data.get("buy_dispar", sel_trade_data.get("이격도", target_row_info.get("이격도", "-")))
+
+                        # 청산(매도일) 시점 DB 지표 조회
+                        try:
+                            sell_analysis_res = (
+                                supabase.table("daily_analysis")
+                                .select("momentum_rank, mot, rs90, disparity")
+                                .eq("ticker", ticker_code)
+                                .eq("price_date", sell_date_str)
+                                .execute()
+                            )
+                            sell_info = sell_analysis_res.data[0] if sell_analysis_res.data else {}
+                        except Exception:
+                            sell_info = {}
+
+                        sell_rank = sell_info.get("momentum_rank", "-")
+                        sell_mot = sell_info.get("mot", "-")
+                        sell_rs90 = sell_info.get("rs90", "-")
+                        sell_dispar = sell_info.get("disparity", "-")
+
+                        # 포맷 변환 안전 처리
+                        buy_mot_str = f"{float(buy_mot):.2f}" if isinstance(buy_mot, (int, float)) and buy_mot != "-" else str(buy_mot)
+                        buy_rs90_str = f"{float(buy_rs90):.2f}" if isinstance(buy_rs90, (int, float)) and buy_rs90 != "-" else str(buy_rs90)
+                        buy_dispar_str = f"{float(buy_dispar):+.2f}%" if isinstance(buy_dispar, (int, float)) and buy_dispar != "-" else str(buy_dispar)
+
+                        sell_mot_str = f"{float(sell_mot):.2f}" if isinstance(sell_mot, (int, float)) and sell_mot != "-" else str(sell_mot)
+                        sell_rs90_str = f"{float(sell_rs90):.2f}" if isinstance(sell_rs90, (int, float)) and sell_rs90 != "-" else str(sell_rs90)
+                        sell_dispar_str = f"{float(sell_dispar):+.2f}%" if isinstance(sell_dispar, (int, float)) and sell_dispar != "-" else str(sell_dispar)
+
+                        st.markdown(f"###### 🔍 [{stock_nm} ({ticker_code})] 매매 복기 상세 분석")
+
+                        # 정량적 데이터 요약 카드
+                        c_r1, c_r2, c_r3, c_r4, c_r5 = st.columns(5)
+                        c_r1.metric("실현 손익", profit_fmt(p_amt), delta=f"{p_rate:+.2f}%")
+                        c_r2.metric("매수 단가 / 일자", price_fmt.format(b_price), delta=buy_date_str, delta_color="off")
+                        c_r3.metric("매도 단가 / 일자", price_fmt.format(s_price), delta=sell_date_str, delta_color="off")
+                        c_r4.metric("보유 기간", f"{h_days}일")
+                        c_r5.metric("청산 사유", str(exit_reason))
+
+                        # 진입/청산 당시 핵심 지표 카드 비교 출력
+                        st.write("")
+                        st.markdown("###### 📊 진입 & 청산 시점 퀀트 지표 비교")
+                        m_m1, m_m2, m_m3, m_m4 = st.columns(4)
+                        m_m1.metric("모멘텀 순위", f"진입 {buy_rank}위", delta=f"청산 {sell_rank}위", delta_color="off")
+                        m_m2.metric("MOT 점수", f"진입 {buy_mot_str}", delta=f"청산 {sell_mot_str}", delta_color="off")
+                        m_m3.metric("상대강도 (RS 90)", f"진입 {buy_rs90_str}", delta=f"청산 {sell_rs90_str}", delta_color="off")
+                        m_m4.metric("이격도 (MA20 대비)", f"진입 {buy_dispar_str}", delta=f"청산 {sell_dispar_str}", delta_color="off")
+
+                        # 기술적 차트에 매수/매도 타점 수직선 & 마커 추가
+                        st.write("")
+                        st.markdown("###### 📉 매매 당시 주가 차트 및 진입/청산 타점 (🔴 매수 / 🔵 매도)")
+                        draw_integrated_chart(
+                            ticker_code,
+                            market_type,
+                            {ticker_code: stock_nm},
+                            buy_date=buy_date_str,
+                            sell_date=sell_date_str,
+                            buy_price=b_price,
                             sell_price=s_price,
                         )
-
 
                         st.write("")
                         st.markdown("###### 🤖 Gemini AI 매매 원칙 복기 리포트")
@@ -2212,17 +2293,17 @@ if df_display is not None:
 - 실현손익: {p_amt} ({p_rate:+.2f}%)
 - 적용 전략 엔진: {current_engine_key}
 
-[진입 및 청산 당시 데이터]
-1. 진입 모멘텀 순위: {buy_rank}위
-2. 진입 MOT: {buy_mot_str}
-3. 진입 RS(90): {buy_rs90_str}
-4. 진입 이격도: {buy_dispar_str}
-5. 체결된 청산 사유: {exit_reason}
+[진입 시점 지표]
+- 순위: {buy_rank}위 | MOT: {buy_mot_str} | RS(90): {buy_rs90_str} | 이격도: {buy_dispar_str}
+
+[청산 시점 지표 & 매도 사유]
+- 순위: {sell_rank}위 | MOT: {sell_mot_str} | RS(90): {sell_rs90_str} | 이격도: {sell_dispar_str}
+- 체결된 청산 사유: {exit_reason}
 
 [복기 요청 사항]
 위의 당시 데이터와 전략 규칙(전략3: Top15 이내, RS>0, ATR 2.5x 손절, +8% 달성 후 트레일링 스탑)을 비교하여 정밀 평가해 주세요:
 1. **진입 적절성**: 당시 순위, MOT, RS, 이격도 조건이 진입 기준에 충족했는가?
-2. **청산 적절성**: 발생한 매도 사유({exit_reason})가 원칙에 맞는 청산인가?
+2. **청산 적절성**: 청산 당시 지표와 발생한 매도 사유({exit_reason})가 원칙에 맞는 청산인가?
 3. **리스크 통제**: 손실폭 제어 및 보유 기간 관리가 적절했는가?
 4. **Actionable Feedback**: Keep(유지) / Problem(문제) / Try(시도) 형태의 피드백"""
 
@@ -2240,6 +2321,7 @@ if df_display is not None:
                             st.markdown(review_result)
                     else:
                         st.info("💡 위의 상세 청산 매매 내역 표에서 복기하고자 하는 **종목 행을 클릭**하면 하단에 당사의 지표 데이터와 AI 복기 리포트가 자동으로 생성됩니다.")
+
 
     # 📌 TAB 5: 🧪 백테스트 리포트
     with tab5:
