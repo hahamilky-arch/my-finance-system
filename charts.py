@@ -129,7 +129,7 @@ def draw_integrated_chart(
 
     chart_price = alt.layer(line_stock, line_ma20)
 
-    # 4. 매수/매도 타점 수직선 & 삼각형 마커 (종목 차트 및 지수 차트 공유)
+    # 4. 매수/매도 타점 수직선 & 삼각형 마커
     trade_elements_stock = []
     trade_elements_index = []
 
