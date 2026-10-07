@@ -729,7 +729,7 @@ if df_display is not None:
         "🧪 백테스트 리포트",
     ])
 
-    # 📌 TAB 1: 📊 시장 & 수급 종합 (10일 수급 빈도 + 20일 비차익/차익 합계 추이 포함)
+    # 📌 TAB 1: 📊 시장 & 수급 종합 (주체별 매매동향 및 수급 빈도표 위치 상호 교체 반영)
     with tab1:
         st.markdown("###### 📊 시장 방향성 & 수급 종합")
 
@@ -973,6 +973,8 @@ if df_display is not None:
                     st.warning(divergence_msg)
 
                 col_t1_left, col_t1_right = st.columns([1.1, 0.9])
+                
+                # 👈 [좌측 칼럼] 수급 지표 & 당일 TOP 5 / 10일 수급 빈도 상위표
                 with col_t1_left:
                     st.markdown("###### 🏛 수급 강도 & 연속성 지표 (최근 10일 빈도수 포함)")
                     z_help_text = (
@@ -1022,39 +1024,7 @@ if df_display is not None:
                     )
 
                     st.write("")
-                    st.markdown(
-                        f"###### 📊 주체별 매매 동향 ({supply_target_date_str} 기준 / 백만원)"
-                    )
-                    disp_inv_summary = pd.DataFrame([
-                        {
-                            "시장": "KOSPI",
-                            "외국인": int(k_row.get("foreign_net", 0)),
-                            "개인": int(k_row.get("individual_net", 0)),
-                            "기관계": int(k_row.get("institution_net", 0)),
-                        },
-                        {
-                            "시장": "KOSDAQ",
-                            "외국인": int(kq_row.get("foreign_net", 0)),
-                            "개인": int(kq_row.get("individual_net", 0)),
-                            "기관계": int(kq_row.get("institution_net", 0)),
-                        },
-                    ])
-                    st.dataframe(
-                        disp_inv_summary.style.format({
-                            "외국인": "{:+,d}",
-                            "개인": "{:+,d}",
-                            "기관계": "{:+,d}",
-                        }).map(
-                            lambda v: "color: red;"
-                            if v > 0
-                            else ("color: blue;" if v < 0 else ""),
-                            subset=["외국인", "개인", "기관계"],
-                        ),
-                        hide_index=True,
-                        use_container_width=True,
-                    )
-
-                with col_t1_right:
+                    # 📌 위치 변경: 당일 TOP 5 & 최근 10일 수급 빈도 상위표 (좌측 배치)
                     st.markdown("###### 📊 당일 TOP 5 & 최근 10일 수급 빈도 상위")
                     
                     try:
@@ -1135,6 +1105,41 @@ if df_display is not None:
                             )
                         else:
                             st.caption("최근 10일 수급 데이터 없음")
+
+                # 👉 [우측 칼럼] 주체별 매매 동향 표
+                with col_t1_right:
+                    # 📌 위치 변경: 주체별 매매 동향 표 (우측 배치)
+                    st.markdown(
+                        f"###### 📊 주체별 매매 동향 ({supply_target_date_str} 기준 / 백만원)"
+                    )
+                    disp_inv_summary = pd.DataFrame([
+                        {
+                            "시장": "KOSPI",
+                            "외국인": int(k_row.get("foreign_net", 0)),
+                            "개인": int(k_row.get("individual_net", 0)),
+                            "기관계": int(k_row.get("institution_net", 0)),
+                        },
+                        {
+                            "시장": "KOSDAQ",
+                            "외국인": int(kq_row.get("foreign_net", 0)),
+                            "개인": int(kq_row.get("individual_net", 0)),
+                            "기관계": int(kq_row.get("institution_net", 0)),
+                        },
+                    ])
+                    st.dataframe(
+                        disp_inv_summary.style.format({
+                            "외국인": "{:+,d}",
+                            "개인": "{:+,d}",
+                            "기관계": "{:+,d}",
+                        }).map(
+                            lambda v: "color: red;"
+                            if v > 0
+                            else ("color: blue;" if v < 0 else ""),
+                            subset=["외국인", "개인", "기관계"],
+                        ),
+                        hide_index=True,
+                        use_container_width=True,
+                    )
 
                 st.divider()
 
