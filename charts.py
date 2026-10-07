@@ -68,7 +68,7 @@ def draw_integrated_chart(
         selected_chart_ticker, selected_chart_ticker
     )
 
-    # 1. 주가 선
+    # 1. 주가 선 (포맷 오류 수정: ,.2f)
     line_stock = (
         alt.Chart(df_merged)
         .mark_line(color="#1f77b4", strokeWidth=3)
@@ -91,9 +91,7 @@ def draw_integrated_chart(
             ),
             tooltip=[
                 alt.Tooltip("price_date:T", title="날짜", format="%Y-%m-%d"),
-                alt.Tooltip(
-                    "close_price:Q", title="종가", format=",..2f"
-                ),
+                alt.Tooltip("close_price:Q", title="종가", format=",.2f"),
             ],
         )
     )
@@ -131,12 +129,12 @@ def draw_integrated_chart(
 
     chart_price = alt.layer(line_stock, line_ma20)
 
-    # 📌 4. 매수 / 매도 타점 표시 (수직선 및 마커 추가)
+    # 📌 4. 매수 / 매도 타점 수직선 및 삼각 마커
     trade_elements = []
     if buy_date:
         df_buy = pd.DataFrame([{
             "price_date": pd.to_datetime(buy_date),
-            "price": buy_price
+            "price": float(buy_price)
             if buy_price
             else df_chart["close_price"].mean(),
             "label": "🔴 매수",
@@ -163,7 +161,7 @@ def draw_integrated_chart(
                 tooltip=[
                     alt.Tooltip("label:N", title="타점"),
                     alt.Tooltip("price_date:T", title="매수일", format="%Y-%m-%d"),
-                    alt.Tooltip("price:Q", title="매수가", format=",..2f"),
+                    alt.Tooltip("price:Q", title="매수가", format=",.2f"),
                 ],
             )
         )
@@ -172,7 +170,7 @@ def draw_integrated_chart(
     if sell_date:
         df_sell = pd.DataFrame([{
             "price_date": pd.to_datetime(sell_date),
-            "price": sell_price
+            "price": float(sell_price)
             if sell_price
             else df_chart["close_price"].mean(),
             "label": "🔵 매도",
@@ -198,10 +196,8 @@ def draw_integrated_chart(
                 y="price:Q",
                 tooltip=[
                     alt.Tooltip("label:N", title="타점"),
-                    alt.Tooltip(
-                        "price_date:T", title="매도일", format="%Y-%m-%d"
-                    ),
-                    alt.Tooltip("price:Q", title="매도가", format=",..2f"),
+                    alt.Tooltip("price_date:T", title="매도일", format="%Y-%m-%d"),
+                    alt.Tooltip("price:Q", title="매도가", format=",.2f"),
                 ],
             )
         )
@@ -217,7 +213,6 @@ def draw_integrated_chart(
         .interactive(bind_y=False)
     )
 
-    # 지수 차트
     line_idx = (
         alt.Chart(df_merged)
         .mark_line(color="#2ca02c", strokeWidth=2.5)
@@ -240,9 +235,7 @@ def draw_integrated_chart(
             ),
             tooltip=[
                 alt.Tooltip("price_date:T", title="날짜", format="%Y-%m-%d"),
-                alt.Tooltip(
-                    "index_price:Q", title="지수 종가", format=",..2f"
-                ),
+                alt.Tooltip("index_price:Q", title="지수 종가", format=",.2f"),
             ],
         )
     )
@@ -257,7 +250,7 @@ def draw_integrated_chart(
                 title=None,
                 scale=alt.Scale(zero=False, padding=10),
             ),
-            tooltip=[alt.Tooltip("index_ma50:Q", title="MA50", format=",..2f")],
+            tooltip=[alt.Tooltip("index_ma50:Q", title="MA50", format=",.2f")],
         )
     )
 
@@ -334,7 +327,7 @@ def draw_attribution_charts(df_hist, market_type):
                 alt.Tooltip(
                     "profit_amount:Q",
                     title="손익",
-                    format=",..0f" if market_type == "KR" else ",..2f",
+                    format=",.0f" if market_type == "KR" else ",.2f",
                 ),
             ],
         )
@@ -361,7 +354,7 @@ def draw_attribution_charts(df_hist, market_type):
                 alt.Tooltip(
                     "profit_amount:Q",
                     title="손익",
-                    format=",..0f" if market_type == "KR" else ",..2f",
+                    format=",.0f" if market_type == "KR" else ",.2f",
                 ),
             ],
         )
