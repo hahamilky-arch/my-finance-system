@@ -2152,8 +2152,8 @@ if df_display is not None:
                         # 정량적 데이터 요약 카드
                         c_r1, c_r2, c_r3, c_r4, c_r5 = st.columns(5)
                         c_r1.metric("실현 손익", profit_fmt(p_amt), delta=f"{p_rate:+.2f}%")
-                        c_r2.metric("매수 단가 / 일자", price_fmt(b_price), delta=buy_date_str, delta_color="off")
-                        c_r3.metric("매도 단가 / 일자", price_fmt(s_price), delta=sell_date_str, delta_color="off")
+                        c_r2.metric("매수 단가 / 일자", price_fmt.format(b_price), delta=buy_date_str, delta_color="off")
+                        c_r3.metric("매도 단가 / 일자", price_fmt.format(s_price), delta=sell_date_str, delta_color="off")
                         c_r4.metric("보유 기간", f"{h_days}일")
                         c_r5.metric("매매 결과", "🎉 익절" if p_amt > 0 else ("🛡️ 손절" if p_amt < 0 else "⚖️ 본절"))
 
