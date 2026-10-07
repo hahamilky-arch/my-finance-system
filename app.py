@@ -626,7 +626,7 @@ with st.sidebar:
     col_side_kr.metric("KR추천", f"{kr_buy_count}개")
     col_side_us.metric("US추천", f"{us_buy_count}개")
 
-# 📌 2. 상단 헤더 & 간소화된 잠금해제 UI
+# 📌 2. 상단 헤더 & 정돈된 잠금해제 UI
 col_title, col_auth_status = st.columns([2.5, 1.5])
 with col_title:
     st.markdown("##### 📈 Quant Alpha Strategy")
@@ -737,23 +737,24 @@ if df_display is not None:
         "🧪 백테스트 리포트",
     ])
 
-    # 📌 TAB 1: 📊 시장 & 수급 종합 (별도 날짜 조회 조건 추가)
+    # 📌 TAB 1: 📊 시장 & 수급 종합
     with tab1:
         st.markdown("###### 📊 시장 방향성 & 수급 종합")
 
-        # 📌 [요청 반영 1] 시장 수급 전용 독립 날짜 선택기
-        col_m_reg, col_m_picker = st.columns([3, 1])
-        with col_m_picker:
+        # 📌 상단 수급 날짜 피커 및 핵심 메트릭 1줄 배치
+        c0, c1, c2, c3, c4 = st.columns([1.2, 1, 1, 1, 1])
+
+        with c0:
             market_supply_date = st.date_input(
-                "📅 수급 조회 날짜",
+                "📅 수급 조회일",
                 value=selected_date,
                 key="tab1_market_supply_date_picker",
+                label_visibility="collapsed",
             )
             supply_target_date_str = pd.to_datetime(
                 market_supply_date
             ).strftime("%Y-%m-%d")
 
-        c1, c2, c3, c4 = st.columns(4)
         c1.metric(
             "전략 엔진",
             "🔥 전략 3 (Top 7)"
@@ -1151,6 +1152,54 @@ if df_display is not None:
                             f"💡 {supply_target_date_str} 일자의 수급 TOP 종목 내역이 없습니다."
                         )
 
+                # 📌 해당 일자의 전체 수급 데이터 표 전체 노출
+                st.divider()
+                st.markdown(
+                    f"###### 📋 {supply_target_date_str} 해당 일자 전체 수급 데이터 현황"
+                )
+                if not df_stock_liq.empty:
+                    df_liq_full = df_stock_liq.sort_values(
+                        "rank", ascending=True
+                    )[[
+                        "rank",
+                        "ticker",
+                        "name",
+                        "close_price",
+                        "change_rate",
+                        "foreign_net",
+                        "inst_net",
+                    ]].copy()
+
+                    df_liq_full = df_liq_full.rename(columns={
+                        "rank": "순위",
+                        "ticker": "티커",
+                        "name": "종목명",
+                        "close_price": "종가",
+                        "change_rate": "등락률",
+                        "foreign_net": "외국인순매수",
+                        "inst_net": "기관순매수",
+                    })
+
+                    st.dataframe(
+                        df_liq_full.style.format({
+                            "종가": "{:,.0f}원",
+                            "등락률": "{:+.2f}%",
+                            "외국인순매수": "{:+,.0f}",
+                            "기관순매수": "{:+,.0f}",
+                        }).map(
+                            lambda v: "color: red;"
+                            if float(v) > 0
+                            else ("color: blue;" if float(v) < 0 else ""),
+                            subset=["등락률", "외국인순매수", "기관순매수"],
+                        ),
+                        hide_index=True,
+                        use_container_width=True,
+                    )
+                else:
+                    st.info(
+                        f"💡 {supply_target_date_str} 일자에 수집된 전체 수급 종목 내역이 존재하지 않습니다."
+                    )
+
                 with st.expander(
                     "🤖 Gemini AI 시장 전체 수급 종합 분석 리포트", expanded=False
                 ):
@@ -1179,7 +1228,7 @@ if df_display is not None:
                         st.success("✅ 수급 분석 완료")
                         st.markdown(analysis_res)
 
-    # 📌 TAB 2: 🚀 알파 시그널 (행 클릭 시 하단 분석 센터 동기화)
+    # 📌 TAB 2: 🚀 알파 시그널
     with tab2:
         st.markdown("###### 📋 알파 시그널 스크리닝 (모멘텀 순위 상위 200위)")
         filter_opt = st.radio(
@@ -1249,7 +1298,6 @@ if df_display is not None:
                 key="overview_table_selection",
             )
 
-            # 📌 [요청 반영 3] 행 선택 시 하단 통합 분석 센터로 Ticker 자동 동기화
             if event and event.get("selection", {}).get("rows"):
                 selected_row = df_target.iloc[event["selection"]["rows"][0]]
                 st.session_state["selected_ticker_from_table"] = selected_row[
@@ -1468,7 +1516,7 @@ if df_display is not None:
                     st.success("✅ 분석 완료")
                     st.markdown(analysis_result)
 
-    # TAB 3: 💼 시스템 매매 지시서
+    # 📌 TAB 3: 💼 시스템 매매 지시서
     with tab3:
         st.markdown(
             f"##### 🚀 시스템 매매 지시서 [보유 현황: {current_holdings_count} / {top_n_cfg}개]"
@@ -1812,7 +1860,7 @@ if df_display is not None:
                     """
                 )
 
-    # TAB 4: 📈 성과 분석
+    # 📌 TAB 4: 📈 성과 분석
     with tab4:
         st.markdown(f"##### 📊 {market_type} 시장 성과 분석 리포트")
 
@@ -2020,7 +2068,7 @@ if df_display is not None:
                         use_container_width=True,
                     )
 
-    # TAB 5: 🧪 백테스트 리포트
+    # 📌 TAB 5: 🧪 백테스트 리포트
     with tab5:
         st.markdown("##### 🧪 [Top 7 Regime] 자동 백테스트 검증 리포트")
         st.caption(
