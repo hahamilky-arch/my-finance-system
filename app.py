@@ -2186,8 +2186,19 @@ if df_display is not None:
                         st.markdown("###### 📉 매매 당시 주가 차트 및 진입/청산 타점 (🔴 매수 / 🔵 매도)")
                         
                         # 1. 차트 기본 생성
-                        draw_integrated_chart(ticker_code, market_type, {ticker_code: stock_nm})
+                        #draw_integrated_chart(ticker_code, market_type, {ticker_code: stock_nm})
+                        # app.py TAB 4 차트 호출 부분
+draw_integrated_chart(
+    ticker_code,
+    market_type,
+    {ticker_code: stock_nm},
+    buy_date=buy_date_str,
+    sell_date=sell_date_str,
+    buy_price=b_price,
+    sell_price=s_price,
+)
 
+  
                         st.write("")
                         st.markdown("###### 🤖 Gemini AI 매매 원칙 복기 리포트")
                         
