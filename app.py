@@ -729,7 +729,7 @@ if df_display is not None:
         "🧪 백테스트 리포트",
     ])
 
-    # 📌 TAB 1: 📊 시장 & 수급 종합
+    # 📌 TAB 1: 📊 시장 & 수급 종합 (10일 수급 빈도 + 20일 비차익/차익 합계 추이 포함)
     with tab1:
         st.markdown("###### 📊 시장 방향성 & 수급 종합")
 
@@ -1055,197 +1055,145 @@ if df_display is not None:
                     )
 
                 with col_t1_right:
-                    st.markdown("###### 🏆 외국인 / 기관 순매수 TOP 5")
+                    st.markdown("###### 📊 당일 TOP 5 & 최근 10일 수급 빈도 상위")
+                    
                     try:
-                        res_stock_liq = (
+                        res_liq_10d = (
                             supabase.table("daily_top_liquidity")
                             .select("*")
-                            .eq("trade_date", supply_target_date_str)
-                            .order("rank")
+                            .lte("trade_date", supply_target_date_str)
+                            .order("trade_date", desc=True)
+                            .limit(200)
                             .execute()
                         )
-                        df_stock_liq = (
-                            pd.DataFrame(res_stock_liq.data)
-                            if res_stock_liq.data
-                            else pd.DataFrame()
-                        )
+                        df_liq_10d = pd.DataFrame(res_liq_10d.data) if res_liq_10d.data else pd.DataFrame()
                     except Exception:
-                        df_stock_liq = pd.DataFrame()
+                        df_liq_10d = pd.DataFrame()
 
-                    if not df_stock_liq.empty:
-                        tab_foreign, tab_inst = st.tabs(
-                            ["🔥 외국인 TOP 5", "🏛 기관 TOP 5"]
-                        )
-                        with tab_foreign:
-                            df_f_top = df_stock_liq.sort_values(
-                                "foreign_net", ascending=False
-                            ).head(5)[
-                                [
-                                    "rank",
-                                    "name",
-                                    "close_price",
-                                    "change_rate",
-                                    "foreign_net",
-                                    "inst_net",
-                                ]
-                            ]
-                            df_f_top = df_f_top.rename(columns={
-                                "rank": "순위",
-                                "name": "종목명",
-                                "close_price": "종가",
-                                "change_rate": "등락률",
-                                "foreign_net": "외인",
-                                "inst_net": "기관",
-                            })
-                            st.dataframe(
-                                df_f_top.style.format({
-                                    "종가": "{:,.0f}",
-                                    "등락률": "{:+.2f}%",
-                                    "외인": "{:+,.0f}",
-                                    "기관": "{:+,.0f}",
-                                }).map(
-                                    lambda v: "color: red;"
-                                    if float(v) > 0
-                                    else ("color: blue;" if float(v) < 0 else ""),
-                                    subset=["등락률", "외인", "기관"],
-                                ),
-                                hide_index=True,
-                                use_container_width=True,
-                            )
+                    df_stock_liq = df_liq_10d[df_liq_10d["trade_date"] == supply_target_date_str] if not df_liq_10d.empty else pd.DataFrame()
 
-                        with tab_inst:
-                            df_i_top = df_stock_liq.sort_values(
-                                "inst_net", ascending=False
-                            ).head(5)[
-                                [
-                                    "rank",
-                                    "name",
-                                    "close_price",
-                                    "change_rate",
-                                    "foreign_net",
-                                    "inst_net",
-                                ]
-                            ]
-                            df_i_top = df_i_top.rename(columns={
-                                "rank": "순위",
-                                "name": "종목명",
-                                "close_price": "종가",
-                                "change_rate": "등락률",
-                                "foreign_net": "외인",
-                                "inst_net": "기관",
-                            })
+                    tab_f_day, tab_i_day, tab_f_10d, tab_i_10d = st.tabs(
+                        ["🔥 外인 당일", "🏛 機 당일", "⭐ 外인 10일 빈도 TOP", "⭐ 機 10일 빈도 TOP"]
+                    )
+
+                    with tab_f_day:
+                        if not df_stock_liq.empty:
+                            df_f_top = df_stock_liq.sort_values("foreign_net", ascending=False).head(5)[["rank", "name", "close_price", "change_rate", "foreign_net", "inst_net"]]
+                            df_f_top = df_f_top.rename(columns={"rank": "순위", "name": "종목명", "close_price": "종가", "change_rate": "등락률", "foreign_net": "외인", "inst_net": "기관"})
                             st.dataframe(
-                                df_i_top.style.format({
-                                    "종가": "{:,.0f}",
-                                    "등락률": "{:+.2f}%",
-                                    "외인": "{:+,.0f}",
-                                    "기관": "{:+,.0f}",
-                                }).map(
-                                    lambda v: "color: red;"
-                                    if float(v) > 0
-                                    else ("color: blue;" if float(v) < 0 else ""),
-                                    subset=["등락률", "외인", "기관"],
-                                ),
-                                hide_index=True,
-                                use_container_width=True,
+                                df_f_top.style.format({"종가": "{:,.0f}", "등락률": "{:+.2f}%", "외인": "{:+,.0f}", "기관": "{:+,.0f}"})
+                                .map(lambda v: "color: red;" if float(v) > 0 else ("color: blue;" if float(v) < 0 else ""), subset=["등락률", "외인", "기관"]),
+                                hide_index=True, use_container_width=True
                             )
-                    else:
-                        st.info(
-                            f"💡 {supply_target_date_str} 일자의 수급 TOP 종목 내역이 없습니다."
-                        )
+                        else:
+                            st.caption("당일 데이터 없음")
+
+                    with tab_i_day:
+                        if not df_stock_liq.empty:
+                            df_i_top = df_stock_liq.sort_values("inst_net", ascending=False).head(5)[["rank", "name", "close_price", "change_rate", "foreign_net", "inst_net"]]
+                            df_i_top = df_i_top.rename(columns={"rank": "순위", "name": "종목명", "close_price": "종가", "change_rate": "등락률", "foreign_net": "외인", "inst_net": "기관"})
+                            st.dataframe(
+                                df_i_top.style.format({"종가": "{:,.0f}", "등락률": "{:+.2f}%", "외인": "{:+,.0f}", "기관": "{:+,.0f}"})
+                                .map(lambda v: "color: red;" if float(v) > 0 else ("color: blue;" if float(v) < 0 else ""), subset=["등락률", "외인", "기관"]),
+                                hide_index=True, use_container_width=True
+                            )
+                        else:
+                            st.caption("당일 데이터 없음")
+
+                    with tab_f_10d:
+                        if not df_liq_10d.empty:
+                            df_f_pos = df_liq_10d[df_liq_10d["foreign_net"] > 0]
+                            freq_f = df_f_pos.groupby(["ticker", "name"]).agg(
+                                빈도수=("trade_date", "nunique"),
+                                누적순매수=("foreign_net", "sum"),
+                                평균등락률=("change_rate", "mean")
+                            ).reset_index().sort_values(["빈도수", "누적순매수"], ascending=[False, False]).head(10)
+                            
+                            freq_f = freq_f.rename(columns={"ticker": "티커", "name": "종목명", "평균등락률": "평균등락"})
+                            st.dataframe(
+                                freq_f.style.format({"빈도수": "{:.0f}일", "누적순매수": "{:+,.0f}", "평균등락": "{:+.2f}%"})
+                                .map(lambda v: "color: red;" if float(v) > 0 else ("color: blue;" if float(v) < 0 else ""), subset=["누적순매수", "평균등락"]),
+                                hide_index=True, use_container_width=True
+                            )
+                        else:
+                            st.caption("최근 10일 수급 데이터 없음")
+
+                    with tab_i_10d:
+                        if not df_liq_10d.empty:
+                            df_i_pos = df_liq_10d[df_liq_10d["inst_net"] > 0]
+                            freq_i = df_i_pos.groupby(["ticker", "name"]).agg(
+                                빈도수=("trade_date", "nunique"),
+                                누적순매수=("inst_net", "sum"),
+                                평균등락률=("change_rate", "mean")
+                            ).reset_index().sort_values(["빈도수", "누적순매수"], ascending=[False, False]).head(10)
+                            
+                            freq_i = freq_i.rename(columns={"ticker": "티커", "name": "종목명", "평균등락률": "평균등락"})
+                            st.dataframe(
+                                freq_i.style.format({"빈도수": "{:.0f}일", "누적순매수": "{:+,.0f}", "평균등락": "{:+.2f}%"})
+                                .map(lambda v: "color: red;" if float(v) > 0 else ("color: blue;" if float(v) < 0 else ""), subset=["누적순매수", "평균등락"]),
+                                hide_index=True, use_container_width=True
+                            )
+                        else:
+                            st.caption("최근 10일 수급 데이터 없음")
 
                 st.divider()
-                st.markdown("###### 📈 최근 시장 투자자별 & 프로그램 매매 추이 차트 (최근 20영업일)")
-                
-                col_chart_k, col_chart_kq, col_chart_prog = st.columns(3)
-                
-                with col_chart_k:
-                    if not df_k_all.empty:
-                        df_k_chart = df_k_all.head(20).sort_values("trade_date").copy()
-                        df_k_chart["date_fmt"] = pd.to_datetime(df_k_chart["trade_date"]).dt.strftime("%Y%m%d")
-                        fig_inv = gg.Figure()
-                        fig_inv.add_trace(gg.Scatter(x=df_k_chart["date_fmt"], y=df_k_chart["foreign_net"].cumsum(), mode="lines+markers", name="외인", line=dict(color="#d62728")))
-                        fig_inv.add_trace(gg.Scatter(x=df_k_chart["date_fmt"], y=df_k_chart["institution_net"].cumsum(), mode="lines+markers", name="기관", line=dict(color="#2ca02c")))
-                        fig_inv.add_trace(gg.Scatter(x=df_k_chart["date_fmt"], y=df_k_chart["individual_net"].cumsum(), mode="lines+markers", name="개인", line=dict(color="#1f77b4")))
-                        fig_inv.update_layout(title="KOSPI 주체별 누적 (백만원)", height=260, margin=dict(l=10, r=10, t=35, b=20), xaxis=dict(type="category"), legend=dict(orientation="h", y=1.12))
-                        st.plotly_chart(fig_inv, use_container_width=True)
-                    else:
-                        st.caption("KOSPI 차트 데이터 없음")
 
-                with col_chart_kq:
-                    if not df_kq_all.empty:
-                        df_kq_chart = df_kq_all.head(20).sort_values("trade_date").copy()
-                        df_kq_chart["date_fmt"] = pd.to_datetime(df_kq_chart["trade_date"]).dt.strftime("%Y%m%d")
-                        fig_kq = gg.Figure()
-                        fig_kq.add_trace(gg.Scatter(x=df_kq_chart["date_fmt"], y=df_kq_chart["foreign_net"].cumsum(), mode="lines+markers", name="외인", line=dict(color="#d62728")))
-                        fig_kq.add_trace(gg.Scatter(x=df_kq_chart["date_fmt"], y=df_kq_chart["institution_net"].cumsum(), mode="lines+markers", name="기관", line=dict(color="#2ca02c")))
-                        fig_kq.add_trace(gg.Scatter(x=df_kq_chart["date_fmt"], y=df_kq_chart["individual_net"].cumsum(), mode="lines+markers", name="개인", line=dict(color="#1f77b4")))
-                        fig_kq.update_layout(title="KOSDAQ 주체별 누적 (백만원)", height=260, margin=dict(l=10, r=10, t=35, b=20), xaxis=dict(type="category"), legend=dict(orientation="h", y=1.12))
-                        st.plotly_chart(fig_kq, use_container_width=True)
-                    else:
-                        st.caption("KOSDAQ 차트 데이터 없음")
+                st.markdown("###### 📈 최근 20영업일 비차익 & 차익 프로그램 순매수 합계 추이 (백만원)")
+                
+                if not df_p_sorted.empty:
+                    df_p_20d = df_p_sorted.head(20).sort_values("trade_date").copy()
+                    df_p_20d["date_fmt"] = pd.to_datetime(df_p_20d["trade_date"]).dt.strftime("%Y-%m-%d")
+                    df_p_20d["non_arb"] = pd.to_numeric(df_p_20d.get("non_arbitrage_net", 0), errors="coerce").fillna(0)
+                    df_p_20d["arb"] = pd.to_numeric(df_p_20d.get("arbitrage_net", 0), errors="coerce").fillna(0)
+                    df_p_20d["tot_prog"] = df_p_20d["non_arb"] + df_p_20d["arb"]
 
-                with col_chart_prog:
-                    if not df_p_sorted.empty:
-                        df_p_chart = df_p_sorted.head(20).sort_values("trade_date").copy()
-                        df_p_chart["date_fmt"] = pd.to_datetime(df_p_chart["trade_date"]).dt.strftime("%Y%m%d")
-                        fig_prog = gg.Figure()
-                        fig_prog.add_trace(gg.Bar(x=df_p_chart["date_fmt"], y=df_p_chart["non_arbitrage_net"], name="비차익", marker_color=np.where(df_p_chart["non_arbitrage_net"] > 0, "#d62728", "#1f77b4")))
-                        fig_prog.update_layout(title="프로그램 비차익 (백만원)", height=260, margin=dict(l=10, r=10, t=35, b=20), xaxis=dict(type="category"))
-                        st.plotly_chart(fig_prog, use_container_width=True)
-                    else:
-                        st.caption("프로그램 차트 데이터 없음")
+                    df_p_20d["non_arb_cum"] = df_p_20d["non_arb"].cumsum()
+                    df_p_20d["arb_cum"] = df_p_20d["arb"].cumsum()
+                    df_p_20d["tot_prog_cum"] = df_p_20d["tot_prog"].cumsum()
+
+                    col_prg_chart, col_prg_table = st.columns([1.2, 1])
+
+                    with col_prg_chart:
+                        fig_p_trend = gg.Figure()
+                        fig_p_trend.add_trace(gg.Scatter(x=df_p_20d["date_fmt"], y=df_p_20d["non_arb_cum"], mode="lines+markers", name="비차익 누적", line=dict(color="#d62728", width=2.5)))
+                        fig_p_trend.add_trace(gg.Scatter(x=df_p_20d["date_fmt"], y=df_p_20d["arb_cum"], mode="lines+markers", name="차익 누적", line=dict(color="#ff7f0e", width=1.5, dash="dash")))
+                        fig_p_trend.add_trace(gg.Scatter(x=df_p_20d["date_fmt"], y=df_p_20d["tot_prog_cum"], mode="lines+markers", name="프로그램 전체 누적", line=dict(color="#1f77b4", width=2)))
+                        
+                        fig_p_trend.update_layout(
+                            height=300,
+                            margin=dict(l=10, r=10, t=20, b=20),
+                            xaxis=dict(type="category", tickangle=-45),
+                            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+                        )
+                        st.plotly_chart(fig_p_trend, use_container_width=True)
+
+                    with col_prg_table:
+                        disp_p_table = df_p_20d[["date_fmt", "non_arb", "arb", "tot_prog"]].sort_values("date_fmt", ascending=False).rename(columns={
+                            "date_fmt": "일자", "non_arb": "비차익", "arb": "차익", "tot_prog": "합계"
+                        })
+                        st.dataframe(
+                            disp_p_table.style.format({"비차익": "{:+,.0f}", "차익": "{:+,.0f}", "합계": "{:+,.0f}"})
+                            .map(lambda v: "color: red;" if float(v) > 0 else ("color: blue;" if float(v) < 0 else ""), subset=["비차익", "차익", "합계"]),
+                            hide_index=True, use_container_width=True
+                        )
+                else:
+                    st.info("프로그램 추이 데이터가 부족합니다.")
 
                 st.divider()
-                st.markdown(
-                    f"###### 📋 {supply_target_date_str} 해당 일자 전체 수급 데이터 현황"
-                )
+                st.markdown(f"###### 📋 {supply_target_date_str} 해당 일자 전체 수급 데이터 현황")
                 if not df_stock_liq.empty:
-                    df_liq_full = df_stock_liq.sort_values(
-                        "rank", ascending=True
-                    )[[
-                        "rank",
-                        "ticker",
-                        "name",
-                        "close_price",
-                        "change_rate",
-                        "foreign_net",
-                        "inst_net",
-                    ]].copy()
-
-                    df_liq_full = df_liq_full.rename(columns={
-                        "rank": "순위",
-                        "ticker": "티커",
-                        "name": "종목명",
-                        "close_price": "종가",
-                        "change_rate": "등락률",
-                        "foreign_net": "외국인순매수",
-                        "inst_net": "기관순매수",
-                    })
+                    df_liq_full = df_stock_liq.sort_values("rank", ascending=True)[["rank", "ticker", "name", "close_price", "change_rate", "foreign_net", "inst_net"]].copy()
+                    df_liq_full = df_liq_full.rename(columns={"rank": "순위", "ticker": "티커", "name": "종목명", "close_price": "종가", "change_rate": "등락률", "foreign_net": "외국인순매수", "inst_net": "기관순매수"})
 
                     st.dataframe(
-                        df_liq_full.style.format({
-                            "종가": "{:,.0f}원",
-                            "등락률": "{:+.2f}%",
-                            "외국인순매수": "{:+,.0f}",
-                            "기관순매수": "{:+,.0f}",
-                        }).map(
-                            lambda v: "color: red;"
-                            if float(v) > 0
-                            else ("color: blue;" if float(v) < 0 else ""),
-                            subset=["등락률", "외국인순매수", "기관순매수"],
-                        ),
-                        hide_index=True,
-                        use_container_width=True,
+                        df_liq_full.style.format({"종가": "{:,.0f}원", "등락률": "{:+.2f}%", "외국인순매수": "{:+,.0f}", "기관순매수": "{:+,.0f}"})
+                        .map(lambda v: "color: red;" if float(v) > 0 else ("color: blue;" if float(v) < 0 else ""), subset=["등락률", "외국인순매수", "기관순매수"]),
+                        hide_index=True, use_container_width=True
                     )
                 else:
-                    st.info(
-                        f"💡 {supply_target_date_str} 일자에 수집된 전체 수급 종목 내역이 존재하지 않습니다."
-                    )
+                    st.info(f"💡 {supply_target_date_str} 일자에 수집된 전체 수급 종목 내역이 존재하지 않습니다.")
 
-                with st.expander(
-                    "🤖 Gemini AI 시장 전체 수급 종합 분석 리포트", expanded=False
-                ):
+                with st.expander("🤖 Gemini AI 시장 전체 수급 종합 분석 리포트", expanded=False):
                     prompt_text = f"""[Market Regime 및 수급 종합 분석 요청]
 - 분석 일자: {supply_target_date_str}
 - Market Regime 상태: {regime_status_str}
@@ -1255,12 +1203,7 @@ if df_display is not None:
 - 지수-수급 다이버전스: {divergence_msg if divergence_msg else "특이사항 없음"}"""
 
                     st.code(prompt_text, language="markdown")
-                    if st.button(
-                        "✨ Gemini AI 수급 종합 분석 실행",
-                        type="primary",
-                        use_container_width=True,
-                        key="btn_run_gemini_market_analysis",
-                    ):
+                    if st.button("✨ Gemini AI 수급 종합 분석 실행", type="primary", use_container_width=True, key="btn_run_gemini_market_analysis"):
                         with st.spinner("🤖 수급 흐름을 종합 분석 중입니다..."):
                             analysis_res = analyze_stock_with_gemini(
                                 "MARKET_TREND",
@@ -1944,7 +1887,7 @@ if df_display is not None:
                     """
                 )
 
-    # 📌 TAB 4: 📈 성과 분석 (단일 복기 센터로 정돈)
+    # 📌 TAB 4: 📈 성과 분석 (단일 복기 센터)
     with tab4:
         st.markdown(f"##### 📊 {market_type} 시장 성과 분석 리포트")
 
@@ -2161,7 +2104,7 @@ if df_display is not None:
                             st.session_state["selected_perf_trade_data"] = selected_trade.to_dict()
                             st.rerun()
 
-                    # 3. 선택된 종목 복기 상세 분석 센터 (단일화)
+                    # 3. 선택된 종목 복기 상세 분석 센터
                     st.divider()
                     sel_trade_data = st.session_state.get("selected_perf_trade_data")
 
