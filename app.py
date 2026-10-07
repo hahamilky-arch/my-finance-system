@@ -42,7 +42,7 @@ components.html(
 
 st.markdown("<div id='top-section'></div>", unsafe_allow_html=True)
 
-# 📌 1. 상단 탭 Sticky 설정 및 정돈된 스타일 (플로팅 버튼 삭제)
+# 📌 1. 상단 탭 Sticky 설정 및 정돈된 스타일
 st.markdown(
     """
     <style>
@@ -1156,7 +1156,7 @@ if df_display is not None:
                             f"💡 {supply_target_date_str} 일자의 수급 TOP 종목 내역이 없습니다."
                         )
 
-                # 📌 [요청 반영 1] 차트 범례 색상: 개인=파란색(#1f77b4), 기관=초록색(#2ca02c), 외국인=빨간색(#d62728)
+                # 📌 차트 범례 색상: 개인=파란색(#1f77b4), 기관=초록색(#2ca02c), 외국인=빨간색(#d62728)
                 st.divider()
                 st.markdown("###### 📈 최근 시장 투자자별 & 프로그램 매매 추이 차트 (최근 20영업일)")
                 
@@ -1348,7 +1348,7 @@ if df_display is not None:
                 key="overview_table_selection",
             )
 
-            # 📌 [요청 반영 3] 행 선택 시 종목 자동 동기화 보완
+            # 행 선택 시 종목 자동 동기화
             if event and event.get("selection", {}).get("rows"):
                 selected_row_idx = event["selection"]["rows"][0]
                 selected_row = df_target.iloc[selected_row_idx]
@@ -1360,7 +1360,7 @@ if df_display is not None:
 
         st.divider()
 
-        # 📌 [요청 반영 2] 페이지 인라인 "위로 가기" 버튼 및 앵커
+        # 페이지 인라인 "위로 가기" 버튼 및 앵커
         st.markdown("<div id='analysis-center-section'></div>", unsafe_allow_html=True)
         col_center_title, col_top_btn = st.columns([4, 1])
         with col_center_title:
@@ -1914,7 +1914,7 @@ if df_display is not None:
                     """
                 )
 
-    # 📌 TAB 4: 📈 성과 분석
+    # 📌 TAB 4: 📈 성과 분석 (매매 복기 자동 분석 기능 탑재)
     with tab4:
         st.markdown(f"##### 📊 {market_type} 시장 성과 분석 리포트")
 
@@ -2085,11 +2085,11 @@ if df_display is not None:
                     st.markdown("###### 🔍 수익 기여도 시각화 차트")
                     draw_attribution_charts(df_hist, market_type)
 
+                    # 📌 매매 청산 목록 및 종목 클릭 시 자동 복기 연동
                     st.write("")
-                    st.markdown("###### 📜 상세 청산 매매 내역")
-                    df_hist_sorted = df_hist.sort_values(
-                        "sell_date", ascending=False
-                    )
+                    st.markdown("###### 📜 상세 청산 매매 내역 (종목 클릭 시 하단 자동 복기 분석)")
+                    
+                    df_hist_sorted = df_hist.sort_values("sell_date", ascending=False).reset_index(drop=True)
                     disp_cols = [
                         "sell_date",
                         "ticker",
@@ -2102,25 +2102,97 @@ if df_display is not None:
                         "profit_rate",
                         "holding_days",
                     ]
-                    df_hist_sorted = df_hist_sorted.rename(
-                        columns={"holding_days": "보유일수"}
-                    )
+                    df_hist_disp = df_hist_sorted.rename(columns={"holding_days": "보유일수"}).copy()
                     disp_cols[-1] = "보유일수"
 
-                    st.dataframe(
-                        df_hist_sorted[disp_cols].style.format({
+                    # 1. 청산 표에서 단일 행 선택 이벤트 수신
+                    event_perf = st.dataframe(
+                        df_hist_disp[disp_cols].style.format({
                             "buy_price": price_fmt,
                             "sell_price": price_fmt,
-                            "quantity": "{:,.2f}"
-                            if market_type == "US"
-                            else "{:,.0f}",
+                            "quantity": "{:,.2f}" if market_type == "US" else "{:,.0f}",
                             "profit_amount": profit_fmt,
                             "profit_rate": "{:+.2f}%",
                             "보유일수": "{:.0f}일",
                         }),
                         hide_index=True,
                         use_container_width=True,
+                        on_select="rerun",
+                        selection_mode="single-row",
+                        key="perf_history_table_selection",
                     )
+
+                    # 2. 표에서 행 클릭 시 세션 상태 업데이트
+                    if event_perf and event_perf.get("selection", {}).get("rows"):
+                        sel_idx = event_perf["selection"]["rows"][0]
+                        selected_trade = df_hist_sorted.iloc[sel_idx]
+
+                        if st.session_state.get("selected_perf_trade_idx") != sel_idx:
+                            st.session_state["selected_perf_trade_idx"] = sel_idx
+                            st.session_state["selected_perf_trade_data"] = selected_trade.to_dict()
+                            st.rerun()
+
+                    # 3. 선택된 종목 복기 상세 분석 센터
+                    st.divider()
+                    sel_trade_data = st.session_state.get("selected_perf_trade_data")
+
+                    if sel_trade_data:
+                        stock_nm = sel_trade_data.get("종목명", sel_trade_data.get("ticker"))
+                        ticker_code = str(sel_trade_data.get("ticker")).strip().upper()
+                        buy_date_str = str(sel_trade_data.get("buy_date"))
+                        sell_date_str = str(sel_trade_data.get("sell_date"))
+                        p_amt = float(sel_trade_data.get("profit_amount", 0))
+                        p_rate = float(sel_trade_data.get("profit_rate", 0))
+                        h_days = int(sel_trade_data.get("holding_days", 0))
+                        b_price = float(sel_trade_data.get("buy_price", 0))
+                        s_price = float(sel_trade_data.get("sell_price", 0))
+
+                        st.markdown(f"###### 🔍 [{stock_nm} ({ticker_code})] 매매 복기 상세 분석")
+
+                        # 정량적 데이터 요약 카드
+                        c_r1, c_r2, c_r3, c_r4, c_r5 = st.columns(5)
+                        c_r1.metric("실현 손익", profit_fmt(p_amt), delta=f"{p_rate:+.2f}%")
+                        c_r2.metric("매수 단가 / 일자", price_fmt(b_price), delta=buy_date_str, delta_color="off")
+                        c_r3.metric("매도 단가 / 일자", price_fmt(s_price), delta=sell_date_str, delta_color="off")
+                        c_r4.metric("보유 기간", f"{h_days}일")
+                        c_r5.metric("매매 결과", "🎉 익절" if p_amt > 0 else ("🛡️ 손절" if p_amt < 0 else "⚖️ 본절"))
+
+                        # 기술적 차트 동기화
+                        st.write("")
+                        st.markdown("###### 📉 매매 당시 주가 차트 및 진입/청산 타점")
+                        draw_integrated_chart(ticker_code, market_type, {ticker_code: stock_nm})
+
+                        st.write("")
+                        st.markdown("###### 🤖 Gemini AI 매매 원칙 복기 리포트")
+                        
+                        review_prompt = f"""[매매 복기(Post-Trade Review) 요청]
+- 종목명: {stock_nm} ({ticker_code})
+- 매수일자/매수가: {buy_date_str} / {b_price}
+- 매도일자/매도가: {sell_date_str} / {s_price}
+- 보유기간: {h_days}일
+- 실현손익: {p_amt} ({p_rate:+.2f}%)
+- 적용 전략: {current_engine_key}
+
+다음 4가지 핵심 원칙에 따라 이번 매매를 정밀 평가 및 복기해 주세요:
+1. **진입/청산 적절성**: 시스템 시그널(모멘텀 순위, RS, 이격도, 스탑 조건)에 부합했는가?
+2. **리스크 및 자금 관리**: 손실폭 제어 및 포지션 사이징이 적절했는가?
+3. **심리/원칙 준수**: 뇌동매수나 조기 손절/탐욕 등 감정적 개입 여부 평가
+4. **Actionable Feedback (Keep / Problem / Try)**: 다음 매매에 적용할 핵심 피드백"""
+
+                        st.code(review_prompt, language="markdown")
+
+                        if st.button("✨ Gemini AI 매매 복기 실행", type="primary", use_container_width=True, key="btn_run_gemini_trade_review"):
+                            with st.spinner(f"🤖 '{stock_nm}' 매매 내역을 종합 복기 중입니다..."):
+                                review_result = analyze_stock_with_gemini(
+                                    ticker_code,
+                                    stock_nm,
+                                    {"MOT": 0, "RS(90)": 0, "이격도": 0, "종가": s_price},
+                                    review_prompt,
+                                )
+                            st.success("✅ 복기 분석 완료")
+                            st.markdown(review_result)
+                    else:
+                        st.info("💡 위의 상세 청산 매매 내역 표에서 복기하고자 하는 **종목 행을 클릭**하면 하단에 기술적 차트 및 Gemini AI 복기 리포트가 자동으로 생성됩니다.")
 
     # 📌 TAB 5: 🧪 백테스트 리포트
     with tab5:
