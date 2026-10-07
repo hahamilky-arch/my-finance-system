@@ -42,7 +42,7 @@ components.html(
 
 st.markdown("<div id='top-section'></div>", unsafe_allow_html=True)
 
-# 📌 1. 상단 탭 Sticky 설정 및 정돈된 스타일
+# 📌 1. 상단 탭 Sticky 설정 및 정돈된 스타일 (플로팅 버튼 삭제)
 st.markdown(
     """
     <style>
@@ -66,13 +66,6 @@ st.markdown(
         box-shadow: 0px 4px 10px rgba(0,0,0,0.05);
     }
     
-    .floating-btn-left {
-        position: fixed; bottom: 25px; left: 25px;
-        background: linear-gradient(135deg, #2b5876 0%, #4e4376 100%);
-        color: white !important; border-radius: 30px; padding: 10px 18px;
-        font-weight: bold; box-shadow: 0 4px 15px rgba(0,0,0,0.2);
-        cursor: pointer; z-index: 999999; text-decoration: none;
-    }
     .backup-tag {
         background-color: #fff3cd; color: #856404; font-size: 0.85em; font-weight: bold;
         padding: 2px 8px; border-radius: 6px; border: 1px solid #ffeeba; margin-left: 6px;
@@ -84,8 +77,7 @@ st.markdown(
         display: inline-block;
     }
     </style>
-    <a href="#top-section" class="floating-btn-left"><span>⬆</span> <span>위로</span></a>
-""",
+    """,
     unsafe_allow_html=True,
 )
 
@@ -890,7 +882,7 @@ if df_display is not None:
                     else pd.DataFrame()
                 )
 
-                # 📌 최근 5일 / 10일 순매수 일수(빈도수) 계산
+                # 최근 5일 / 10일 순매수 일수(빈도수) 계산
                 k_f_days = (
                     int((df_k_all.head(5)["foreign_net"] > 0).sum())
                     if not df_k_all.empty
@@ -1164,7 +1156,7 @@ if df_display is not None:
                             f"💡 {supply_target_date_str} 일자의 수급 TOP 종목 내역이 없습니다."
                         )
 
-                # 📌 코스피 / 코스닥 주체별 누적 차트 및 프로그램 차트 (날짜 yyyymmdd 형식 포맷팅)
+                # 📌 [요청 반영 1] 차트 범례 색상: 개인=파란색(#1f77b4), 기관=초록색(#2ca02c), 외국인=빨간색(#d62728)
                 st.divider()
                 st.markdown("###### 📈 최근 시장 투자자별 & 프로그램 매매 추이 차트 (최근 20영업일)")
                 
@@ -1177,22 +1169,22 @@ if df_display is not None:
                         df_k_chart["date_fmt"] = pd.to_datetime(df_k_chart["trade_date"]).dt.strftime("%Y%m%d")
                         fig_inv = gg.Figure()
                         fig_inv.add_trace(gg.Scatter(x=df_k_chart["date_fmt"], y=df_k_chart["foreign_net"].cumsum(), mode="lines+markers", name="외인", line=dict(color="#d62728")))
-                        fig_inv.add_trace(gg.Scatter(x=df_k_chart["date_fmt"], y=df_k_chart["institution_net"].cumsum(), mode="lines+markers", name="기관", line=dict(color="#1f77b4")))
-                        fig_inv.add_trace(gg.Scatter(x=df_k_chart["date_fmt"], y=df_k_chart["individual_net"].cumsum(), mode="lines+markers", name="개인", line=dict(color="#2ca02c")))
+                        fig_inv.add_trace(gg.Scatter(x=df_k_chart["date_fmt"], y=df_k_chart["institution_net"].cumsum(), mode="lines+markers", name="기관", line=dict(color="#2ca02c")))
+                        fig_inv.add_trace(gg.Scatter(x=df_k_chart["date_fmt"], y=df_k_chart["individual_net"].cumsum(), mode="lines+markers", name="개인", line=dict(color="#1f77b4")))
                         fig_inv.update_layout(title="KOSPI 주체별 누적 (백만원)", height=260, margin=dict(l=10, r=10, t=35, b=20), xaxis=dict(type="category"), legend=dict(orientation="h", y=1.12))
                         st.plotly_chart(fig_inv, use_container_width=True)
                     else:
                         st.caption("KOSPI 차트 데이터 없음")
 
-                # 2. [요청 반영] 코스닥 주체별 누적 차트
+                # 2. 코스닥 주체별 누적 차트
                 with col_chart_kq:
                     if not df_kq_all.empty:
                         df_kq_chart = df_kq_all.head(20).sort_values("trade_date").copy()
                         df_kq_chart["date_fmt"] = pd.to_datetime(df_kq_chart["trade_date"]).dt.strftime("%Y%m%d")
                         fig_kq = gg.Figure()
                         fig_kq.add_trace(gg.Scatter(x=df_kq_chart["date_fmt"], y=df_kq_chart["foreign_net"].cumsum(), mode="lines+markers", name="외인", line=dict(color="#d62728")))
-                        fig_kq.add_trace(gg.Scatter(x=df_kq_chart["date_fmt"], y=df_kq_chart["institution_net"].cumsum(), mode="lines+markers", name="기관", line=dict(color="#1f77b4")))
-                        fig_kq.add_trace(gg.Scatter(x=df_kq_chart["date_fmt"], y=df_kq_chart["individual_net"].cumsum(), mode="lines+markers", name="개인", line=dict(color="#2ca02c")))
+                        fig_kq.add_trace(gg.Scatter(x=df_kq_chart["date_fmt"], y=df_kq_chart["institution_net"].cumsum(), mode="lines+markers", name="기관", line=dict(color="#2ca02c")))
+                        fig_kq.add_trace(gg.Scatter(x=df_kq_chart["date_fmt"], y=df_kq_chart["individual_net"].cumsum(), mode="lines+markers", name="개인", line=dict(color="#1f77b4")))
                         fig_kq.update_layout(title="KOSDAQ 주체별 누적 (백만원)", height=260, margin=dict(l=10, r=10, t=35, b=20), xaxis=dict(type="category"), legend=dict(orientation="h", y=1.12))
                         st.plotly_chart(fig_kq, use_container_width=True)
                     else:
@@ -1258,7 +1250,6 @@ if df_display is not None:
                         f"💡 {supply_target_date_str} 일자에 수집된 전체 수급 종목 내역이 존재하지 않습니다."
                     )
 
-                # 📌 NameError 방지를 위해 k_f_days 변수가 포함된 Gemini 분석 프롬프트
                 with st.expander(
                     "🤖 Gemini AI 시장 전체 수급 종합 분석 리포트", expanded=False
                 ):
@@ -1357,59 +1348,53 @@ if df_display is not None:
                 key="overview_table_selection",
             )
 
+            # 📌 [요청 반영 3] 행 선택 시 종목 자동 동기화 보완
             if event and event.get("selection", {}).get("rows"):
                 selected_row_idx = event["selection"]["rows"][0]
                 selected_row = df_target.iloc[selected_row_idx]
-                st.session_state["selected_ticker_from_table"] = str(
-                    selected_row["ticker"]
-                ).strip().upper()
-                st.session_state["tab2_selected_stock_name"] = selected_row[
-                    "종목명"
-                ]
+                clicked_ticker = str(selected_row["ticker"]).strip().upper()
+
+                if st.session_state.get("tab2_integrated_chart_selector") != clicked_ticker:
+                    st.session_state["tab2_integrated_chart_selector"] = clicked_ticker
+                    st.rerun()
 
         st.divider()
 
-        selected_ticker_state = st.session_state.get("selected_ticker_from_table")
-        is_tab2_auto_expanded = True if selected_ticker_state else False
+        # 📌 [요청 반영 2] 페이지 인라인 "위로 가기" 버튼 및 앵커
+        st.markdown("<div id='analysis-center-section'></div>", unsafe_allow_html=True)
+        col_center_title, col_top_btn = st.columns([4, 1])
+        with col_center_title:
+            st.markdown("###### 🔍 선택 종목 통합 분석 센터 (기술적 차트 & 수급 동향 & Gemini AI 분석)")
+        with col_top_btn:
+            st.markdown("<a href='#top-section' style='float:right; text-decoration:none; background-color:#333; color:white; padding:4px 12px; border-radius:15px; font-weight:bold; font-size:0.85em;'>⬆ 맨 위로</a>", unsafe_allow_html=True)
 
-        with st.expander(
-            "🔍 선택 종목 통합 분석 센터 (기술적 차트 & 수급 동향 & Gemini AI 분석)",
-            expanded=is_tab2_auto_expanded,
-        ):
-            top200_tickers = [
-                str(t).strip().upper()
-                for t in df_display.head(200)["ticker"].tolist()
-            ]
+        top200_tickers = [
+            str(t).strip().upper()
+            for t in df_display.head(200)["ticker"].tolist()
+        ]
 
-            if (
-                selected_ticker_state
-                and selected_ticker_state not in top200_tickers
-            ):
-                top200_tickers.insert(0, selected_ticker_state)
-
-            ticker_name_map = dict(
-                zip(
-                    df_display["ticker"].astype(str).str.strip().str.upper(),
-                    df_display["종목명"],
-                )
+        ticker_name_map = dict(
+            zip(
+                df_display["ticker"].astype(str).str.strip().str.upper(),
+                df_display["종목명"],
             )
+        )
 
-            default_ticker = (
-                selected_ticker_state
-                if selected_ticker_state in top200_tickers
-                else (top200_tickers[0] if top200_tickers else None)
-            )
+        current_selected = st.session_state.get("tab2_integrated_chart_selector")
+        if current_selected and current_selected not in top200_tickers:
+            top200_tickers.insert(0, current_selected)
 
-            target_idx = (
-                top200_tickers.index(default_ticker)
-                if default_ticker in top200_tickers
-                else 0
-            )
+        default_idx = (
+            top200_tickers.index(current_selected)
+            if current_selected in top200_tickers
+            else 0
+        )
 
+        with st.expander("🔍 선택 종목 통합 분석 센터 열기 / 접기", expanded=True):
             sel_chart_ticker = st.selectbox(
                 "분석 대상 종목 선택",
                 options=top200_tickers,
-                index=target_idx,
+                index=default_idx,
                 format_func=lambda x: f"[{x}] {ticker_name_map.get(x, x)}",
                 key="tab2_integrated_chart_selector",
             )
@@ -1424,7 +1409,7 @@ if df_display is not None:
                 st.write("")
                 st.divider()
 
-                # 2. 선택 종목 수급 동향 (표 & 차트 동기화 + 날짜 yyyymmdd 포맷)
+                # 2. 선택 종목 수급 동향 (표 & 차트 동기화 + 범례 색상 적용)
                 st.markdown("###### 🏛️ 선택 종목 외국인/기관 수급 동향")
 
                 if market_type == "US":
@@ -1459,7 +1444,7 @@ if df_display is not None:
 
                         col_s_chart, col_s_table = st.columns([1.2, 1])
 
-                        # 수급 누적 추이 차트 (yyyymmdd 형식 적용)
+                        # 수급 누적 추이 차트 (기관=초록색 #2ca02c)
                         with col_s_chart:
                             fig_supply = gg.Figure()
                             fig_supply.add_trace(
@@ -1477,7 +1462,7 @@ if df_display is not None:
                                     y=df_supply["inst_cum"],
                                     mode="lines+markers",
                                     name="기관 누적수급",
-                                    line=dict(color="#1f77b4", width=2),
+                                    line=dict(color="#2ca02c", width=2),
                                 )
                             )
                             fig_supply.update_layout(
