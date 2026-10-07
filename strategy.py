@@ -112,7 +112,7 @@ def get_data(
         ["순위_prev", "종가_prev", "MA20_prev"]
     ].apply(pd.to_numeric, errors="coerce")
 
-    # 전일 대비 상승금액 / 상승률 / 순위변동 정상 산출
+    # 전일 대비 상승금액 / 상승률 / 순위변동 산출
     df_final["상승금액"] = df_final.apply(
         lambda r: r["종가"] - r["종가_prev"]
         if pd.notna(r["종가_prev"])
@@ -186,11 +186,10 @@ def get_data(
         market_type, target_date_str, cooldown_days=3
     )
 
-    # 📌 매도 종목 및 개별 실제 매도 사유 맵핑 구조 적용
     sell_dict = {}  # {ticker: "구체적 매도 사유"}
     target_dt = pd.to_datetime(target_date)
 
-    # 3. 전략별 보유 종목 청산 검사 (구체적 매도 사유 기록)
+    # 3. 전략별 보유 종목 청산 검사 (상승률 연계 보유기간 판단 반영)
     for _, row in df_final.iterrows():
         ticker_upper = str(row["ticker"]).strip().upper()
         if ticker_upper in my_holdings_clean:
@@ -216,11 +215,9 @@ def get_data(
                     if stop_new_buy or not is_bull_mode:
                         sell_dict[ticker_upper] = "레짐 전환 (시장 하락장 모드)"
                         continue
-                    # ATR 손절 (-2.5x)
                     if c_price <= (buy_price - 2.5 * entry_atr):
                         sell_dict[ticker_upper] = "ATR 손절 (-2.5x ATR 하회)"
                         continue
-                    # +8% 이상 달성 시 트레일링 스탑
                     if highest_price >= buy_price * 1.08:
                         ts_price = max(highest_price * 0.92, buy_price)
                         if c_price <= ts_price:
@@ -228,7 +225,6 @@ def get_data(
                                 "익절 트레일링스탑 (+8% 달성 후 수익보존)"
                             )
                             continue
-                    # MA20 이탈 청산
                     if c_price < ma20:
                         sell_dict[ticker_upper] = "MA20 이탈 (20일선 하회)"
                         continue
@@ -240,21 +236,21 @@ def get_data(
                     if c_price <= buy_price * (1 + (sl_cfg / 100.0)):
                         sell_dict[ticker_upper] = "단기 손절선 이탈 (-5%)"
                         continue
-                    if days_held >= 14:
-                        sell_dict[ticker_upper] = "보유 기간 초과 (14일)"
-                        continue
                     if c_price < ma20:
                         sell_dict[ticker_upper] = "MA20 이탈"
                         continue
                     if mom_rank > 200:
                         sell_dict[ticker_upper] = "순위 200위 초과"
                         continue
+                    # 📌 [상승률 연계] 14일 경과 & 수익률 +5% 미만인 경우만 보유기간 초과 청산
+                    if days_held >= 14 and profit_rate_pos < 5.0:
+                        sell_dict[ticker_upper] = (
+                            f"보유기간 초과 (14일 경과 / 수익률 {profit_rate_pos:+.1f}% 미달)"
+                        )
+                        continue
 
                 else:
                     rank_limit = 60 if is_bull_mode else 30
-                    if days_held >= 10 and profit_rate_pos < 3.0:
-                        sell_dict[ticker_upper] = "모멘텀 미달 (10일 경과)"
-                        continue
                     if c_price <= buy_price * (1 + (sl_cfg / 100.0)):
                         sell_dict[ticker_upper] = "손절선 이탈"
                         continue
@@ -263,6 +259,12 @@ def get_data(
                         continue
                     if mom_rank > rank_limit:
                         sell_dict[ticker_upper] = f"순위 {rank_limit}위 초과"
+                        continue
+                    # 📌 [상승률 연계] 10일 경과 & 수익률 +3% 미만 시간 손절
+                    if days_held >= 10 and profit_rate_pos < 3.0:
+                        sell_dict[ticker_upper] = (
+                            f"시간 손절 (10일 경과 / 수익률 {profit_rate_pos:+.1f}% 미달)"
+                        )
                         continue
 
     # 4. 매수추천순위(Buy Rank) 산출
@@ -335,19 +337,15 @@ def get_data(
         t = str(row["ticker"]).strip().upper()
         b_rank = buy_rank_map.get(t, "")
 
-        # 📌 매도 대상인 경우 실제 걸린 단일 사유 반환
         if t in sell_dict:
             return "매도필요", sell_dict[t], b_rank
 
-        # 보유 중인 경우
         if t in my_holdings_clean:
             return "보유중", "보유 조건 유지", b_rank
 
-        # 매수 추천 대상인 경우
         if t in buy_list:
             return "매수추천", "조건충족", b_rank
 
-        # 신규 미보유 종목 사유 분기
         reasons = []
         if stop_new_buy:
             reasons.append("시장경보(KOSPI < MA20)")
