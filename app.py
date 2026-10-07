@@ -2197,6 +2197,7 @@ if df_display is not None:
                             buy_date=buy_date_str,
                             sell_date=sell_date_str,
                             buy_price=b_price,
+                        )
                     
                     # 3. 선택된 종목 복기 상세 분석 센터 (진입 & 청산 지표 비교 출력)
                     st.divider()
