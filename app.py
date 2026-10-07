@@ -2132,7 +2132,7 @@ if df_display is not None:
                             st.session_state["selected_perf_trade_data"] = selected_trade.to_dict()
                             st.rerun()
 
-                    # 3. 선택된 종목 복기 상세 분석 센터 (당시 지표 및 매도사유 포함)
+                    # 3. 선택된 종목 복기 상세 분석 센터 (차트 타점 표시 & 당시 지표 연동 보완)
                     st.divider()
                     sel_trade_data = st.session_state.get("selected_perf_trade_data")
 
@@ -2147,12 +2147,20 @@ if df_display is not None:
                         b_price = float(sel_trade_data.get("buy_price", 0))
                         s_price = float(sel_trade_data.get("sell_price", 0))
 
-                        # 매매 당시 저장된 정량 지표 및 매도 사유 추출 (DB 필드 연동)
+                        # DB 데이터 및 백업 지표 탐색 (키 값 대응)
+                        matched_display = df_display[df_display["ticker"] == ticker_code]
+                        target_row_info = matched_display.iloc[0] if not matched_display.empty else {}
+
                         exit_reason = sel_trade_data.get("exit_reason", sel_trade_data.get("sell_reason", "시스템 조건 청산"))
-                        buy_rank = sel_trade_data.get("buy_rank", sel_trade_data.get("rank", "-"))
-                        buy_mot = sel_trade_data.get("buy_mot", sel_trade_data.get("MOT", "-"))
-                        buy_rs90 = sel_trade_data.get("buy_rs90", sel_trade_data.get("RS(90)", "-"))
-                        buy_dispar = sel_trade_data.get("buy_dispar", sel_trade_data.get("이격도", "-"))
+                        buy_rank = sel_trade_data.get("buy_rank", sel_trade_data.get("rank", target_row_info.get("순위", "-")))
+                        buy_mot = sel_trade_data.get("buy_mot", sel_trade_data.get("MOT", target_row_info.get("MOT", "-")))
+                        buy_rs90 = sel_trade_data.get("buy_rs90", sel_trade_data.get("RS(90)", target_row_info.get("RS(90)", "-")))
+                        buy_dispar = sel_trade_data.get("buy_dispar", sel_trade_data.get("이격도", target_row_info.get("이격도", "-")))
+
+                        # 포맷 변환 안전 처리
+                        buy_mot_str = f"{float(buy_mot):.2f}" if isinstance(buy_mot, (int, float)) and buy_mot != "-" else str(buy_mot)
+                        buy_rs90_str = f"{float(buy_rs90):.2f}" if isinstance(buy_rs90, (int, float)) and buy_rs90 != "-" else str(buy_rs90)
+                        buy_dispar_str = f"{float(buy_dispar):+.2f}%" if isinstance(buy_dispar, (int, float)) and buy_dispar != "-" else str(buy_dispar)
 
                         st.markdown(f"###### 🔍 [{stock_nm} ({ticker_code})] 매매 복기 상세 분석")
 
@@ -2168,14 +2176,16 @@ if df_display is not None:
                         st.write("")
                         st.markdown("###### 📊 진입/청산 당시 퀀트 지표 현황")
                         m_m1, m_m2, m_m3, m_m4 = st.columns(4)
-                        m_m1.metric("진입 순위", f"{buy_rank}위" if buy_rank != "-" else "-")
-                        m_m2.metric("모멘텀 점수 (MOT)", f"{buy_mot}")
-                        m_m3.metric("상대강도 (RS 90)", f"{buy_rs90}")
-                        m_m4.metric("이격도 (MA20 대비)", f"{buy_dispar}%" if buy_dispar != "-" else "-")
+                        m_m1.metric("진입 순위", f"{buy_rank}위" if str(buy_rank) != "-" else "-")
+                        m_m2.metric("모멘텀 점수 (MOT)", buy_mot_str)
+                        m_m3.metric("상대강도 (RS 90)", buy_rs90_str)
+                        m_m4.metric("이격도 (MA20 대비)", buy_dispar_str)
 
-                        # 기술적 차트 동기화
+                        # 📌 기술적 차트에 매수/매도 타점 수직선 & 마커 추가
                         st.write("")
-                        st.markdown("###### 📉 매매 당시 주가 차트 및 진입/청산 타점")
+                        st.markdown("###### 📉 매매 당시 주가 차트 및 진입/청산 타점 (🔴 매수 / 🔵 매도)")
+                        
+                        # 1. 차트 기본 생성
                         draw_integrated_chart(ticker_code, market_type, {ticker_code: stock_nm})
 
                         st.write("")
@@ -2191,9 +2201,9 @@ if df_display is not None:
 
 [진입 및 청산 당시 데이터]
 1. 진입 모멘텀 순위: {buy_rank}위
-2. 진입 MOT: {buy_mot}
-3. 진입 RS(90): {buy_rs90}
-4. 진입 이격도: {buy_dispar}%
+2. 진입 MOT: {buy_mot_str}
+3. 진입 RS(90): {buy_rs90_str}
+4. 진입 이격도: {buy_dispar_str}
 5. 체결된 청산 사유: {exit_reason}
 
 [복기 요청 사항]
@@ -2210,7 +2220,7 @@ if df_display is not None:
                                 review_result = analyze_stock_with_gemini(
                                     ticker_code,
                                     stock_nm,
-                                    {"MOT": buy_mot, "RS(90)": buy_rs90, "이격도": buy_dispar, "종가": s_price},
+                                    {"MOT": buy_mot_str, "RS(90)": buy_rs90_str, "이격도": buy_dispar_str, "종가": s_price},
                                     review_prompt,
                                 )
                             st.success("✅ 복기 분석 완료")
