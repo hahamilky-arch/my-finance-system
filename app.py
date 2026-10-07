@@ -1719,12 +1719,12 @@ if df_display is not None:
                 current_engine_key,
             )
 
-            st.markdown("---")
-            show_manual_trade = st.toggle(
-                "🔄 보유 종목 수동 매수/매도 입력창 펼치기", value=False
-            )
-            if show_manual_trade:
+            # 📌 수동 매수/매도 입력 센터 (st.expander & 청산 사유 직접 입력)
+            st.write("")
+            with st.expander("🔄 보유 종목 수동 매수/매도 입력 센터", expanded=False):
                 col_m_left, col_m_right = st.columns(2)
+                
+                # 1. 수동 매수 구역
                 with col_m_left:
                     st.markdown("###### ➕ 수동 매수")
                     with st.container(border=True):
@@ -1743,10 +1743,18 @@ if df_display is not None:
                         m_date = st.date_input(
                             "매수일", value=selected_date, key="m_date"
                         )
+                        
+                        is_manual_buy = st.checkbox(
+                            "✍️ 수기 매수 기록 (알고리즘 외 직접 진입)",
+                            value=True,
+                            key="chk_manual_buy"
+                        )
+
                         if st.button(
                             "수동 매수 실행",
                             use_container_width=True,
                             type="primary",
+                            key="btn_manual_buy_exec"
                         ):
                             if m_ticker and m_price > 0 and m_qty > 0:
                                 update_holdings(
@@ -1757,6 +1765,9 @@ if df_display is not None:
                                     m_qty,
                                     market_type,
                                 )
+                                st.success(f"✅ [{m_ticker}] 수동 매수 등록 완료")
+
+                # 2. 수동 매도 구역 (청산 사유 옵션 및 직접 입력 기능 반영)
                 with col_m_right:
                     st.markdown("###### 🗑 수동 매도")
                     with st.container(border=True):
@@ -1775,10 +1786,34 @@ if df_display is not None:
                         ms_date = st.date_input(
                             "매도일", value=selected_date, key="ms_date"
                         )
+
+                        exit_reason_preset = st.selectbox(
+                            "청산 사유 선택",
+                            [
+                                "수기 매도 (사용자 임의 청산)",
+                                "목표가 도달 (수동 익절)",
+                                "리스크 관리 (수동 손절)",
+                                "재료 소멸 / 뉴스 악재",
+                                "직접 입력",
+                            ],
+                            key="sb_exit_reason_preset"
+                        )
+
+                        if exit_reason_preset == "직접 입력":
+                            custom_reason_input = st.text_input(
+                                "청산 사유 직접 입력",
+                                placeholder="예: 개인 자금 필요로 청산",
+                                key="txt_custom_exit_reason"
+                            )
+                            final_exit_reason = custom_reason_input.strip() if custom_reason_input.strip() else "사용자 수동 청산"
+                        else:
+                            final_exit_reason = exit_reason_preset
+
                         if st.button(
                             "수동 매도 실행",
                             use_container_width=True,
                             type="secondary",
+                            key="btn_manual_sell_exec"
                         ):
                             if ms_ticker and ms_price > 0 and ms_qty > 0:
                                 update_holdings(
@@ -1789,6 +1824,17 @@ if df_display is not None:
                                     ms_qty,
                                     market_type,
                                 )
+
+                                try:
+                                    supabase.table(get_holdings_table(market_type)) \
+                                        .update({"exit_reason": final_exit_reason}) \
+                                        .eq("ticker", ms_ticker) \
+                                        .eq("sell_date", str(ms_date)) \
+                                        .execute()
+                                except Exception:
+                                    pass
+
+                                st.success(f"✅ [{ms_ticker}] 매도 처리 완료 (사유: {final_exit_reason})")
 
             st.markdown("---")
 
@@ -2177,16 +2223,14 @@ if df_display is not None:
                         c_r4.metric("보유 기간", f"{h_days}일")
                         c_r5.metric("청산 사유", str(exit_reason))
 
-                        # 진입/청산 당시 핵심 지표 카드 비교 출력                 
+                        # 진입/청산 당시 핵심 지표 카드 비교 출력
                         st.write("")
                         st.markdown("###### 📊 진입 & 청산 시점 퀀트 지표 비교")
                         m_m1, m_m2, m_m3, m_m4 = st.columns(4)
-                        
                         m_m1.metric("모멘텀 순위", f"진입 {buy_rank}위", delta=f"청산 {sell_rank}위", delta_color="off")
                         m_m2.metric("MOT 점수", f"진입 {buy_mot_str}", delta=f"청산 {sell_mot_str}", delta_color="off")
                         m_m3.metric("상대강도 (RS 90)", f"진입 {buy_rs90_str}", delta=f"청산 {sell_rs90_str}", delta_color="off")
                         m_m4.metric("이격도 (MA20 대비)", f"진입 {buy_dispar_str}", delta=f"청산 {sell_dispar_str}", delta_color="off")
-
 
                         # 기술적 차트에 매수/매도 타점 수직선 & 마커 추가
                         st.write("")
