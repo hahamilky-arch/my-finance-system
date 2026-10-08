@@ -241,7 +241,7 @@ def display_trade_list(
                 reason_desc = (
                     f"{raw_reason}"
                     if (raw_reason and raw_reason not in ["조건충족", "nan", "None"])
-                    else "청산 조건 발생"
+                    else "시스템 조건 청산"
                 )
                 position_info = ""
                 tag_html = ""
@@ -350,13 +350,16 @@ def display_trade_list(
                         )
 
                     if st.button("확인", key=f"btn_{key_prefix}_{ticker}"):
+                        trade_type = "SELL" if "매도" in title else "BUY"
+                        # 매도일 경우 판정된 사유를 전달하여 exit_reason 컬럼 업데이트
                         update_holdings(
                             ticker,
-                            "SELL" if "매도" in title else "BUY",
+                            trade_type,
                             input_price,
                             target_date,
                             input_qty,
                             market_type,
+                            exit_reason=reason_desc if trade_type == "SELL" else None
                         )
             else:
                 c2.markdown(
@@ -1076,7 +1079,6 @@ if df_display is not None:
 
                 df_stock_liq = df_liq_10d[df_liq_10d["trade_date"] == supply_target_date_str] if not df_liq_10d.empty else pd.DataFrame()
 
-                # 한자 제거 및 간결 명확한 탭명 설정
                 tab_f_day, tab_i_day, tab_f_10d, tab_i_10d = st.tabs(
                     ["외국인 당일", "기관 당일", "외국인 10일 빈도", "기관 10일 빈도"]
                 )
@@ -1198,8 +1200,8 @@ if df_display is not None:
                 else:
                     st.info(f"{supply_target_date_str} 일자에 수집된 전체 수급 종목 내역이 존재하지 않습니다.")
 
-                with st.expander("Gemini AI 시장 전체 수급 종합 분석 리포트", expanded=False):
-                    prompt_text = f"""[Market Regime 및 수급 종합 분석 요청]
+        with st.expander("Gemini AI 시장 전체 수급 종합 분석 리포트", expanded=False):
+            prompt_text = f"""[Market Regime 및 수급 종합 분석 요청]
 - 분석 일자: {supply_target_date_str}
 - Market Regime 상태: {regime_status_str}
 - 비차익 Z-Score: {p_zscore:+.2f} ({z_tag})
@@ -1207,17 +1209,17 @@ if df_display is not None:
 - KOSPI 기관 5일 누적: {k_inst_5d:+,d} 백만원 (5일 중 {k_inst_days}일 순매수)
 - 지수-수급 다이버전스: {divergence_msg if divergence_msg else "특이사항 없음"}"""
 
-                    st.code(prompt_text, language="markdown")
-                    if st.button("Gemini AI 수급 종합 분석 실행", type="primary", use_container_width=True, key="btn_run_gemini_market_analysis"):
-                        with st.spinner("수급 흐름을 종합 분석 중입니다..."):
-                            analysis_res = analyze_stock_with_gemini(
-                                "MARKET_TREND",
-                                "코스피/코스닥 수급동향",
-                                {"MOT": 0, "RS(90)": 0, "이격도": 0, "종가": 0},
-                                prompt_text,
-                            )
-                        st.success("수급 분석 완료")
-                        st.markdown(analysis_res)
+            st.code(prompt_text, language="markdown")
+            if st.button("Gemini AI 수급 종합 분석 실행", type="primary", use_container_width=True, key="btn_run_gemini_market_analysis"):
+                with st.spinner("수급 흐름을 종합 분석 중입니다..."):
+                    analysis_res = analyze_stock_with_gemini(
+                        "MARKET_TREND",
+                        "코스피/코스닥 수급동향",
+                        {"MOT": 0, "RS(90)": 0, "이격도": 0, "종가": 0},
+                        prompt_text,
+                    )
+                st.success("수급 분석 완료")
+                st.markdown(analysis_res)
 
     # TAB 2: 알파 시그널
     with tab2:
@@ -1771,17 +1773,8 @@ if df_display is not None:
                                     ms_date,
                                     ms_qty,
                                     market_type,
+                                    exit_reason=final_exit_reason
                                 )
-
-                                try:
-                                    supabase.table(get_holdings_table(market_type)) \
-                                        .update({"exit_reason": final_exit_reason}) \
-                                        .eq("ticker", ms_ticker) \
-                                        .eq("sell_date", str(ms_date)) \
-                                        .execute()
-                                except Exception:
-                                    pass
-
                                 st.success(f"[{ms_ticker}] 매도 처리 완료 (사유: {final_exit_reason})")
 
             st.markdown("---")
@@ -1857,13 +1850,13 @@ if df_display is not None:
             st.markdown(
                 """
                 <div style="background-color: #f8f9fa; padding: 15px; border-radius: 8px; border: 1px solid #e9ecef; margin-bottom: 15px;">
-                    <h6 style="margin-top: 0; color: #1f77b4;">보유 종목 스톱기준(1번/2번) 산출 공식</h6>
-                    <ul style="margin-bottom: 0; padding-left: 20px;">
-                        <li><b>1번(익절 - 트레일링 스탑)</b>: 보유 종목이 <b>매수가 대비 +8% 이상 상승 달성 후 적용</b>되는 익절가입니다.<br>
-                        <code>스톱가 = max(최고가 × 0.92, 매수가)</code> (최고가 대비 -8% 하락 지점 또는 최소 본절가 보장)</li>
-                        <li style="margin-top: 8px;"><b>2번(손절 - ATR 손절가)</b>: 아직 +8% 수익에 도달하지 못한 경우 적용되는 원천 손절가입니다.<br>
-                        <code>스톱가 = 매수가 - (2.5 × 진입시 ATR)</code></li>
-                    </ul>
+                <h6 style="margin-top: 0; color: #1f77b4;">보유 종목 스톱기준(1번/2번) 산출 공식</h6>
+                <ul style="margin-bottom: 0; padding-left: 20px;">
+                <li><b>1번(익절 - 트레일링 스탑)</b>: 보유 종목이 <b>매수가 대비 +8% 이상 상승 달성 후 적용</b>되는 익절가입니다.<br>
+                <code>스톱가 = max(최고가 × 0.92, 매수가)</code> (최고가 대비 -8% 하락 지점 또는 최소 본절가 보장)</li>
+                <li style="margin-top: 8px;"><b>2번(손절 - ATR 손절가)</b>: 아직 +8% 수익에 도달하지 못한 경우 적용되는 원천 손절가입니다.<br>
+                <code>스톱가 = 매수가 - (2.5 × 진입시 ATR)</code></li>
+                </ul>
                 </div>
                 """,
                 unsafe_allow_html=True,
@@ -1875,9 +1868,9 @@ if df_display is not None:
                     **미국장 단기 타점 모멘텀 전략 (목표익절 +15%) 매매 기준**
                     * **매수 조건**: 모멘텀 순위 **상위 200위** 이내 & 모멘텀 점수(MOT) **>= 0.9** & 이격도 **-5.0% ~ +7.0%** 안착
                     * **매도/청산 조건**:
-                        1. **목표 익절**: 진입가 대비 **+15.0%** 달성 시
-                        2. **손절/이탈**: 진입가 대비 **-5.0%** 하락 또는 **20일선(MA20)** 이탈 시
-                        3. **기간 초과**: 보유 **14일 경과** 시점 수익률 **+5.0% 미만** 정체 시 청산 (+5.0% 이상 시 추세 계속 유지)
+                      1. **목표 익절**: 진입가 대비 **+15.0%** 달성 시
+                      2. **손절/이탈**: 진입가 대비 **-5.0%** 하락 또는 **20일선(MA20)** 이탈 시
+                      3. **기간 초과**: 보유 **14일 경과** 시점 수익률 **+5.0% 미만** 정체 시 청산 (+5.0% 이상 시 추세 계속 유지)
                     """
                 )
             else:
@@ -1886,9 +1879,9 @@ if df_display is not None:
                     **전략 3: Top 7 Regime (한국장 기본) 매매 기준**
                     * **매수 조건**: 모멘텀 순위 **상위 15위** 이내 & RS(90) > 0, RS(10) > 0 & 지수 20일선 안착 종목 중 이격도 낮은 순 7개 선택
                     * **매도/청산 조건**:
-                        1. **ATR 손절(2번)**: 진입가 대비 **-2.5x ATR** 이탈 시
-                        2. **트레일링 스탑(1번)**: 수익률 **+8.0%** 달성 후 최고가 대비 **-8.0%** 밀릴 시 (최소 본절가 보장)
-                        3. **MA20 이탈**: 20일 이동평균선 하회 시 즉시 매도
+                      1. **ATR 손절(2번)**: 진입가 대비 **-2.5x ATR** 이탈 시
+                      2. **트레일링 스탑(1번)**: 수익률 **+8.0%** 달성 후 최고가 대비 **-8.0%** 밀릴 시 (최소 본절가 보장)
+                      3. **MA20 이탈**: 20일 이동평균선 하회 시 즉시 매도
                     """
                 )
 
@@ -2065,7 +2058,7 @@ if df_display is not None:
 
                     st.write("")
                     st.markdown("###### 상세 청산 매매 내역 (종목 클릭 시 하단 자동 복기 분석)")
-                    
+
                     df_hist_sorted = df_hist.sort_values("sell_date", ascending=False).reset_index(drop=True)
                     disp_cols = [
                         "sell_date",
@@ -2124,7 +2117,7 @@ if df_display is not None:
                         b_price = float(sel_trade_data.get("buy_price", 0))
                         s_price = float(sel_trade_data.get("sell_price", 0))
 
-                        # DB 데이터 및 백업 지표 탐색 (진입 시점)
+                        # DB 진입 시점 지표 조회/매핑
                         matched_display = df_display[df_display["ticker"] == ticker_code]
                         target_row_info = matched_display.iloc[0] if not matched_display.empty else {}
 
@@ -2134,11 +2127,11 @@ if df_display is not None:
                         buy_rs90 = sel_trade_data.get("buy_rs90", sel_trade_data.get("RS(90)", target_row_info.get("RS(90)", "-")))
                         buy_dispar = sel_trade_data.get("buy_dispar", sel_trade_data.get("이격도", target_row_info.get("이격도", "-")))
 
-                        # 청산(매도일) 시점 DB 지표 조회
+                        # 📌 [수정] 청산(매도일) 시점 DB 지표 조회 (컬럼명 정확히 매핑)
                         try:
                             sell_analysis_res = (
                                 supabase.table("daily_analysis")
-                                .select("momentum_rank, mot, rs90, disparity")
+                                .select("momentum_rank, weighted_momentum, rs_score, ma20, close_price")
                                 .eq("ticker", ticker_code)
                                 .eq("price_date", sell_date_str)
                                 .execute()
@@ -2148,9 +2141,15 @@ if df_display is not None:
                             sell_info = {}
 
                         sell_rank = sell_info.get("momentum_rank", "-")
-                        sell_mot = sell_info.get("mot", "-")
-                        sell_rs90 = sell_info.get("rs90", "-")
-                        sell_dispar = sell_info.get("disparity", "-")
+                        sell_mot = sell_info.get("weighted_momentum", "-")
+                        sell_rs90 = sell_info.get("rs_score", "-")
+
+                        s_close = sell_info.get("close_price")
+                        s_ma20 = sell_info.get("ma20")
+                        if s_close and s_ma20 and float(s_ma20) > 0:
+                            sell_dispar = ((float(s_close) / float(s_ma20)) - 1) * 100
+                        else:
+                            sell_dispar = "-"
 
                         # 포맷 변환 안전 처리
                         buy_mot_str = f"{float(buy_mot):.2f}" if isinstance(buy_mot, (int, float)) and buy_mot != "-" else str(buy_mot)
@@ -2232,7 +2231,6 @@ if df_display is not None:
                             st.markdown(review_result)
                     else:
                         st.info("위의 상세 청산 매매 내역 표에서 복기하고자 하는 종목 행을 클릭하면 하단에 당사의 지표 데이터와 AI 복기 리포트가 자동으로 생성됩니다.")
-
 
     # TAB 5: 백테스트 리포트
     with tab5:
