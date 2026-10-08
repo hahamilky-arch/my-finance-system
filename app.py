@@ -81,8 +81,8 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# 📌 2. 5분 인증 타이머 세션
-LOGIN_TIMEOUT_SECONDS = 300
+# 📌 2. 30분 인증 타이머 세션
+LOGIN_TIMEOUT_SECONDS = 1800
 
 if st.query_params.get("extend_auth") == "true":
     st.session_state["last_auth_time"] = time.time()
@@ -109,8 +109,8 @@ if is_authenticated:
             if (window.authTimer) clearInterval(window.authTimer);
             window.authTimer = setInterval(function() {{
                 remSec--;
-                if (remSec === 60) {{
-                    if (confirm("⚠️ 매매 잠금 해제 만료 1분 전입니다.\\n인증 시간을 5분 연장하시겠습니까?")) {{
+                if (remSec === 300) {{
+                    if (confirm("⚠️ 매매 잠금 해제 만료 5분 전입니다.\\n인증 시간을 연장하시겠습니까?")) {{
                         const url = new URL(window.parent.location.href);
                         url.searchParams.set("extend_auth", "true");
                         window.parent.location.href = url.toString();
