@@ -351,7 +351,6 @@ def display_trade_list(
 
                     if st.button("확인", key=f"btn_{key_prefix}_{ticker}"):
                         trade_type = "SELL" if "매도" in title else "BUY"
-                        # 매도일 경우 판정된 사유를 전달하여 exit_reason 컬럼 업데이트
                         update_holdings(
                             ticker,
                             trade_type,
@@ -784,6 +783,15 @@ if df_display is not None:
         c4.metric("오늘의 매도 종목", f"{sell_cnt}개")
 
         st.divider()
+
+        # 📌 수급 지표 변수 기본값 초기화 (미국장 선택 시 NameError 방지)
+        p_zscore = 0.0
+        z_tag = "N/A (미국장 수급 미수집)"
+        k_f_5d = 0
+        k_f_days = 0
+        k_inst_5d = 0
+        k_inst_days = 0
+        divergence_msg = ""
 
         if market_type == "US":
             st.info(
@@ -2127,7 +2135,7 @@ if df_display is not None:
                         buy_rs90 = sel_trade_data.get("buy_rs90", sel_trade_data.get("RS(90)", target_row_info.get("RS(90)", "-")))
                         buy_dispar = sel_trade_data.get("buy_dispar", sel_trade_data.get("이격도", target_row_info.get("이격도", "-")))
 
-                        # 📌 [수정] 청산(매도일) 시점 DB 지표 조회 (컬럼명 정확히 매핑)
+                        # 청산(매도일) 시점 DB 지표 조회
                         try:
                             sell_analysis_res = (
                                 supabase.table("daily_analysis")
