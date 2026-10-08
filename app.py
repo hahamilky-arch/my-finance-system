@@ -784,7 +784,7 @@ if df_display is not None:
 
         st.divider()
 
-        # 📌 수급 지표 변수 기본값 초기화 (미국장 선택 시 NameError 방지)
+        # 수급 지표 변수 기본값 초기화 (US 시장 선택 시 NameError 방지)
         p_zscore = 0.0
         z_tag = "N/A (미국장 수급 미수집)"
         k_f_5d = 0
@@ -2125,17 +2125,33 @@ if df_display is not None:
                         b_price = float(sel_trade_data.get("buy_price", 0))
                         s_price = float(sel_trade_data.get("sell_price", 0))
 
-                        # DB 진입 시점 지표 조회/매핑
-                        matched_display = df_display[df_display["ticker"] == ticker_code]
-                        target_row_info = matched_display.iloc[0] if not matched_display.empty else {}
-
                         exit_reason = sel_trade_data.get("exit_reason", sel_trade_data.get("sell_reason", "시스템 조건 청산"))
-                        buy_rank = sel_trade_data.get("buy_rank", sel_trade_data.get("rank", target_row_info.get("순위", "-")))
-                        buy_mot = sel_trade_data.get("buy_mot", sel_trade_data.get("MOT", target_row_info.get("MOT", "-")))
-                        buy_rs90 = sel_trade_data.get("buy_rs90", sel_trade_data.get("RS(90)", target_row_info.get("RS(90)", "-")))
-                        buy_dispar = sel_trade_data.get("buy_dispar", sel_trade_data.get("이격도", target_row_info.get("이격도", "-")))
 
-                        # 청산(매도일) 시점 DB 지표 조회
+                        # 📌 [핵심 수정 1] 매수일(buy_date) 시점 DB 지표독립 조회
+                        buy_rank, buy_mot, buy_rs90, buy_dispar = "-", "-", "-", "-"
+                        try:
+                            buy_analysis_res = (
+                                supabase.table("daily_analysis")
+                                .select("momentum_rank, weighted_momentum, rs_score, ma20, close_price")
+                                .eq("ticker", ticker_code)
+                                .eq("price_date", buy_date_str)
+                                .execute()
+                            )
+                            if buy_analysis_res.data and len(buy_analysis_res.data) > 0:
+                                buy_info = buy_analysis_res.data[0]
+                                buy_rank = buy_info.get("momentum_rank", "-")
+                                buy_mot = buy_info.get("weighted_momentum", "-")
+                                buy_rs90 = buy_info.get("rs_score", "-")
+
+                                b_close = buy_info.get("close_price")
+                                b_ma20 = buy_info.get("ma20")
+                                if b_close and b_ma20 and float(b_ma20) > 0:
+                                    buy_dispar = ((float(b_close) / float(b_ma20)) - 1) * 100
+                        except Exception:
+                            pass
+
+                        # 📌 [핵심 수정 2] 청산일(sell_date) 시점 DB 지표 독립 조회
+                        sell_rank, sell_mot, sell_rs90, sell_dispar = "-", "-", "-", "-"
                         try:
                             sell_analysis_res = (
                                 supabase.table("daily_analysis")
@@ -2144,20 +2160,18 @@ if df_display is not None:
                                 .eq("price_date", sell_date_str)
                                 .execute()
                             )
-                            sell_info = sell_analysis_res.data[0] if sell_analysis_res.data else {}
+                            if sell_analysis_res.data and len(sell_analysis_res.data) > 0:
+                                sell_info = sell_analysis_res.data[0]
+                                sell_rank = sell_info.get("momentum_rank", "-")
+                                sell_mot = sell_info.get("weighted_momentum", "-")
+                                sell_rs90 = sell_info.get("rs_score", "-")
+
+                                s_close = sell_info.get("close_price")
+                                s_ma20 = sell_info.get("ma20")
+                                if s_close and s_ma20 and float(s_ma20) > 0:
+                                    sell_dispar = ((float(s_close) / float(s_ma20)) - 1) * 100
                         except Exception:
-                            sell_info = {}
-
-                        sell_rank = sell_info.get("momentum_rank", "-")
-                        sell_mot = sell_info.get("weighted_momentum", "-")
-                        sell_rs90 = sell_info.get("rs_score", "-")
-
-                        s_close = sell_info.get("close_price")
-                        s_ma20 = sell_info.get("ma20")
-                        if s_close and s_ma20 and float(s_ma20) > 0:
-                            sell_dispar = ((float(s_close) / float(s_ma20)) - 1) * 100
-                        else:
-                            sell_dispar = "-"
+                            pass
 
                         # 포맷 변환 안전 처리
                         buy_mot_str = f"{float(buy_mot):.2f}" if isinstance(buy_mot, (int, float)) and buy_mot != "-" else str(buy_mot)
