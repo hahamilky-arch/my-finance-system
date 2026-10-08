@@ -189,7 +189,7 @@ def get_data(
     sell_dict = {}  # {ticker: "구체적 매도 사유"}
     target_dt = pd.to_datetime(target_date)
 
-    # 3. 전략별 보유 종목 청산 검사 (상승률 연계 보유기간 판단 반영)
+    # 3. 전략별 보유 종목 청산 검사 (단기 모멘텀 전략 +15% 트레일링 스탑 개편)
     for _, row in df_final.iterrows():
         ticker_upper = str(row["ticker"]).strip().upper()
         if ticker_upper in my_holdings_clean:
@@ -209,6 +209,11 @@ def get_data(
                 days_held = (target_dt - buy_dt).days
                 profit_rate_pos = (
                     ((c_price / buy_price) - 1) * 100 if buy_price > 0 else 0.0
+                )
+                max_profit_rate = (
+                    ((highest_price / buy_price) - 1) * 100
+                    if buy_price > 0
+                    else 0.0
                 )
 
                 if strategy_engine_mode == "strat3_top7":
@@ -230,9 +235,15 @@ def get_data(
                         continue
 
                 elif strategy_engine_mode == "short_term":
-                    if profit_rate_pos >= 15.0:
-                        sell_dict[ticker_upper] = "목표익절 달성 (+15%)"
-                        continue
+                    # 📌 [개선] 목표 수익률(+15%) 도달 후 트레일링 스탑 적용 (고점 대비 -3% 밀릴 시 청산)
+                    if max_profit_rate >= 15.0:
+                        ts_price = max(highest_price * 0.97, buy_price * 1.15)
+                        if c_price <= ts_price:
+                            sell_dict[ticker_upper] = (
+                                f"익절 트레일링스탑 (+15% 달성 후 최고가 {highest_price:,.2f} 대비 하락)"
+                            )
+                            continue
+
                     if c_price <= buy_price * (1 + (sl_cfg / 100.0)):
                         sell_dict[ticker_upper] = "단기 손절선 이탈 (-5%)"
                         continue
@@ -242,7 +253,7 @@ def get_data(
                     if mom_rank > 200:
                         sell_dict[ticker_upper] = "순위 200위 초과"
                         continue
-                    # 📌 [상승률 연계] 14일 경과 & 수익률 +5% 미만인 경우만 보유기간 초과 청산
+                    # 📌 보유기간 14일 경과 & 수익률 +5% 미만인 경우만 청산
                     if days_held >= 14 and profit_rate_pos < 5.0:
                         sell_dict[ticker_upper] = (
                             f"보유기간 초과 (14일 경과 / 수익률 {profit_rate_pos:+.1f}% 미달)"
@@ -260,7 +271,7 @@ def get_data(
                     if mom_rank > rank_limit:
                         sell_dict[ticker_upper] = f"순위 {rank_limit}위 초과"
                         continue
-                    # 📌 [상승률 연계] 10일 경과 & 수익률 +3% 미만 시간 손절
+                    # 📌 보유기간 10일 경과 & 수익률 +3% 미만 시간 손절
                     if days_held >= 10 and profit_rate_pos < 3.0:
                         sell_dict[ticker_upper] = (
                             f"시간 손절 (10일 경과 / 수익률 {profit_rate_pos:+.1f}% 미달)"
