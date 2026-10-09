@@ -1140,7 +1140,7 @@ if df_display is not None:
 
                 st.divider()
 
-                # 📌 복원: TAB 1 하단 [조회일 당일 전체 수급 데이터 표]
+                # TAB 1 하단 [조회일 당일 전체 수급 데이터 표]
                 st.markdown(f"###### [{supply_target_date_str}] 거래대금 / 수급 상위 전체 종목 리스트")
                 try:
                     res_day_all = (
@@ -1189,7 +1189,6 @@ if df_display is not None:
         if "atr" not in df_target.columns:
             df_target["atr"] = 0.0
 
-        # 최근 10일간 수급 유입 횟수 계산 (외국인 OR 기관 순매수 > 0)
         supply_count_map = {}
         if market_type == "KR":
             try:
@@ -1334,7 +1333,6 @@ if df_display is not None:
             )
 
             if sel_chart_ticker:
-                # 선택된 종목의 최근 수급 유입 일자 리스트 추출
                 supply_dates_list = []
                 if market_type == "KR":
                     try:
@@ -1350,7 +1348,7 @@ if df_display is not None:
                     except Exception:
                         pass
 
-                st.markdown("###### 개별 종목 기술적 차트 (🔥 표시는 수급 유입일)")
+                st.markdown("###### 개별 종목 기술적 차트")
                 draw_integrated_chart(
                     sel_chart_ticker, market_type, ticker_name_map, supply_dates=supply_dates_list
                 )
@@ -2171,6 +2169,23 @@ if df_display is not None:
 
                         st.write("")
                         st.markdown("###### 매매 당시 주가 차트 및 진입/청산 타점 (매수 / 매도)")
+
+                        # 📌 복기 종목 수급 유입일 조회
+                        perf_supply_dates = []
+                        if market_type == "KR":
+                            try:
+                                res_perf_supp = (
+                                    supabase.table("daily_top_liquidity")
+                                    .select("trade_date")
+                                    .eq("ticker", ticker_code)
+                                    .or_("foreign_net.gt.0,inst_net.gt.0")
+                                    .execute()
+                                )
+                                if res_perf_supp.data:
+                                    perf_supply_dates = [r["trade_date"] for r in res_perf_supp.data]
+                            except Exception:
+                                pass
+
                         draw_integrated_chart(
                             ticker_code,
                             market_type,
@@ -2179,6 +2194,7 @@ if df_display is not None:
                             sell_date=sell_date_str,
                             buy_price=b_price,
                             sell_price=s_price,
+                            supply_dates=perf_supply_dates,
                         )
 
                         st.write("")
