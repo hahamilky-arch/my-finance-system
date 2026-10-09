@@ -17,7 +17,7 @@ def draw_integrated_chart(
     supply_dates=None,
 ):
     """
-    개별 종목 기술적 차트 (휴장일 공백 제거 & 깔끔한 수급/타점 시각화)
+    개별 종목 기술적 차트 (휴장일 공백 완벽 제거 & 깔끔한 수급/타점 시각화)
     """
     stock_name = (
         ticker_name_map.get(ticker, ticker) if ticker_name_map else ticker
@@ -45,7 +45,7 @@ def draw_integrated_chart(
     # 날짜 오름차순 정렬
     df_chart = df_chart.sort_values("price_date").reset_index(drop=True)
     
-    # 📌 휴장일 공백을 없애기 위해 'YYYY-MM-DD' 문자열 카테고리 컬럼 생성
+    # 📌 휴장일 완전히 무시하기 위해 날짜를 'MM-DD' 형태의 순수 텍스트 카테고리로 변환
     df_chart["date_str"] = pd.to_datetime(df_chart["price_date"]).dt.strftime("%Y-%m-%d")
 
     # 서브플롯 구성 (Row 1: 캔들스틱 + MA, Row 2: 거래량)
@@ -69,7 +69,7 @@ def draw_integrated_chart(
             name="주가",
             increasing_line_color="#d62728",  # 양봉 빨강
             decreasing_line_color="#1f77b4",  # 음봉 파랑
-            whiskerwidth=0.3,
+            whiskerwidth=0.4,
         ),
         row=1,
         col=1,
@@ -132,44 +132,40 @@ def draw_integrated_chart(
         col=1,
     )
 
-    # 📌 4. 수급 유입일 표기 개선 (얇은 세로 점선 + 깔끔한 뱃지)
+    # 📌 4. 수급 유입일 표기 개선 (붉은 기둥 찌그러짐 방지)
+    # vline 세로선 대신, 수급일의 당일 고가(High) 위쪽에 깔끔한 🔥 불꽃 마커 배치
     if supply_dates:
         chart_dates_set = set(df_chart["date_str"].unique())
+        supply_x = []
+        supply_y = []
+        
         for s_date in supply_dates:
             s_date_str = str(s_date)
             if s_date_str in chart_dates_set:
-                # 얇고 선명한 주황색 세로 점선
-                fig.add_vline(
-                    x=s_date_str,
-                    line_width=1,
-                    line_dash="dot",
-                    line_color="rgba(255, 112, 67, 0.6)",
-                    row=1,
-                    col=1,
-                )
-                # 차트 최상단 깔끔한 🔥 배지
-                fig.add_annotation(
-                    x=s_date_str,
-                    y=0.98,
-                    yref="paper",
-                    text="🔥",
-                    showarrow=False,
-                    font=dict(size=11),
-                    row=1,
-                    col=1,
-                )
+                # 해당 날짜의 고가(High) 위치 찾기
+                high_val = df_chart.loc[df_chart["date_str"] == s_date_str, "high_price"].values[0]
+                supply_x.append(s_date_str)
+                supply_y.append(high_val * 1.02) # 고가 살짝 위에 표기
+
+        if supply_x:
+            fig.add_trace(
+                go.Scatter(
+                    x=supply_x,
+                    y=supply_y,
+                    mode="markers+text",
+                    name="수급포착",
+                    marker=dict(symbol="circle", size=8, color="#ff5722"),
+                    text=["🔥"] * len(supply_x),
+                    textposition="top center",
+                    textfont=dict(size=12),
+                ),
+                row=1,
+                col=1,
+            )
 
     # 📌 5. 매수 / 매도 타점 표시
     if buy_date and str(buy_date) in df_chart["date_str"].values:
         buy_date_str = str(buy_date)
-        fig.add_vline(
-            x=buy_date_str,
-            line_width=1.5,
-            line_dash="dash",
-            line_color="#d62728",
-            row=1,
-            col=1,
-        )
         if buy_price:
             fig.add_trace(
                 go.Scatter(
@@ -187,14 +183,6 @@ def draw_integrated_chart(
 
     if sell_date and str(sell_date) in df_chart["date_str"].values:
         sell_date_str = str(sell_date)
-        fig.add_vline(
-            x=sell_date_str,
-            line_width=1.5,
-            line_dash="dash",
-            line_color="#1f77b4",
-            row=1,
-            col=1,
-        )
         if sell_price:
             fig.add_trace(
                 go.Scatter(
@@ -210,11 +198,22 @@ def draw_integrated_chart(
                 col=1,
             )
 
-    # 📌 레이아웃 & 가독성 최적화
+    # 📌 X축 휴장일 완전히 제거 (Plotly 고유 날짜 파싱 차단)
+    fig.update_xaxes(
+        type="category",
+        categoryorder="category ascending",
+        rangeslider_visible=False,
+        nticks=12,
+        tickangle=-45,
+        gridcolor="#f0f0f0",
+    )
+    
+    fig.update_yaxes(gridcolor="#f0f0f0")
+
+    # 레이아웃 정돈
     fig.update_layout(
         height=500,
         margin=dict(l=10, r=10, t=35, b=10),
-        xaxis_rangeslider_visible=False,
         legend=dict(
             orientation="h",
             yanchor="bottom",
@@ -225,15 +224,6 @@ def draw_integrated_chart(
         ),
         hovermode="x unified",
     )
-
-    # 📌 휴장일 완전히 제거: X축을 범주형(category)으로 강제 고정
-    fig.update_xaxes(
-        type="category",
-        nticks=10,
-        tickangle=-45,
-        gridcolor="#f0f0f0",
-    )
-    fig.update_yaxes(gridcolor="#f0f0f0")
 
     st.plotly_chart(fig, use_container_width=True)
 
