@@ -153,78 +153,6 @@ def draw_integrated_chart(
                 col=1,
             )
 
-        # 📌 세로 점선 표시 (Row 1: 종목 차트 & Row 3: 지수 차트 동시 적용 / 텍스트 레이블 없음)
-        
-        # 1. 수급 포착 세로 점선 (초록색 점선)
-        if supply_dates:
-            supp_df = df_stock[df_stock["price_date"].isin(supply_dates)]
-            for _, s_row in supp_df.iterrows():
-                s_date_str = s_row["date_str"]
-                # Row 1 (종목)
-                fig.add_vline(
-                    x=s_date_str,
-                    line_width=1.5,
-                    line_dash="dash",
-                    line_color="#2e7d32",
-                    row=1,
-                    col=1,
-                )
-                # Row 3 (지수)
-                fig.add_vline(
-                    x=s_date_str,
-                    line_width=1.5,
-                    line_dash="dash",
-                    line_color="#2e7d32",
-                    row=3,
-                    col=1,
-                )
-
-        # 2. 매수 타점 세로 점선 (빨간색 점선)
-        if buy_date and buy_date in df_stock["price_date"].values:
-            b_row = df_stock[df_stock["price_date"] == buy_date].iloc[0]
-            b_date_str = b_row["date_str"]
-            # Row 1 (종목)
-            fig.add_vline(
-                x=b_date_str,
-                line_width=2,
-                line_dash="dash",
-                line_color="#d62728",
-                row=1,
-                col=1,
-            )
-            # Row 3 (지수)
-            fig.add_vline(
-                x=b_date_str,
-                line_width=2,
-                line_dash="dash",
-                line_color="#d62728",
-                row=3,
-                col=1,
-            )
-
-        # 3. 매도 타점 세로 점선 (파란색 점선)
-        if sell_date and sell_date in df_stock["price_date"].values:
-            s_row = df_stock[df_stock["price_date"] == sell_date].iloc[0]
-            s_date_str = s_row["date_str"]
-            # Row 1 (종목)
-            fig.add_vline(
-                x=s_date_str,
-                line_width=2,
-                line_dash="dash",
-                line_color="#1f77b4",
-                row=1,
-                col=1,
-            )
-            # Row 3 (지수)
-            fig.add_vline(
-                x=s_date_str,
-                line_width=2,
-                line_dash="dash",
-                line_color="#1f77b4",
-                row=3,
-                col=1,
-            )
-
         # --- Row 2: 거래량 ---
         colors = [
             "#d62728" if c >= o else "#1f77b4"
@@ -302,11 +230,64 @@ def draw_integrated_chart(
                     col=1,
                 )
 
+        # 📌 전체 차트를 관통하는 관통 세로 점선 설정 (shapes)
+        v_shapes = []
+
+        # 1. 수급 포착 세로 점선 (초록색 점선)
+        if supply_dates:
+            supp_df = df_stock[df_stock["price_date"].isin(supply_dates)]
+            for _, s_row in supp_df.iterrows():
+                v_shapes.append(
+                    dict(
+                        type="line",
+                        xref="x",
+                        yref="paper",
+                        x0=s_row["date_str"],
+                        x1=s_row["date_str"],
+                        y0=0,
+                        y1=1,
+                        line=dict(color="#2e7d32", width=1.5, dash="dash"),
+                    )
+                )
+
+        # 2. 매수 타점 세로 점선 (빨간색 점선)
+        if buy_date and buy_date in df_stock["price_date"].values:
+            b_row = df_stock[df_stock["price_date"] == buy_date].iloc[0]
+            v_shapes.append(
+                dict(
+                    type="line",
+                    xref="x",
+                    yref="paper",
+                    x0=b_row["date_str"],
+                    x1=b_row["date_str"],
+                    y0=0,
+                    y1=1,
+                    line=dict(color="#d62728", width=2, dash="dash"),
+                )
+            )
+
+        # 3. 매도 타점 세로 점선 (파란색 점선)
+        if sell_date and sell_date in df_stock["price_date"].values:
+            s_row = df_stock[df_stock["price_date"] == sell_date].iloc[0]
+            v_shapes.append(
+                dict(
+                    type="line",
+                    xref="x",
+                    yref="paper",
+                    x0=s_row["date_str"],
+                    x1=s_row["date_str"],
+                    y0=0,
+                    y1=1,
+                    line=dict(color="#1f77b4", width=2, dash="dash"),
+                )
+            )
+
         # 레이아웃 설정
         fig.update_layout(
             height=850,
             margin=dict(l=10, r=10, t=60, b=20),
             xaxis_rangeslider_visible=False,
+            shapes=v_shapes,  # 관통 세로선 적용
             legend=dict(
                 orientation="h",
                 yanchor="bottom",
