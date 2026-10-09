@@ -89,6 +89,33 @@ def get_market_regime(market_type="KR", target_date_str=None):
         return True, False, False
 
 
+def get_recently_sold_info(market_type="KR", days=3):
+    """
+    최근 N일 이내에 청산(매도) 완료된 종목 코드 조회
+    """
+    table_name = get_holdings_table(market_type)
+    try:
+        res = (
+            supabase.table(table_name)
+            .select("ticker, sell_date")
+            .not_.is_("sell_date", "null")
+            .order("sell_date", desc=True)
+            .limit(100)
+            .execute()
+        )
+        if res.data:
+            df_sold = pd.DataFrame(res.data)
+            df_sold["sell_date"] = pd.to_datetime(df_sold["sell_date"])
+            
+            cutoff_date = pd.Timestamp.now() - pd.Timedelta(days=days)
+            recent_sold_tickers = df_sold[df_sold["sell_date"] >= cutoff_date]["ticker"].tolist()
+            return set(recent_sold_tickers)
+        return set()
+    except Exception as e:
+        print(f"최근 매도 종목 조회 실패: {e}")
+        return set()
+
+
 def update_holdings(
     ticker,
     trade_type,
@@ -106,7 +133,6 @@ def update_holdings(
     
     try:
         if trade_type == "BUY":
-            # 기존 미청산 매수 건 존재 여부 확인
             exist_res = (
                 supabase.table(table_name)
                 .select("*")
@@ -116,7 +142,6 @@ def update_holdings(
             )
             
             if exist_res.data:
-                # 불타기/추가매수 (평단가 재계산)
                 curr_row = exist_res.data[0]
                 old_qty = float(curr_row.get("quantity", 0))
                 old_price = float(curr_row.get("buy_price", 0))
@@ -130,7 +155,6 @@ def update_holdings(
                     "highest_price": max(float(curr_row.get("highest_price", 0)), float(price)),
                 }).eq("id", curr_row["id"]).execute()
             else:
-                # 신규 매수 등록
                 supabase.table(table_name).insert({
                     "ticker": ticker_str,
                     "buy_date": str(trade_date),
@@ -144,7 +168,6 @@ def update_holdings(
             st.rerun()
 
         elif trade_type == "SELL":
-            # 미청산 매수 건 조회
             exist_res = (
                 supabase.table(table_name)
                 .select("*")
@@ -165,7 +188,6 @@ def update_holdings(
             profit_amt = (s_price - b_price) * s_qty
             profit_rate = ((s_price / b_price) - 1.0) * 100.0 if b_price > 0 else 0.0
 
-            # 청산 기록 업데이트 (sell_date, profit 세팅)
             supabase.table(table_name).update({
                 "sell_date": str(trade_date),
                 "sell_price": s_price,
