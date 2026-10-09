@@ -26,10 +26,10 @@ def draw_integrated_chart(
     )
 
     try:
-        # 최근 120영업일 일봉 주가 데이터 조회
+        # DB 스키마 기준 안전 조회 (ma20, ma50, ma200 및 주가/거래량 정보)
         res = (
             supabase.table("daily_analysis")
-            .select("price_date, open_price, high_price, low_price, close_price, volume, ma20, ma60, ma120")
+            .select("price_date, open_price, high_price, low_price, close_price, volume, ma20, ma50, ma200")
             .eq("ticker", ticker)
             .order("price_date", desc=True)
             .limit(120)
@@ -44,7 +44,7 @@ def draw_integrated_chart(
         st.info(f"[{ticker}] 종목의 차트 데이터가 존재하지 않습니다.")
         return
 
-    # 날짜 오름차순 정렬
+    # 날짜 오름차순 정렬 및 데이터 포맷팅
     df_chart = df_chart.sort_values("price_date").reset_index(drop=True)
     df_chart["date_str"] = pd.to_datetime(df_chart["price_date"]).dt.strftime("%Y-%m-%d")
 
@@ -58,7 +58,7 @@ def draw_integrated_chart(
         row_width=[0.25, 0.75],
     )
 
-    # 1. 캔들스틱 차트
+    # 1. 캔들스틱 차트 (양봉: 빨강, 음봉: 파랑)
     fig.add_trace(
         go.Candlestick(
             x=df_chart["date_str"],
@@ -67,15 +67,15 @@ def draw_integrated_chart(
             low=df_chart["low_price"],
             close=df_chart["close_price"],
             name="주가",
-            increasing_line_color="#d62728",  # 양봉 빨강
-            decreasing_line_color="#1f77b4",  # 음봉 파랑
+            increasing_line_color="#d62728",
+            decreasing_line_color="#1f77b4",
         ),
         row=1,
         col=1,
     )
 
-    # 2. 이동평균선 (MA20, MA60, MA120)
-    if "ma20" in df_chart.columns:
+    # 2. 이동평균선 (MA20, MA50, MA200 - DB에 존재하는 경우 동적 추가)
+    if "ma20" in df_chart.columns and df_chart["ma20"].notna().any():
         fig.add_trace(
             go.Scatter(
                 x=df_chart["date_str"],
@@ -88,33 +88,33 @@ def draw_integrated_chart(
             col=1,
         )
 
-    if "ma60" in df_chart.columns:
+    if "ma50" in df_chart.columns and df_chart["ma50"].notna().any():
         fig.add_trace(
             go.Scatter(
                 x=df_chart["date_str"],
-                y=df_chart["ma60"],
+                y=df_chart["ma50"],
                 mode="lines",
-                name="MA60",
+                name="MA50",
                 line=dict(color="#2ca02c", width=1.2),
             ),
             row=1,
             col=1,
         )
 
-    if "ma120" in df_chart.columns:
+    if "ma200" in df_chart.columns and df_chart["ma200"].notna().any():
         fig.add_trace(
             go.Scatter(
                 x=df_chart["date_str"],
-                y=df_chart["ma120"],
+                y=df_chart["ma200"],
                 mode="lines",
-                name="MA120",
+                name="MA200",
                 line=dict(color="#9467bd", width=1.0, dash="dot"),
             ),
             row=1,
             col=1,
         )
 
-    # 3. 거래량 바 차트 (전일 대비 양봉/음봉 색상 분리)
+    # 3. 거래량 바 차트
     colors = [
         "#d62728" if c >= o else "#1f77b4"
         for c, o in zip(df_chart["close_price"], df_chart["open_price"])
@@ -210,7 +210,7 @@ def draw_integrated_chart(
                 col=1,
             )
 
-    # 차트 레이아웃 정돈
+    # 차트 레이아웃 설정
     fig.update_layout(
         height=520,
         margin=dict(l=20, r=20, t=40, b=20),
@@ -231,14 +231,14 @@ def draw_integrated_chart(
 
 def draw_attribution_charts(df_hist, market_type="KR"):
     """
-    성과 분석(TAB 4)용 수익 기여도 및 월별 실현손익 누적 시각화 차트
+    성과 분석(TAB 4)용 수익 기여도 및 누적 실현손익 차트
     """
     if df_hist.empty:
         return
 
     col_chart1, col_chart2 = st.columns(2)
 
-    # 1. 누적 손익 추이 차트
+    # 1. 누적 실현손익 추이 차트
     with col_chart1:
         df_hist_sorted = df_hist.sort_values("sell_date_dt").copy()
         df_hist_sorted["cum_profit"] = df_hist_sorted["profit_amount"].cumsum()
