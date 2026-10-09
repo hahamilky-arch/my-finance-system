@@ -15,10 +15,7 @@ def draw_integrated_chart(
     supply_dates=None,
 ):
     """
-    개별 종목 및 매매 복기용 기술적 차트 (Altair vconcat 기반)
-    - 상단: 주가 추세선 + 지수 추세선 + MA20 + 모멘텀 순위(우측 Y축)
-    - 하단: 거래량 바 차트 (Volume)
-    - 좌우 여백 완벽 동기화 (Dummy Right Axis 적용)
+    개별 종목 및 매매 복기용 기술적 차트 (Altair vconcat 기반 - TypeError 완벽 해결)
     """
     ticker_name_map = ticker_name_map or {}
     
@@ -221,13 +218,12 @@ def draw_integrated_chart(
     )
 
     # ----------------------------------------------------
-    # 3. vconcat 및 정렬
+    # 3. vconcat 및 정렬 (Altair 버전에 안전하게 구현)
     # ----------------------------------------------------
     combined_chart = (
         alt.vconcat(chart_top, chart_bottom)
         .resolve_scale(x="shared")
         .configure_concat(spacing=15)
-        .bounds("flush")
     )
 
     legend_text = f"[{stock_name}] 하늘색 주가 추세선 | --- MA20 | ┈ 지수 추세선 | ━ 모멘텀 순위"
