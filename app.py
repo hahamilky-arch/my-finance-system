@@ -734,7 +734,7 @@ if df_display is not None:
     with tab1:
         st.markdown("###### 시장 방향성 & 수급 종합")
 
-        # 📌 NameError 방지 기본값 변수 초기화
+        # NameError 방지 기본값 변수 초기화
         p_zscore = 0.0
         z_tag = "데이터 미수집/초기 상태"
         k_f_5d = 0
@@ -1225,7 +1225,7 @@ if df_display is not None:
                 st.success("수급 분석 완료")
                 st.markdown(analysis_res)
 
-        # 📌 [최하단 지수 차트 영역 - daily_analysis 참조]
+        # 📌 [최하단 지수 차트 추가 영역]
         st.divider()
         index_name_str = "코스피 (^KS11)" if market_type == "KR" else "S&P 500 (^GSPC)"
         st.markdown(f"###### {index_name_str} 시장 지수 추이 (최근 120영업일)")
@@ -1277,9 +1277,9 @@ if df_display is not None:
                     )
                     st.plotly_chart(fig_market_idx, use_container_width=True)
                 else:
-                    st.info(f"[{target_index_symbol}] 지수 시계열 데이터가 daily_analysis 테이블에 존재하지 않습니다.")
+                    st.info(f"[{target_index_symbol}] 지수 시계열 데이터가 daily_analysis 테이블에 없습니다.")
             else:
-                st.info("daily_analysis 테이블에서 지수 데이터를 불러올 수 없습니다.")
+                st.info("daily_analysis 테이블에서 지수 데이터를 가져올 수 없습니다.")
         except Exception as e:
             st.error(f"지수 차트 불러오기 실패: {e}")
 
