@@ -89,25 +89,32 @@ def get_market_regime(market_type="KR", target_date_str=None):
         return True, False, False
 
 
-def get_recently_sold_info(market_type="KR", days=3):
+def get_recently_sold_info(market_type="KR", target_date_str=None, cooldown_days=3, days=None):
     """
-    최근 N일 이내에 청산(매도) 완료된 종목 코드 조회
+    최근 N일(cooldown_days) 이내에 청산(매도) 완료된 종목 코드 조회
     """
     table_name = get_holdings_table(market_type)
+    effective_days = cooldown_days if cooldown_days is not None else (days if days is not None else 3)
+    
     try:
-        res = (
+        query = (
             supabase.table(table_name)
             .select("ticker, sell_date")
             .not_.is_("sell_date", "null")
-            .order("sell_date", desc=True)
-            .limit(100)
-            .execute()
         )
+        
+        if target_date_str:
+            query = query.lte("sell_date", str(target_date_str))
+            
+        res = query.order("sell_date", desc=True).limit(100).execute()
+        
         if res.data:
             df_sold = pd.DataFrame(res.data)
             df_sold["sell_date"] = pd.to_datetime(df_sold["sell_date"])
             
-            cutoff_date = pd.Timestamp.now() - pd.Timedelta(days=days)
+            base_date = pd.to_datetime(target_date_str) if target_date_str else pd.Timestamp.now()
+            cutoff_date = base_date - pd.Timedelta(days=effective_days)
+            
             recent_sold_tickers = df_sold[df_sold["sell_date"] >= cutoff_date]["ticker"].tolist()
             return set(recent_sold_tickers)
         return set()
