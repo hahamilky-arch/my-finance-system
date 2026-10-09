@@ -15,14 +15,14 @@ def draw_integrated_chart(
     supply_dates=None,
 ):
     """
-    개별 종목 기술적 차트 (Altair 기반)
-    - 주가: 하늘색 라인 + 영역 (또는 캔들)
-    - 하단: 거래량 바 차트
-    - 휴장일 공백 제거 및 기존 날짜 포맷 유지
+    개별 종목 및 매매 복기용 기술적 차트 (Altair 기반)
+    - 상단: 하늘색 주가 추세선 + MA20 + 모멘텀 순위 + 수급선 + 매수/매도 타점
+    - 하단: 거래량 바 차트 (Volume)
+    - X축 범주형(date_str:N)으로 휴장일 갭 완전 차단
     """
     ticker_name_map = ticker_name_map or {}
     
-    # 1. DB 데이터 조회 (price_date, open, high, low, close, volume, ma20)
+    # 1. DB 주가 및 지표 조회 (price_date, close, open, high, low, volume, ma20)
     chart_res = (
         supabase.table("daily_analysis")
         .select("price_date, open_price, high_price, low_price, close_price, volume, momentum_rank, ma20")
@@ -40,19 +40,16 @@ def draw_integrated_chart(
     df_chart["price_date"] = pd.to_datetime(df_chart["price_date"])
     df_chart = df_chart.sort_values("price_date", ascending=True).reset_index(drop=True)
     
-    # 기존 YYYY-MM-DD 날짜 포맷 유지 및 범주형 X축 생성 (휴장일 갭 자동 제거)
+    # 기존 YYYY-MM-DD 날짜 포맷 유지 및 범주형 X축 설정
     df_chart["date_str"] = df_chart["price_date"].dt.strftime("%Y-%m-%d")
     df_chart["close_price"] = pd.to_numeric(df_chart["close_price"], errors="coerce")
-    df_chart["open_price"] = pd.to_numeric(df_chart["open_price"], errors="coerce")
-    df_chart["high_price"] = pd.to_numeric(df_chart["high_price"], errors="coerce")
-    df_chart["low_price"] = pd.to_numeric(df_chart["low_price"], errors="coerce")
     df_chart["volume"] = pd.to_numeric(df_chart["volume"], errors="coerce").fillna(0)
     df_chart["ma20"] = pd.to_numeric(df_chart["ma20"], errors="coerce")
     df_chart.loc[df_chart["ma20"] == 0, "ma20"] = None
 
     stock_name = ticker_name_map.get(selected_chart_ticker, selected_chart_ticker)
 
-    # X축 범주 설정 (휴장일 공백 완전히 제거)
+    # X축 범주형 설정 (휴장일 공백 완전히 제거)
     x_scale_ordinal = alt.X("date_str:N", title=None, axis=alt.Axis(labelAngle=-45, tickCount=10))
 
     # ----------------------------------------------------
@@ -61,17 +58,17 @@ def draw_integrated_chart(
     # 하늘색 영역 (Area)
     area_stock = (
         alt.Chart(df_chart)
-        .mark_area(color="#87CEEB", opacity=0.25)
+        .mark_area(color="#87CEEB", opacity=0.2)
         .encode(
             x=x_scale_ordinal,
             y=alt.Y("close_price:Q", title="주가", scale=alt.Scale(zero=False, padding=15)),
         )
     )
 
-    # 하늘색 선 (Line)
+    # 선명한 하늘색 선 (Line)
     line_stock = (
         alt.Chart(df_chart)
-        .mark_line(color="#00BFFF", strokeWidth=2.5) # 선명한 하늘색(Deep Sky Blue)
+        .mark_line(color="#00BFFF", strokeWidth=2.5)
         .encode(
             x=x_scale_ordinal,
             y=alt.Y("close_price:Q", title="주가", scale=alt.Scale(zero=False, padding=15)),
@@ -114,7 +111,7 @@ def draw_integrated_chart(
 
     chart_price = alt.layer(area_stock, line_stock, line_ma20)
 
-    # 수급 유입일이 있을 경우 주황색 미세 세로선만 표시 (불 아이콘 제거)
+    # 수급 유입일 수직 점선 표시
     if supply_dates:
         valid_supply_dates = [str(d) for d in supply_dates if str(d) in df_chart["date_str"].values]
         if valid_supply_dates:
@@ -165,7 +162,7 @@ def draw_integrated_chart(
     # ----------------------------------------------------
     bar_volume = (
         alt.Chart(df_chart)
-        .mark_bar(color="#87CEFA", opacity=0.7) # 거래량 하늘색 바
+        .mark_bar(color="#87CEFA", opacity=0.7)
         .encode(
             x=x_scale_ordinal,
             y=alt.Y("volume:Q", title="거래량", axis=alt.Axis(format="~s")),
@@ -178,18 +175,14 @@ def draw_integrated_chart(
         .interactive(bind_y=False)
     )
 
-    # 안내 레이블 및 대시보드 렌더링
-    st.markdown(
-        f"""
-    <div style="text-align: center; margin-bottom: 6px; font-size: 0.85em; color: #555555;">
-        <span style="color:#00BFFF; font-weight:bold;">━</span> [{stock_name}] 하늘색 주가 추세선 | 
-        <span style="color:#ff7f0e; font-weight:bold;">---</span> MA20 | 
-        <span style="color:#808080; font-weight:bold;">━</span> 모멘텀 순위
-        {" | <span style='color:#ff9800; font-weight:bold;'>--- 수급 유입일</span>" if supply_dates else ""}
-    </div>
-    """,
-        unsafe_allow_html=True,
-    )
+    # HTML 깨짐 없이 깔끔한 안내 레이블 출력
+    legend_text = f"[{stock_name}] 하늘색 주가 추세선 | --- MA20 | ━ 모멘텀 순위"
+    if supply_dates:
+        legend_text += " | --- 수급 유입일"
+    if buy_date or sell_date:
+        legend_text += " | ▲ 🔴 매수타점 | ▼ 🔵 매도타점"
+
+    st.caption(legend_text)
 
     st.altair_chart(chart_top, use_container_width=True)
     st.altair_chart(bar_volume, use_container_width=True)
