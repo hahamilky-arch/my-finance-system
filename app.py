@@ -734,6 +734,15 @@ if df_display is not None:
     with tab1:
         st.markdown("###### 시장 방향성 & 수급 종합")
 
+        # 📌 NameError 방지 기본값 변수 초기화
+        p_zscore = 0.0
+        z_tag = "데이터 미수집/초기 상태"
+        k_f_5d = 0
+        k_inst_5d = 0
+        k_f_days = 0
+        k_inst_days = 0
+        divergence_msg = ""
+
         c0, c1, c2, c3, c4 = st.columns([1.2, 1, 1, 1, 1])
 
         with c0:
@@ -964,7 +973,6 @@ if df_display is not None:
                 else:
                     z_tag = "정상 수급 범위"
 
-                divergence_msg = ""
                 if market_safe and p_non_5d < 0 and k_f_5d < 0:
                     divergence_msg = "[약세 다이버전스] 지수는 MA20 위에 있으나, 최근 5일 비차익/외국인 누적 수급이 연속 유출 중입니다."
                 elif not market_safe and p_non_5d > 0 and k_f_5d > 0:
@@ -1881,7 +1889,7 @@ if df_display is not None:
                     """
                 )
 
-    # TAB 4: 성과 분석 (📌 DB 조회 실패 예외 방지 안전화 적용 완료)
+    # TAB 4: 성과 분석
     with tab4:
         st.markdown(f"##### {market_type} 시장 성과 분석 리포트")
 
@@ -1892,7 +1900,6 @@ if df_display is not None:
         else:
             current_table_name = get_holdings_table(market_type)
             try:
-                # 전체 데이터를 수신한 뒤 sell_date 존재 여부를 파이썬 단에서 안전하게 체크
                 history_res = (
                     supabase.table(current_table_name)
                     .select("*")
