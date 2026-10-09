@@ -130,22 +130,12 @@ def apply_styles(df):
             df_s.loc[df[col] > 0, col] += "color: red;"
             df_s.loc[df[col] < 0, col] += "color: blue;"
     if "상태" in df.columns:
-        df_s.loc[df["상태"] == "추천", "상태"] += (
-            "color: #d62728; font-weight: bold;"
-        )
-        df_s.loc[df["상태"] == "매도", "상태"] += (
-            "color: #1f77b4; font-weight: bold;"
-        )
-        df_s.loc[df["상태"] == "보유", "상태"] += (
-            "color: #2ca02c; font-weight: bold;"
-        )
+        df_s.loc[df["상태"] == "추천", "상태"] += "color: #d62728; font-weight: bold;"
+        df_s.loc[df["상태"] == "매도", "상태"] += "color: #1f77b4; font-weight: bold;"
+        df_s.loc[df["상태"] == "보유", "상태"] += "color: #2ca02c; font-weight: bold;"
     if "제외사유" in df.columns:
-        df_s.loc[df["제외사유"] != "", "제외사유"] += (
-            "color: #888888; font-size: 0.9em;"
-        )
-        df_s.loc[df["제외사유"] == "조건충족", "제외사유"] += (
-            "color: #d62728; font-weight: bold;"
-        )
+        df_s.loc[df["제외사유"] != "", "제외사유"] += "color: #888888; font-size: 0.9em;"
+        df_s.loc[df["제외사유"] == "조건충족", "제외사유"] += "color: #d62728; font-weight: bold;"
     for col in ["RS(90)", "RS(10)"]:
         if col in df.columns:
             df_s.loc[df[col] > 0, col] += "color: #d62728; font-weight: bold;"
@@ -155,38 +145,24 @@ def apply_styles(df):
         for idx, rank in df["순위"].items():
             if pd.notna(rank):
                 if rank <= 10:
-                    df_s.loc[idx, :] += (
-                        "background-color: rgba(255, 235, 156, 0.4);"
-                    )
+                    df_s.loc[idx, :] += "background-color: rgba(255, 235, 156, 0.4);"
                 elif rank <= 20:
-                    df_s.loc[idx, :] += (
-                        "background-color: rgba(198, 239, 206, 0.4);"
-                    )
+                    df_s.loc[idx, :] += "background-color: rgba(198, 239, 206, 0.4);"
                 elif rank <= 30:
-                    df_s.loc[idx, :] += (
-                        "background-color: rgba(189, 215, 238, 0.4);"
-                    )
+                    df_s.loc[idx, :] += "background-color: rgba(189, 215, 238, 0.4);"
 
     if "수급(10일)" in df.columns:
         for idx, val in df["수급(10일)"].items():
             val_str = str(val)
             if "🔥" in val_str:
                 if "🔥🔥🔥" in val_str:
-                    df_s.loc[idx, "수급(10일)"] += (
-                        "background-color: rgba(255, 205, 210, 0.85); color: #b71c1c; font-weight: bold;"
-                    )
+                    df_s.loc[idx, "수급(10일)"] += "background-color: rgba(255, 205, 210, 0.85); color: #b71c1c; font-weight: bold;"
                 elif "🔥🔥" in val_str:
-                    df_s.loc[idx, "수급(10일)"] += (
-                        "background-color: rgba(255, 224, 178, 0.85); color: #e65100; font-weight: bold;"
-                    )
+                    df_s.loc[idx, "수급(10일)"] += "background-color: rgba(255, 224, 178, 0.85); color: #e65100; font-weight: bold;"
                 else:
-                    df_s.loc[idx, "수급(10일)"] += (
-                        "background-color: rgba(255, 249, 196, 0.85); color: #f57f17; font-weight: bold;"
-                    )
+                    df_s.loc[idx, "수급(10일)"] += "background-color: rgba(255, 249, 196, 0.85); color: #f57f17; font-weight: bold;"
             elif "✨" in val_str:
-                df_s.loc[idx, "수급(10일)"] += (
-                    "background-color: rgba(225, 245, 254, 0.85); color: #0288d1; font-weight: bold;"
-                )
+                df_s.loc[idx, "수급(10일)"] += "background-color: rgba(225, 245, 254, 0.85); color: #0288d1; font-weight: bold;"
 
     return df_s
 
@@ -703,7 +679,6 @@ df_display = get_data(
 )
 
 if df_display is not None:
-    # 📌 요구사항 1: '추천순위' 또는 '매수추천순위'를 '추천'으로 변경
     if "매수추천순위" in df_display.columns:
         df_display = df_display.rename(columns={"매수추천순위": "추천"})
     elif "추천순위" in df_display.columns:
@@ -801,7 +776,7 @@ if df_display is not None:
 
         st.divider()
 
-        # 수급 지표 변수 기본값 초기화
+        # 수급 지표 변수 초기화
         p_zscore = 0.0
         z_tag = "N/A (미국장 수급 미수집)"
         k_f_5d = 0
@@ -1000,7 +975,7 @@ if df_display is not None:
                 if divergence_msg:
                     st.warning(divergence_msg)
 
-                # 상단 2열 수급 카드 & 주체별 동향
+                # 수급 주요 카드 및 주체별 동향
                 col_t1_left, col_t1_right = st.columns([1.1, 0.9])
                 
                 with col_t1_left:
@@ -1165,6 +1140,41 @@ if df_display is not None:
 
                 st.divider()
 
+                # 📌 복원: TAB 1 하단 [조회일 당일 전체 수급 데이터 표]
+                st.markdown(f"###### [{supply_target_date_str}] 거래대금 / 수급 상위 전체 종목 리스트")
+                try:
+                    res_day_all = (
+                        supabase.table("daily_top_liquidity")
+                        .select("rank, ticker, name, close_price, change_rate, foreign_net, inst_net, net_total, volume_power")
+                        .eq("trade_date", supply_target_date_str)
+                        .order("rank", ascending=True)
+                        .execute()
+                    )
+                    df_day_all = pd.DataFrame(res_day_all.data) if res_day_all.data else pd.DataFrame()
+                except Exception:
+                    df_day_all = pd.DataFrame()
+
+                if not df_day_all.empty:
+                    df_day_all = df_day_all.rename(columns={
+                        "rank": "순위", "ticker": "티커", "name": "종목명",
+                        "close_price": "종가", "change_rate": "등락률",
+                        "foreign_net": "외국인순매수", "inst_net": "기관순매수",
+                        "net_total": "합계순매수", "volume_power": "체결강도"
+                    })
+                    st.dataframe(
+                        df_day_all.style.format({
+                            "종가": "{:,.0f}원", "등락률": "{:+.2f}%",
+                            "외국인순매수": "{:+,.0f}", "기관순매수": "{:+,.0f}",
+                            "합계순매수": "{:+,.0f}", "체결강도": "{:.1f}%"
+                        }).map(
+                            lambda v: "color: red;" if float(v) > 0 else ("color: blue;" if float(v) < 0 else ""),
+                            subset=["등락률", "외국인순매수", "기관순매수", "합계순매수"]
+                        ),
+                        hide_index=True, use_container_width=True
+                    )
+                else:
+                    st.info(f"{supply_target_date_str} 날짜의 수급 상위 데이터가 존재하지 않습니다.")
+
     # TAB 2: 알파 시그널
     with tab2:
         st.markdown("###### 알파 시그널 스크리닝 (모멘텀 순위 상위 200위)")
@@ -1198,7 +1208,6 @@ if df_display is not None:
             except Exception:
                 pass
 
-        # 📌 요구사항 2: 수급 횟수에 따라 아이콘/색상 다르게 표시하는 뱃지 생성 함수
         def format_supply_badge(ticker):
             cnt = supply_count_map.get(ticker, 0)
             if cnt >= 8:
@@ -1213,7 +1222,6 @@ if df_display is not None:
 
         df_target["수급(10일)"] = df_target["ticker"].apply(format_supply_badge)
 
-        # 📌 요구사항 1: '추천순위' -> '추천' 변경 및 수급(10일) 배치
         df_target = df_target.rename(columns={
             "추천순위": "추천",
             "매수추천순위": "추천",
@@ -1343,7 +1351,6 @@ if df_display is not None:
                         pass
 
                 st.markdown("###### 개별 종목 기술적 차트 (🔥 표시는 수급 유입일)")
-                # 📌 요구사항 2: 차트에 수급 유입일자 전달
                 draw_integrated_chart(
                     sel_chart_ticker, market_type, ticker_name_map, supply_dates=supply_dates_list
                 )
