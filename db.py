@@ -56,19 +56,16 @@ def get_market_regime(market_type="KR", target_date_str=None):
         if target_date_str:
             query = query.lte("trade_date", target_date_str)
             
-        # ticker 또는 index_name 컬럼 대응
         res = query.order("trade_date", desc=True).limit(10).execute()
         if res.data:
             df = pd.DataFrame(res.data)
             
-            # 지수 심볼 매칭
             symbol_col = "ticker" if "ticker" in df.columns else ("index_name" if "index_name" in df.columns else None)
             if symbol_col:
                 df = df[df[symbol_col].astype(str).str.upper() == target_symbol]
                 
             if not df.empty:
                 latest = df.iloc[0]
-                # is_safe, stop_buy, reduce_holdings 등의 플래그 확인
                 market_safe = bool(latest.get("is_safe", True))
                 stop_new_buy = bool(latest.get("stop_new_buy", False))
                 reduce_holdings = bool(latest.get("reduce_holdings", False))
@@ -77,6 +74,28 @@ def get_market_regime(market_type="KR", target_date_str=None):
     except Exception as e:
         print(f"Market Regime 조회 실패: {e}")
         return True, False, False
+
+
+def get_recently_sold_info(market_type="KR", days_limit=30):
+    """
+    최근 청산 완료된 매도 종목 및 청산일 정보 조회 (전략 재진입 제한 판정용)
+    """
+    table_name = get_holdings_table(market_type)
+    try:
+        res = (
+            supabase.table(table_name)
+            .select("ticker, sell_date")
+            .not_.is_("sell_date", "null")
+            .execute()
+        )
+        if res.data:
+            df_sold = pd.DataFrame(res.data)
+            df_sold["ticker"] = df_sold["ticker"].astype(str).str.strip().str.upper()
+            return df_sold
+        return pd.DataFrame(columns=["ticker", "sell_date"])
+    except Exception as e:
+        print(f"최근 매도 정보 조회 실패: {e}")
+        return pd.DataFrame(columns=["ticker", "sell_date"])
 
 
 def update_holdings(ticker, trade_type, price, trade_date, quantity, market_type="KR", exit_reason=None):
@@ -103,7 +122,6 @@ def update_holdings(ticker, trade_type, price, trade_date, quantity, market_type
             supabase.table(table_name).insert(data).execute()
             st.success(f"[{ticker_code}] 매수 기록이 등록되었습니다.")
         elif trade_type == "SELL":
-            # 매도되지 않은 기존 보유 건 찾기
             res = (
                 supabase.table(table_name)
                 .select("*")
