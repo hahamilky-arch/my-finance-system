@@ -34,13 +34,13 @@ def draw_integrated_chart(
             .execute()
         )
 
-        # 2. 시장 지수 시계열 데이터 조회 (최근 120영업일)
+        # 2. 시장 지수 시계열 데이터 조회 (최근 150영업일 조회 후 유효 데이터 정렬)
         res_index = (
             supabase.table("daily_analysis")
             .select("price_date, close_price, ma20, ma50, ma200")
             .eq("ticker", index_symbol)
             .order("price_date", desc=True)
-            .limit(120)
+            .limit(150)
             .execute()
         )
 
@@ -48,29 +48,44 @@ def draw_integrated_chart(
             st.warning(f"[{ticker}] 종목의 차트 데이터가 존재하지 않습니다.")
             return
 
-        # 데이터프레임 변환 및 날짜 정렬
+        # --- 종목 데이터 전처리 ---
         df_stock = pd.DataFrame(res_stock.data)
         df_stock["price_date_dt"] = pd.to_datetime(df_stock["price_date"])
         df_stock = df_stock.sort_values("price_date_dt").reset_index(drop=True)
-        df_stock["date_str"] = df_stock["price_date_dt"].dt.strftime("%Y-%m-%d")
 
-        # 수치형 변환 및 결측치 제거
+        # 수치 변환
         for col in ["close_price", "open_price", "high_price", "low_price", "volume", "ma20", "ma50", "ma200"]:
             if col in df_stock.columns:
                 df_stock[col] = pd.to_numeric(df_stock[col], errors="coerce")
 
-        # 주가 데이터 비어있는 행(종가/시가 없는 날) 제거
-        df_stock = df_stock.dropna(subset=["close_price", "open_price"]).reset_index(drop=True)
+        # 📌 핵심 1: 가격이 0 이하이거나 결측치인 이상 데이터 완전 제거 (캔들 바닥 꽂힘 원천 차단)
+        df_stock = df_stock[
+            (df_stock["close_price"] > 0) &
+            (df_stock["open_price"] > 0) &
+            (df_stock["high_price"] > 0) &
+            (df_stock["low_price"] > 0)
+        ].reset_index(drop=True)
 
-        # 지수 데이터 정리
+        df_stock["date_str"] = df_stock["price_date_dt"].dt.strftime("%Y-%m-%d")
+
+        # --- 지수 데이터 전처리 ---
         df_index = pd.DataFrame(res_index.data) if res_index.data else pd.DataFrame()
         if not df_index.empty:
             df_index["price_date_dt"] = pd.to_datetime(df_index["price_date"])
             df_index = df_index.sort_values("price_date_dt").reset_index(drop=True)
-            df_index["date_str"] = df_index["price_date_dt"].dt.strftime("%Y-%m-%d")
             for col in ["close_price", "ma20", "ma50", "ma200"]:
                 if col in df_index.columns:
                     df_index[col] = pd.to_numeric(df_index[col], errors="coerce")
+            
+            # 📌 핵심 2: 종목 차트의 날짜 축과 1:1로 완벽히 매칭 (지수 거미줄 선 꼬임 방지)
+            df_merged = pd.merge(
+                df_stock[["price_date", "date_str"]],
+                df_index[["price_date", "close_price", "ma20", "ma50", "ma200"]],
+                on="price_date",
+                how="left"
+            )
+        else:
+            df_merged = pd.DataFrame()
 
         # 📌 3개 행 서브플롯 생성
         fig = make_subplots(
@@ -102,7 +117,7 @@ def draw_integrated_chart(
             col=1,
         )
 
-        if df_stock["ma20"].notna().any():
+        if "ma20" in df_stock.columns and df_stock["ma20"].notna().any():
             fig.add_trace(
                 go.Scatter(
                     x=df_stock["date_str"],
@@ -207,63 +222,67 @@ def draw_integrated_chart(
             col=1,
         )
 
-        # --- Row 3: 최하단 지수 차트 ---
-        if not df_index.empty:
+        # --- Row 3: 최하단 지수 차트 (동기화된 df_merged 사용) ---
+        if not df_merged.empty:
             fig.add_trace(
                 go.Scatter(
-                    x=df_index["date_str"],
-                    y=df_index["close_price"],
+                    x=df_merged["date_str"],
+                    y=df_merged["close_price"],
                     mode="lines",
-                    name=f"지수종가",
+                    name="지수종가",
                     line=dict(color="#9467bd", width=2),
+                    connectgaps=True,
                 ),
                 row=3,
                 col=1,
             )
 
-            if "ma20" in df_index.columns and df_index["ma20"].notna().any():
+            if "ma20" in df_merged.columns and df_merged["ma20"].notna().any():
                 fig.add_trace(
                     go.Scatter(
-                        x=df_index["date_str"],
-                        y=df_index["ma20"],
+                        x=df_merged["date_str"],
+                        y=df_merged["ma20"],
                         mode="lines",
                         name="지수 MA20",
                         line=dict(color="#ff7f0e", width=1.2, dash="dash"),
                         showlegend=False,
+                        connectgaps=True,
                     ),
                     row=3,
                     col=1,
                 )
 
-            if "ma50" in df_index.columns and df_index["ma50"].notna().any():
+            if "ma50" in df_merged.columns and df_merged["ma50"].notna().any():
                 fig.add_trace(
                     go.Scatter(
-                        x=df_index["date_str"],
-                        y=df_index["ma50"],
+                        x=df_merged["date_str"],
+                        y=df_merged["ma50"],
                         mode="lines",
                         name="지수 MA50",
                         line=dict(color="#2ca02c", width=1.2, dash="dot"),
                         showlegend=False,
+                        connectgaps=True,
                     ),
                     row=3,
                     col=1,
                 )
 
-            if "ma200" in df_index.columns and df_index["ma200"].notna().any():
+            if "ma200" in df_merged.columns and df_merged["ma200"].notna().any():
                 fig.add_trace(
                     go.Scatter(
-                        x=df_index["date_str"],
-                        y=df_index["ma200"],
+                        x=df_merged["date_str"],
+                        y=df_merged["ma200"],
                         mode="lines",
                         name="지수 MA200",
                         line=dict(color="#d62728", width=1.2, dash="dashdot"),
                         showlegend=False,
+                        connectgaps=True,
                     ),
                     row=3,
                     col=1,
                 )
 
-        # 📌 레이아웃 설정: type='category'를 사용하여 휴장일 및 데이터 없는 날짜 완전 축소 제외
+        # 레이아웃 설정
         fig.update_layout(
             height=850,
             margin=dict(l=10, r=10, t=60, b=20),
@@ -278,9 +297,8 @@ def draw_integrated_chart(
             ),
         )
 
-        # 모든 x축을 category 타입으로 지정하여 거래가 없거나 비어있는 날짜 축소
+        # 날짜 축 카테고리화 및 Y축 스케일 자동 설정
         fig.update_xaxes(type="category", tickangle=-45)
-
         fig.update_yaxes(autorange=True, fixedrange=False, row=1, col=1)
         fig.update_yaxes(autorange=True, fixedrange=False, row=2, col=1)
         fig.update_yaxes(autorange=True, fixedrange=False, row=3, col=1)
