@@ -15,7 +15,7 @@ def draw_integrated_chart(
     supply_dates=None,
 ):
     """
-    개별 종목 및 매매 복기용 기술적 차트 (Altair vconcat 기반 - 넓이 완벽 동기화)
+    개별 종목 및 매매 복기용 기술적 차트 (Altair 기반 - 가로 넓이 완벽 동기화)
     """
     ticker_name_map = ticker_name_map or {}
     
@@ -46,11 +46,11 @@ def draw_integrated_chart(
 
     stock_name = ticker_name_map.get(selected_chart_ticker, selected_chart_ticker)
 
-    # 📌 X축 공유 (넓이 동기화 핵심)
+    # X축 공유
     x_scale_ordinal = alt.X("date_str:N", title=None, axis=alt.Axis(labelAngle=-45, tickCount=10))
 
     # ----------------------------------------------------
-    # 1. 상단 차트: 주가 (하늘색 영역 & 선) + MA20
+    # 1. 상단 차트: 주가 + MA20 + 모멘텀 순위(우측 Y축)
     # ----------------------------------------------------
     area_stock = (
         alt.Chart(df_chart)
@@ -84,6 +84,7 @@ def draw_integrated_chart(
         )
     )
 
+    # 우측 Y축 (모멘텀 순위)
     line_rank = (
         alt.Chart(df_chart)
         .mark_line(color="#808080", opacity=0.3, strokeWidth=1.2)
@@ -144,13 +145,13 @@ def draw_integrated_chart(
     chart_top = (
         alt.layer(chart_price, line_rank)
         .resolve_scale(y="independent")
-        .properties(height=300)
+        .properties(height=280)
     )
 
     # ----------------------------------------------------
-    # 2. 하단 차트: 거래량 (Volume)
+    # 2. 하단 차트: 거래량 (우측 여백 맞춤용 Dummy Y축 추가)
     # ----------------------------------------------------
-    chart_bottom = (
+    bar_volume = (
         alt.Chart(df_chart)
         .mark_bar(color="#87CEFA", opacity=0.7)
         .encode(
@@ -161,11 +162,37 @@ def draw_integrated_chart(
                 alt.Tooltip("volume:Q", title="거래량", format=",.0f"),
             ],
         )
-        .properties(height=120)
     )
 
-    # 📌 3. 두 차트를 하나로 수직 결합 (vconcat)하여 넓이 축 완전 통일
-    combined_chart = alt.vconcat(chart_top, chart_bottom).resolve_scale(x="shared")
+    # 📌 핵심: 상단 순위 Y축과 동일한 라벨 넓이를 확보하기 위한 빈 우측 축 생성
+    dummy_right_axis = (
+        alt.Chart(df_chart)
+        .mark_line(opacity=0)
+        .encode(
+            x=x_scale_ordinal,
+            y=alt.Y(
+                "momentum_rank:Q",
+                title=None,
+                axis=alt.Axis(orient="right", labels=False, ticks=False, titlePadding=10),
+            ),
+        )
+    )
+
+    chart_bottom = (
+        alt.layer(bar_volume, dummy_right_axis)
+        .resolve_scale(y="independent")
+        .properties(height=110)
+    )
+
+    # ----------------------------------------------------
+    # 3. vconcat 및 정렬(align='all', bounds='flush')
+    # ----------------------------------------------------
+    combined_chart = (
+        alt.vconcat(chart_top, chart_bottom)
+        .resolve_scale(x="shared")
+        .configure_concat(spacing=15)
+        .bounds("flush")
+    )
 
     legend_text = f"[{stock_name}] 하늘색 주가 추세선 | --- MA20 | ━ 모멘텀 순위"
     if supply_dates:
@@ -174,66 +201,4 @@ def draw_integrated_chart(
         legend_text += " | ▲ 🔴 매수타점 | ▼ 🔵 매도타점"
 
     st.caption(legend_text)
-    
-    # 단 한번만 렌더링
     st.altair_chart(combined_chart, use_container_width=True)
-
-
-def draw_attribution_charts(df_hist, market_type="KR"):
-    if df_hist.empty:
-        return
-
-    df_grouped = (
-        df_hist.groupby(["ticker", "종목명"])["profit_amount"]
-        .sum()
-        .reset_index()
-    )
-
-    top5 = df_grouped.nlargest(5, "profit_amount")
-    worst5 = df_grouped.nsmallest(5, "profit_amount")
-
-    df_top_worst = pd.concat([top5, worst5]).drop_duplicates()
-    df_top_worst["color"] = df_top_worst["profit_amount"].apply(
-        lambda x: "#00BFFF" if x > 0 else "#d62728"
-    )
-    df_top_worst["display_name"] = df_top_worst.apply(
-        lambda r: f"{r['종목명']} ({r['ticker']})", axis=1
-    )
-
-    bar_chart = (
-        alt.Chart(df_top_worst)
-        .mark_bar()
-        .encode(
-            y=alt.Y("display_name:N", sort=alt.EncodingSortField(field="profit_amount", order="descending"), title=None),
-            x=alt.X("profit_amount:Q", title="총 실현 손익"),
-            color=alt.Color("color:N", scale=None),
-            tooltip=[
-                alt.Tooltip("display_name:N", title="종목"),
-                alt.Tooltip("profit_amount:Q", title="손익", format=",.0f" if market_type == "KR" else ",.2f"),
-            ],
-        )
-        .properties(height=260, title="기여도 Top 5 & Worst 5")
-    )
-
-    scatter_chart = (
-        alt.Chart(df_hist)
-        .mark_circle(size=60, opacity=0.6)
-        .encode(
-            x=alt.X("holding_days:Q", title="보유 기간 (일)"),
-            y=alt.Y("profit_rate:Q", title="수익률 (%)", scale=alt.Scale(zero=True)),
-            color=alt.condition(alt.datum.profit_rate > 0, alt.value("#00BFFF"), alt.value("#d62728")),
-            tooltip=[
-                alt.Tooltip("종목명:N", title="종목"),
-                alt.Tooltip("holding_days:Q", title="보유일수"),
-                alt.Tooltip("profit_rate:Q", title="수익률(%)", format=".2f"),
-                alt.Tooltip("profit_amount:Q", title="손익", format=",.0f" if market_type == "KR" else ",.2f"),
-            ],
-        )
-        .properties(height=260, title="보유 기간 대비 수익률 분포")
-    )
-
-    col1, col2 = st.columns(2)
-    with col1:
-        st.altair_chart(bar_chart, use_container_width=True)
-    with col2:
-        st.altair_chart(scatter_chart, use_container_width=True)
