@@ -1069,26 +1069,33 @@ if df_display is not None:
 
                 st.divider()
 
-                # 독립 블록: 넓은 영역 전체를 활용하는 당일 TOP 5 & 최근 10일 수급 빈도 상위 표
-                st.markdown("###### 당일 TOP 5 & 최근 10일 수급 빈도 상위")
+                # 📌 당일 TOP 5 & 최근 수급 분석 탭 확장 (20일 내 최초 포착 종목 추가)
+                st.markdown("###### 당일 TOP 5 & 최근 수급 분석")
                 
                 try:
-                    res_liq_10d = (
+                    res_liq_20d = (
                         supabase.table("daily_top_liquidity")
                         .select("*")
                         .lte("trade_date", supply_target_date_str)
                         .order("trade_date", desc=True)
-                        .limit(200)
+                        .limit(400)
                         .execute()
                     )
-                    df_liq_10d = pd.DataFrame(res_liq_10d.data) if res_liq_10d.data else pd.DataFrame()
+                    df_liq_20d = pd.DataFrame(res_liq_20d.data) if res_liq_20d.data else pd.DataFrame()
                 except Exception:
-                    df_liq_10d = pd.DataFrame()
+                    df_liq_20d = pd.DataFrame()
 
-                df_stock_liq = df_liq_10d[df_liq_10d["trade_date"] == supply_target_date_str] if not df_liq_10d.empty else pd.DataFrame()
+                df_stock_liq = df_liq_20d[df_liq_20d["trade_date"] == supply_target_date_str] if not df_liq_20d.empty else pd.DataFrame()
 
-                tab_f_day, tab_i_day, tab_f_10d, tab_i_10d = st.tabs(
-                    ["외국인 당일", "기관 당일", "외국인 10일 빈도", "기관 10일 빈도"]
+                # 20일 내 최초 등장 종목 추출
+                df_first_appear = pd.DataFrame()
+                if not df_liq_20d.empty and not df_stock_liq.empty:
+                    past_19d_df = df_liq_20d[df_liq_20d["trade_date"] < supply_target_date_str]
+                    past_tickers = set(past_19d_df["ticker"].unique()) if not past_19d_df.empty else set()
+                    df_first_appear = df_stock_liq[~df_stock_liq["ticker"].isin(past_tickers)].copy()
+
+                tab_f_day, tab_i_day, tab_f_10d, tab_i_10d, tab_new_20d = st.tabs(
+                    ["외국인 당일", "기관 당일", "외국인 10일 빈도", "기관 10일 빈도", "🔥 20일내 최초 등장"]
                 )
 
                 with tab_f_day:
@@ -1116,8 +1123,8 @@ if df_display is not None:
                         st.caption("당일 데이터가 존재하지 않습니다.")
 
                 with tab_f_10d:
-                    if not df_liq_10d.empty:
-                        df_f_pos = df_liq_10d[df_liq_10d["foreign_net"] > 0]
+                    if not df_liq_20d.empty:
+                        df_f_pos = df_liq_20d[df_liq_20d["foreign_net"] > 0]
                         freq_f = df_f_pos.groupby(["ticker", "name"]).agg(
                             빈도수=("trade_date", "nunique"),
                             누적순매수=("foreign_net", "sum"),
@@ -1131,11 +1138,11 @@ if df_display is not None:
                             hide_index=True, use_container_width=True
                         )
                     else:
-                        st.caption("최근 10일 수급 데이터가 없습니다.")
+                        st.caption("최근 수급 데이터가 없습니다.")
 
                 with tab_i_10d:
-                    if not df_liq_10d.empty:
-                        df_i_pos = df_liq_10d[df_liq_10d["inst_net"] > 0]
+                    if not df_liq_20d.empty:
+                        df_i_pos = df_liq_20d[df_liq_20d["inst_net"] > 0]
                         freq_i = df_i_pos.groupby(["ticker", "name"]).agg(
                             빈도수=("trade_date", "nunique"),
                             누적순매수=("inst_net", "sum"),
@@ -1149,7 +1156,30 @@ if df_display is not None:
                             hide_index=True, use_container_width=True
                         )
                     else:
-                        st.caption("최근 10일 수급 데이터가 없습니다.")
+                        st.caption("최근 수급 데이터가 없습니다.")
+
+                # 🆕 20일 내 처음으로 수급 상위에 등장한 종목 탭
+                with tab_new_20d:
+                    if not df_first_appear.empty:
+                        st.caption("✨ 최근 20영업일 동안 수급 상위 데이터에 없다가 **오늘 처음 포착된 신규 수급 유입주**입니다.")
+                        disp_first = df_first_appear[["rank", "ticker", "name", "close_price", "change_rate", "foreign_net", "inst_net"]].copy()
+                        disp_first = disp_first.rename(columns={
+                            "rank": "순위", "ticker": "티커", "name": "종목명", 
+                            "close_price": "종가", "change_rate": "등락률", 
+                            "foreign_net": "외국인순매수", "inst_net": "기관순매수"
+                        })
+                        st.dataframe(
+                            disp_first.style.format({
+                                "종가": "{:,.0f}원", "등락률": "{:+.2f}%", 
+                                "외국인순매수": "{:+,.0f}", "기관순매수": "{:+,.0f}"
+                            }).map(
+                                lambda v: "color: red;" if float(v) > 0 else ("color: blue;" if float(v) < 0 else ""), 
+                                subset=["등락률", "외국인순매수", "기관순매수"]
+                            ),
+                            hide_index=True, use_container_width=True
+                        )
+                    else:
+                        st.info("최근 20일 내에 등장하지 않았던 신규 포착 종목이 오늘 존재하지 않습니다.")
 
                 st.divider()
 
@@ -2127,7 +2157,7 @@ if df_display is not None:
 
                         exit_reason = sel_trade_data.get("exit_reason", sel_trade_data.get("sell_reason", "시스템 조건 청산"))
 
-                        # 📌 [핵심 수정 1] 매수일(buy_date) 시점 DB 지표독립 조회
+                        # 매수일(buy_date) 시점 DB 지표 독립 조회
                         buy_rank, buy_mot, buy_rs90, buy_dispar = "-", "-", "-", "-"
                         try:
                             buy_analysis_res = (
@@ -2150,7 +2180,7 @@ if df_display is not None:
                         except Exception:
                             pass
 
-                        # 📌 [핵심 수정 2] 청산일(sell_date) 시점 DB 지표 독립 조회
+                        # 청산일(sell_date) 시점 DB 지표 독립 조회
                         sell_rank, sell_mot, sell_rs90, sell_dispar = "-", "-", "-", "-"
                         try:
                             sell_analysis_res = (
