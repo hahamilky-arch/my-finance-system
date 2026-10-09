@@ -69,13 +69,13 @@ def draw_integrated_chart(
                 if col in df_index.columns:
                     df_index[col] = pd.to_numeric(df_index[col], errors="coerce")
 
-        # 📌 3개 행 서브플롯 생성 (Row 1: 캔들차트, Row 2: 거래량, Row 3: 지수 차트)
+        # 📌 3개 행 서브플롯 생성 (Row 1: 종목 차트, Row 2: 거래량, Row 3: 최하단 지수 차트)
         fig = make_subplots(
             rows=3,
             cols=1,
             shared_xaxes=True,
-            vertical_spacing=0.04,
-            row_heights=[0.55, 0.20, 0.25],
+            vertical_spacing=0.05,
+            row_heights=[0.50, 0.20, 0.30],
             subplot_titles=(
                 f"[{ticker}] {stock_name} 주가 및 이동평균선",
                 "거래량",
@@ -99,7 +99,6 @@ def draw_integrated_chart(
             col=1,
         )
 
-        # 이동평균선 추가 (MA20, MA50, MA200)
         if df_stock["ma20"].notna().any():
             fig.add_trace(
                 go.Scatter(
@@ -188,7 +187,7 @@ def draw_integrated_chart(
                 col=1,
             )
 
-        # --- Row 2: 거래량 ---
+        # --- Row 2: 거래량 (가운데) ---
         colors = [
             "#d62728" if c >= o else "#1f77b4"
             for c, o in zip(df_stock["close_price"], df_stock["open_price"])
@@ -204,7 +203,7 @@ def draw_integrated_chart(
             col=1,
         )
 
-        # --- Row 3: 최하단 지수 차트 (MA20, MA50, MA200) ---
+        # --- Row 3: 최하단 지수 차트 (거래량 아래) ---
         if not df_index.empty:
             # 지수 종가
             fig.add_trace(
@@ -263,7 +262,7 @@ def draw_integrated_chart(
 
         # 레이아웃 설정
         fig.update_layout(
-            height=680,
+            height=720,
             margin=dict(l=20, r=20, t=40, b=20),
             xaxis_rangeslider_visible=False,
             xaxis3=dict(type="category", tickangle=-45),
@@ -276,7 +275,7 @@ def draw_integrated_chart(
             ),
         )
 
-        # Y축 스케일 자동 세팅
+        # Y축 스케일 설정
         fig.update_yaxes(autorange=True, fixedrange=False, row=1, col=1)
         fig.update_yaxes(autorange=True, fixedrange=False, row=2, col=1)
         fig.update_yaxes(autorange=True, fixedrange=False, row=3, col=1)
@@ -292,7 +291,6 @@ def draw_attribution_charts(df_hist, market_type):
     if df_hist.empty:
         return
 
-    # 종목별 누적 실현 손익
     profit_by_stock = (
         df_hist.groupby("종목명")["profit_amount"]
         .sum()
