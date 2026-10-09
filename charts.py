@@ -1,387 +1,296 @@
-import altair as alt
 import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 import streamlit as st
 from db import supabase
 
 
 def draw_integrated_chart(
-    selected_chart_ticker,
-    market_type,
-    ticker_name_map,
+    ticker,
+    market_type="KR",
+    ticker_name_map=None,
     buy_date=None,
     sell_date=None,
     buy_price=None,
     sell_price=None,
+    supply_dates=None,
 ):
-    chart_res = (
-        supabase.table("daily_analysis")
-        .select("price_date, close_price, momentum_rank, ma20")
-        .eq("ticker", selected_chart_ticker)
-        .order("price_date", desc=True)
-        .limit(125)
-        .execute()
+    """
+    개별 종목의 기술적 차트(캔들스틱 + 거래량 + MA 이동평균선)를 생성합니다.
+    - buy_date/sell_date 전달 시: 매수/매도 타점 수직선 및 마커 표기
+    - supply_dates 전달 시: 수급 유입일 주황색 세로 점선 및 🔥 배지 표기
+    """
+    stock_name = (
+        ticker_name_map.get(ticker, ticker) if ticker_name_map else ticker
     )
 
-    benchmark_ticker = "^KS11" if market_type == "KR" else "^GSPC"
-    index_res = (
-        supabase.table("daily_analysis")
-        .select("price_date, close_price, ma50")
-        .eq("ticker", benchmark_ticker)
-        .order("price_date", desc=True)
-        .limit(125)
-        .execute()
-    )
-
-    if not chart_res.data:
-        st.info("해당 종목의 시계열 차트 데이터가 존재하지 않습니다.")
+    try:
+        # 최근 120영업일 일봉 주가 데이터 조회
+        res = (
+            supabase.table("daily_analysis")
+            .select("price_date, open_price, high_price, low_price, close_price, volume, ma20, ma60, ma120")
+            .eq("ticker", ticker)
+            .order("price_date", desc=True)
+            .limit(120)
+            .execute()
+        )
+        df_chart = pd.DataFrame(res.data) if res.data else pd.DataFrame()
+    except Exception as e:
+        st.error(f"차트 데이터 조회 중 오류가 발생했습니다: {e}")
         return
 
-    df_chart = pd.DataFrame(chart_res.data)
-    df_chart["price_date"] = pd.to_datetime(df_chart["price_date"])
-    df_chart = df_chart.sort_values("price_date", ascending=True)
-    df_chart["close_price"] = pd.to_numeric(
-        df_chart["close_price"], errors="coerce"
-    )
-    df_chart["ma20"] = pd.to_numeric(df_chart["ma20"], errors="coerce")
-    df_chart.loc[df_chart["ma20"] == 0, "ma20"] = None
+    if df_chart.empty:
+        st.info(f"[{ticker}] 종목의 차트 데이터가 존재하지 않습니다.")
+        return
 
-    if index_res.data:
-        df_idx_chart = pd.DataFrame(index_res.data).rename(
-            columns={"close_price": "index_price", "ma50": "index_ma50"}
-        )
-        df_idx_chart["price_date"] = pd.to_datetime(df_idx_chart["price_date"])
-        df_idx_chart["index_price"] = pd.to_numeric(
-            df_idx_chart["index_price"], errors="coerce"
-        )
-        df_idx_chart["index_ma50"] = pd.to_numeric(
-            df_idx_chart["index_ma50"], errors="coerce"
-        )
-        df_merged = pd.merge(
-            df_chart, df_idx_chart, on="price_date", how="left"
-        )
-    else:
-        df_merged = df_chart
-        df_merged["index_price"] = df_merged["index_ma50"] = None
+    # 날짜 오름차순 정렬
+    df_chart = df_chart.sort_values("price_date").reset_index(drop=True)
+    df_chart["date_str"] = pd.to_datetime(df_chart["price_date"]).dt.strftime("%Y-%m-%d")
 
-    idx_name = "KOSPI" if market_type == "KR" else "S&P 500"
-    stock_name = ticker_name_map.get(
-        selected_chart_ticker, selected_chart_ticker
+    # 서브플롯 구성 (Subplot 1: 캔들스틱 & MA, Subplot 2: 거래량)
+    fig = make_subplots(
+        rows=2,
+        cols=1,
+        shared_xaxes=True,
+        vertical_spacing=0.05,
+        subplot_titles=(f"[{ticker}] {stock_name} 일봉 차트", "거래량"),
+        row_width=[0.25, 0.75],
     )
 
-    # 1. 주가 선
-    line_stock = (
-        alt.Chart(df_merged)
-        .mark_line(color="#1f77b4", strokeWidth=3)
-        .encode(
-            x=alt.X(
-                "price_date:T",
-                title=None,
-                axis=alt.Axis(
-                    format="%m/%d",
-                    labelAngle=0,
-                    tickCount=6,
-                    labelOverlap=True,
-                    grid=False,
+    # 1. 캔들스틱 차트
+    fig.add_trace(
+        go.Candlestick(
+            x=df_chart["date_str"],
+            open=df_chart["open_price"],
+            high=df_chart["high_price"],
+            low=df_chart["low_price"],
+            close=df_chart["close_price"],
+            name="주가",
+            increasing_line_color="#d62728",  # 양봉 빨강
+            decreasing_line_color="#1f77b4",  # 음봉 파랑
+        ),
+        row=1,
+        col=1,
+    )
+
+    # 2. 이동평균선 (MA20, MA60, MA120)
+    if "ma20" in df_chart.columns:
+        fig.add_trace(
+            go.Scatter(
+                x=df_chart["date_str"],
+                y=df_chart["ma20"],
+                mode="lines",
+                name="MA20",
+                line=dict(color="#ff7f0e", width=1.5),
+            ),
+            row=1,
+            col=1,
+        )
+
+    if "ma60" in df_chart.columns:
+        fig.add_trace(
+            go.Scatter(
+                x=df_chart["date_str"],
+                y=df_chart["ma60"],
+                mode="lines",
+                name="MA60",
+                line=dict(color="#2ca02c", width=1.2),
+            ),
+            row=1,
+            col=1,
+        )
+
+    if "ma120" in df_chart.columns:
+        fig.add_trace(
+            go.Scatter(
+                x=df_chart["date_str"],
+                y=df_chart["ma120"],
+                mode="lines",
+                name="MA120",
+                line=dict(color="#9467bd", width=1.0, dash="dot"),
+            ),
+            row=1,
+            col=1,
+        )
+
+    # 3. 거래량 바 차트 (전일 대비 양봉/음봉 색상 분리)
+    colors = [
+        "#d62728" if c >= o else "#1f77b4"
+        for c, o in zip(df_chart["close_price"], df_chart["open_price"])
+    ]
+    fig.add_trace(
+        go.Bar(
+            x=df_chart["date_str"],
+            y=df_chart["volume"],
+            name="거래량",
+            marker_color=colors,
+            opacity=0.7,
+        ),
+        row=2,
+        col=1,
+    )
+
+    # 📌 4. 수급 유입일 표기 (세로 주황 점선 & 🔥 수급 배지)
+    if supply_dates:
+        chart_dates_set = set(df_chart["date_str"].unique())
+        for s_date in supply_dates:
+            s_date_str = str(s_date)
+            if s_date_str in chart_dates_set:
+                fig.add_vline(
+                    x=s_date_str,
+                    line_width=1.5,
+                    line_dash="dot",
+                    line_color="#ff9800",
+                    row=1,
+                    col=1,
+                )
+                fig.add_annotation(
+                    x=s_date_str,
+                    y=1.02,
+                    yref="paper",
+                    text="🔥 수급",
+                    showarrow=False,
+                    font=dict(size=10, color="#e65100", family="Arial Black"),
+                    bgcolor="#fff3e0",
+                    bordercolor="#ffe0b2",
+                    borderwidth=1,
+                    row=1,
+                    col=1,
+                )
+
+    # 📌 5. 매수 / 매도 타점 표시 (매매 복기용)
+    if buy_date and str(buy_date) in df_chart["date_str"].values:
+        buy_date_str = str(buy_date)
+        fig.add_vline(
+            x=buy_date_str,
+            line_width=2,
+            line_dash="dash",
+            line_color="#d62728",
+            row=1,
+            col=1,
+        )
+        if buy_price:
+            fig.add_trace(
+                go.Scatter(
+                    x=[buy_date_str],
+                    y=[buy_price],
+                    mode="markers+text",
+                    name="매수타점",
+                    marker=dict(symbol="triangle-up", size=14, color="#d62728"),
+                    text=[f"매수가: {buy_price:,.0f}" if market_type == "KR" else f"매수가: ${buy_price:,.2f}"],
+                    textposition="bottom center",
                 ),
-            ),
-            y=alt.Y(
-                "close_price:Q",
-                title="주가",
-                scale=alt.Scale(zero=False, padding=15),
-            ),
-            tooltip=[
-                alt.Tooltip("price_date:T", title="날짜", format="%Y-%m-%d"),
-                alt.Tooltip("close_price:Q", title="종가", format=",.2f"),
-            ],
-        )
-    )
-
-    # 2. MA20 점선
-    line_ma20 = (
-        alt.Chart(df_merged)
-        .mark_line(color="#d62728", strokeDash=[5, 5], strokeWidth=1.5)
-        .encode(
-            x=alt.X("price_date:T", title=None),
-            y=alt.Y(
-                "ma20:Q", title=None, scale=alt.Scale(zero=False, padding=15)
-            ),
-        )
-    )
-
-    # 3. 모멘텀 순위 선 (우측 Y축 반전)
-    line_rank = (
-        alt.Chart(df_merged)
-        .mark_line(color="#ff7f0e", opacity=0.3, strokeWidth=1.5)
-        .encode(
-            x=alt.X("price_date:T", title=None),
-            y=alt.Y(
-                "momentum_rank:Q",
-                title="순위",
-                scale=alt.Scale(domain=[100, 1], clamp=True),
-                axis=alt.Axis(orient="right", titlePadding=10, tickCount=5),
-            ),
-            tooltip=[
-                alt.Tooltip("price_date:T", title="날짜", format="%Y-%m-%d"),
-                alt.Tooltip("momentum_rank:Q", title="모멘텀 순위"),
-            ],
-        )
-    )
-
-    chart_price = alt.layer(line_stock, line_ma20)
-
-    # 4. 매수/매도 타점 수직선 & 삼각형 마커
-    trade_elements_stock = []
-    trade_elements_index = []
-
-    if buy_date:
-        df_buy = pd.DataFrame([{
-            "price_date": pd.to_datetime(buy_date),
-            "price": float(buy_price)
-            if buy_price
-            else df_chart["close_price"].mean(),
-            "label": "🔴 매수",
-        }])
-
-        vline_buy_stock = (
-            alt.Chart(df_buy)
-            .mark_rule(color="#d62728", strokeWidth=2, strokeDash=[3, 3])
-            .encode(x="price_date:T")
-        )
-        vline_buy_index = (
-            alt.Chart(df_buy)
-            .mark_rule(color="#d62728", strokeWidth=2, strokeDash=[3, 3])
-            .encode(x="price_date:T")
-        )
-
-        marker_buy = (
-            alt.Chart(df_buy)
-            .mark_point(
-                shape="triangle-up",
-                size=180,
-                color="#d62728",
-                filled=True,
-                opacity=1.0,
+                row=1,
+                col=1,
             )
-            .encode(
-                x="price_date:T",
-                y="price:Q",
-                tooltip=[
-                    alt.Tooltip("label:N", title="타점"),
-                    alt.Tooltip("price_date:T", title="매수일", format="%Y-%m-%d"),
-                    alt.Tooltip("price:Q", title="매수가", format=",.2f"),
-                ],
-            )
+
+    if sell_date and str(sell_date) in df_chart["date_str"].values:
+        sell_date_str = str(sell_date)
+        fig.add_vline(
+            x=sell_date_str,
+            line_width=2,
+            line_dash="dash",
+            line_color="#1f77b4",
+            row=1,
+            col=1,
         )
-        trade_elements_stock.extend([vline_buy_stock, marker_buy])
-        trade_elements_index.append(vline_buy_index)
-
-    if sell_date:
-        df_sell = pd.DataFrame([{
-            "price_date": pd.to_datetime(sell_date),
-            "price": float(sell_price)
-            if sell_price
-            else df_chart["close_price"].mean(),
-            "label": "🔵 매도",
-        }])
-
-        vline_sell_stock = (
-            alt.Chart(df_sell)
-            .mark_rule(color="#1f77b4", strokeWidth=2, strokeDash=[3, 3])
-            .encode(x="price_date:T")
-        )
-        vline_sell_index = (
-            alt.Chart(df_sell)
-            .mark_rule(color="#1f77b4", strokeWidth=2, strokeDash=[3, 3])
-            .encode(x="price_date:T")
-        )
-
-        marker_sell = (
-            alt.Chart(df_sell)
-            .mark_point(
-                shape="triangle-down",
-                size=180,
-                color="#1f77b4",
-                filled=True,
-                opacity=1.0,
-            )
-            .encode(
-                x="price_date:T",
-                y="price:Q",
-                tooltip=[
-                    alt.Tooltip("label:N", title="타점"),
-                    alt.Tooltip("price_date:T", title="매도일", format="%Y-%m-%d"),
-                    alt.Tooltip("price:Q", title="매도가", format=",.2f"),
-                ],
-            )
-        )
-        trade_elements_stock.extend([vline_sell_stock, marker_sell])
-        trade_elements_index.append(vline_sell_index)
-
-    if trade_elements_stock:
-        chart_price = alt.layer(chart_price, *trade_elements_stock)
-
-    chart_top = (
-        alt.layer(chart_price, line_rank)
-        .resolve_scale(y="independent")
-        .properties(height=350)
-        .interactive(bind_y=False)
-    )
-
-    # 5. 지수 차트
-    line_idx = (
-        alt.Chart(df_merged)
-        .mark_line(color="#2ca02c", strokeWidth=2.5)
-        .encode(
-            x=alt.X(
-                "price_date:T",
-                title=None,
-                axis=alt.Axis(
-                    format="%m/%d",
-                    labelAngle=0,
-                    tickCount=6,
-                    labelOverlap=True,
-                    grid=False,
+        if sell_price:
+            fig.add_trace(
+                go.Scatter(
+                    x=[sell_date_str],
+                    y=[sell_price],
+                    mode="markers+text",
+                    name="매도타점",
+                    marker=dict(symbol="triangle-down", size=14, color="#1f77b4"),
+                    text=[f"매도가: {sell_price:,.0f}" if market_type == "KR" else f"매도가: ${sell_price:,.2f}"],
+                    textposition="top center",
                 ),
-            ),
-            y=alt.Y(
-                "index_price:Q",
-                title=f"{idx_name} 지수",
-                scale=alt.Scale(zero=False, padding=10),
-            ),
-            tooltip=[
-                alt.Tooltip("price_date:T", title="날짜", format="%Y-%m-%d"),
-                alt.Tooltip("index_price:Q", title="지수 종가", format=",.2f"),
-            ],
-        )
+                row=1,
+                col=1,
+            )
+
+    # 차트 레이아웃 정돈
+    fig.update_layout(
+        height=520,
+        margin=dict(l=20, r=20, t=40, b=20),
+        xaxis_rangeslider_visible=False,
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1,
+        ),
+        hovermode="x unified",
     )
 
-    line_idx_ma50 = (
-        alt.Chart(df_merged)
-        .mark_line(color="#d62728", strokeDash=[5, 5], strokeWidth=1.5)
-        .encode(
-            x=alt.X("price_date:T", title=None),
-            y=alt.Y(
-                "index_ma50:Q",
-                title=None,
-                scale=alt.Scale(zero=False, padding=10),
-            ),
-            tooltip=[alt.Tooltip("index_ma50:Q", title="MA50", format=",.2f")],
-        )
-    )
-
-    chart_index = alt.layer(line_idx, line_idx_ma50)
-    if trade_elements_index:
-        chart_index = alt.layer(chart_index, *trade_elements_index)
-
-    chart_bottom = (
-        chart_index.resolve_scale(y="shared")
-        .properties(height=400)
-        .interactive(bind_y=False)
-    )
-
-    st.markdown(
-        f"""
-    <div style="text-align: center; margin-bottom: 10px; font-size: 0.9em; color: #555555;">
-        <span style="color:#1f77b4; font-weight:bold;">━</span> {stock_name} 주가 | 
-        <span style="color:#d62728; font-weight:bold;">---</span> MA20 | 
-        <span style="color:rgba(255, 127, 14, 0.5); font-weight:bold;">━</span> 모멘텀 순위 (우측 Y축 반전)
-        {" | <span style='color:#d62728; font-weight:bold;'>▲ 🔴 매수타점</span> | <span style='color:#1f77b4; font-weight:bold;'>▼ 🔵 매도타점</span>" if buy_date or sell_date else ""}
-    </div>
-    """,
-        unsafe_allow_html=True,
-    )
-
-    st.altair_chart(chart_top, use_container_width=True)
-
-    st.markdown(
-        f"""
-    <div style="text-align: center; margin-top: 5px; margin-bottom: 10px; font-size: 0.9em; color: #555555;">
-        <span style="color:#2ca02c; font-weight:bold;">━</span> {idx_name} 지수 종가 | 
-        <span style="color:#d62728; font-weight:bold;">---</span> MA50
-        {" | <span style='color:#d62728; font-weight:bold;'>--- 🔴 매수일</span> | <span style='color:#1f77b4; font-weight:bold;'>--- 🔵 매도일</span>" if buy_date or sell_date else ""}
-    </div>
-    """,
-        unsafe_allow_html=True,
-    )
-
-    st.altair_chart(chart_bottom, use_container_width=True)
+    fig.update_xaxes(type="category", tickangle=-45)
+    st.plotly_chart(fig, use_container_width=True)
 
 
-def draw_attribution_charts(df_hist, market_type):
+def draw_attribution_charts(df_hist, market_type="KR"):
+    """
+    성과 분석(TAB 4)용 수익 기여도 및 월별 실현손익 누적 시각화 차트
+    """
     if df_hist.empty:
         return
 
-    df_grouped = (
-        df_hist.groupby(["ticker", "종목명"])["profit_amount"]
-        .sum()
-        .reset_index()
-    )
+    col_chart1, col_chart2 = st.columns(2)
 
-    top5 = df_grouped.nlargest(5, "profit_amount")
-    worst5 = df_grouped.nsmallest(5, "profit_amount")
+    # 1. 누적 손익 추이 차트
+    with col_chart1:
+        df_hist_sorted = df_hist.sort_values("sell_date_dt").copy()
+        df_hist_sorted["cum_profit"] = df_hist_sorted["profit_amount"].cumsum()
+        df_hist_sorted["sell_date_str"] = df_hist_sorted["sell_date_dt"].dt.strftime("%Y-%m-%d")
 
-    df_top_worst = pd.concat([top5, worst5])
-    df_top_worst["color"] = df_top_worst["profit_amount"].apply(
-        lambda x: "#1f77b4" if x > 0 else "#d62728"
-    )
-    df_top_worst["display_name"] = df_top_worst.apply(
-        lambda r: f"{r['종목명']} ({r['ticker']})", axis=1
-    )
-
-    bar_chart = (
-        alt.Chart(df_top_worst)
-        .mark_bar()
-        .encode(
-            y=alt.Y(
-                "display_name:N",
-                sort=alt.EncodingSortField(
-                    field="profit_amount", order="descending"
-                ),
-                title=None,
-            ),
-            x=alt.X("profit_amount:Q", title="총 실현 손익"),
-            color=alt.Color("color:N", scale=None),
-            tooltip=[
-                alt.Tooltip("display_name:N", title="종목"),
-                alt.Tooltip(
-                    "profit_amount:Q",
-                    title="손익",
-                    format=",.0f" if market_type == "KR" else ",.2f",
-                ),
-            ],
+        fig_cum = go.Figure()
+        fig_cum.add_trace(
+            go.Scatter(
+                x=df_hist_sorted["sell_date_str"],
+                y=df_hist_sorted["cum_profit"],
+                mode="lines+markers",
+                name="누적 실현손익",
+                line=dict(color="#d62728", width=2.5),
+                fill="tozeroy",
+                fillcolor="rgba(214, 39, 40, 0.1)",
+            )
         )
-        .properties(height=300, title="기여도 Top 5 & Worst 5")
-    )
-
-    scatter_chart = (
-        alt.Chart(df_hist)
-        .mark_circle(size=60, opacity=0.6)
-        .encode(
-            x=alt.X("holding_days:Q", title="보유 기간 (일)"),
-            y=alt.Y(
-                "profit_rate:Q", title="수익률 (%)", scale=alt.Scale(zero=True)
-            ),
-            color=alt.condition(
-                alt.datum.profit_rate > 0,
-                alt.value("#1f77b4"),
-                alt.value("#d62728"),
-            ),
-            tooltip=[
-                alt.Tooltip("종목명:N", title="종목"),
-                alt.Tooltip("holding_days:Q", title="보유일수"),
-                alt.Tooltip("profit_rate:Q", title="수익률(%)", format=".2f"),
-                alt.Tooltip(
-                    "profit_amount:Q",
-                    title="손익",
-                    format=",.0f" if market_type == "KR" else ",.2f",
-                ),
-            ],
+        fig_cum.update_layout(
+            title="누적 실현손익 추이",
+            height=300,
+            margin=dict(l=10, r=10, t=35, b=20),
+            xaxis=dict(type="category", tickangle=-45),
         )
-        .properties(height=300, title="보유 기간 대비 수익률 분포")
-    )
+        st.plotly_chart(fig_cum, use_container_width=True)
 
-    col1, col2 = st.columns(2)
-    with col1:
-        st.altair_chart(bar_chart, use_container_width=True)
-    with col2:
-        st.altair_chart(scatter_chart, use_container_width=True)
+    # 2. 종목별 수익 기여도 TOP 7 바 차트
+    with col_chart2:
+        df_contrib = (
+            df_hist.groupby("종목명")["profit_amount"]
+            .sum()
+            .reset_index()
+            .sort_values("profit_amount", ascending=False)
+            .head(7)
+        )
+
+        colors = [
+            "#d62728" if p > 0 else "#1f77b4" for p in df_contrib["profit_amount"]
+        ]
+
+        fig_contrib = go.Figure()
+        fig_contrib.add_trace(
+            go.Bar(
+                x=df_contrib["종목명"],
+                y=df_contrib["profit_amount"],
+                marker_color=colors,
+                name="종목별 손익",
+            )
+        )
+        fig_contrib.update_layout(
+            title="상위 종목별 수익 기여도 TOP 7",
+            height=300,
+            margin=dict(l=10, r=10, t=35, b=20),
+            xaxis=dict(tickangle=-30),
+        )
+        st.plotly_chart(fig_contrib, use_container_width=True)
