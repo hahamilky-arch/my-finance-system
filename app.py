@@ -1140,40 +1140,53 @@ if df_display is not None:
 
                 st.divider()
 
-                # TAB 1 하단 [조회일 당일 전체 수급 데이터 표]
+                # TAB 1 하단 [조회일 당일 전체 수급 데이터 표] (안전 로딩 적용)
                 st.markdown(f"###### [{supply_target_date_str}] 거래대금 / 수급 상위 전체 종목 리스트")
                 try:
                     res_day_all = (
                         supabase.table("daily_top_liquidity")
-                        .select("rank, ticker, name, close_price, change_rate, foreign_net, inst_net, net_total, volume_power")
+                        .select("*")
                         .eq("trade_date", supply_target_date_str)
                         .order("rank", ascending=True)
+                        .limit(1000)
                         .execute()
                     )
                     df_day_all = pd.DataFrame(res_day_all.data) if res_day_all.data else pd.DataFrame()
-                except Exception:
+                except Exception as e:
+                    st.error(f"수급 데이터 조회 중 오류 발생: {e}")
                     df_day_all = pd.DataFrame()
 
                 if not df_day_all.empty:
-                    df_day_all = df_day_all.rename(columns={
+                    col_rename_map = {
                         "rank": "순위", "ticker": "티커", "name": "종목명",
                         "close_price": "종가", "change_rate": "등락률",
                         "foreign_net": "외국인순매수", "inst_net": "기관순매수",
                         "net_total": "합계순매수", "volume_power": "체결강도"
-                    })
+                    }
+                    df_day_all = df_day_all.rename(columns=col_rename_map)
+                    
+                    show_cols = [c for c in ["순위", "티커", "종목명", "종가", "등락률", "외국인순매수", "기관순매수", "합계순매수", "체결강도"] if c in df_day_all.columns]
+                    df_day_disp = df_day_all[show_cols].copy()
+
+                    fmt_dict = {}
+                    if "종가" in df_day_disp.columns: fmt_dict["종가"] = "{:,.0f}원"
+                    if "등락률" in df_day_disp.columns: fmt_dict["등락률"] = "{:+.2f}%"
+                    if "외국인순매수" in df_day_disp.columns: fmt_dict["외국인순매수"] = "{:+,.0f}"
+                    if "기관순매수" in df_day_disp.columns: fmt_dict["기관순매수"] = "{:+,.0f}"
+                    if "합계순매수" in df_day_disp.columns: fmt_dict["합계순매수"] = "{:+,.0f}"
+                    if "체결강도" in df_day_disp.columns: fmt_dict["체결강도"] = "{:.1f}%"
+
+                    target_color_cols = [c for c in ["등락률", "외국인순매수", "기관순매수", "합계순매수"] if c in df_day_disp.columns]
+
                     st.dataframe(
-                        df_day_all.style.format({
-                            "종가": "{:,.0f}원", "등락률": "{:+.2f}%",
-                            "외국인순매수": "{:+,.0f}", "기관순매수": "{:+,.0f}",
-                            "합계순매수": "{:+,.0f}", "체결강도": "{:.1f}%"
-                        }).map(
+                        df_day_disp.style.format(fmt_dict).map(
                             lambda v: "color: red;" if float(v) > 0 else ("color: blue;" if float(v) < 0 else ""),
-                            subset=["등락률", "외국인순매수", "기관순매수", "합계순매수"]
+                            subset=target_color_cols
                         ),
                         hide_index=True, use_container_width=True
                     )
                 else:
-                    st.info(f"{supply_target_date_str} 날짜의 수급 상위 데이터가 존재하지 않습니다.")
+                    st.info(f"[{supply_target_date_str}] 날짜의 수급 상위 데이터가 존재하지 않습니다.")
 
     # TAB 2: 알파 시그널
     with tab2:
@@ -2170,7 +2183,7 @@ if df_display is not None:
                         st.write("")
                         st.markdown("###### 매매 당시 주가 차트 및 진입/청산 타점 (매수 / 매도)")
 
-                        # 📌 복기 종목 수급 유입일 조회
+                        # 복기 종목 수급 유입일 조회
                         perf_supply_dates = []
                         if market_type == "KR":
                             try:
