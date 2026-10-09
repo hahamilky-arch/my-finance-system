@@ -1225,7 +1225,7 @@ if df_display is not None:
                 st.success("수급 분석 완료")
                 st.markdown(analysis_res)
 
-        # 📌 [최하단 지수 차트 추가 영역]
+        # 📌 [최하단 지수 차트 영역 - ma50, ma200 데이터 연동]
         st.divider()
         index_name_str = "코스피 (^KS11)" if market_type == "KR" else "S&P 500 (^GSPC)"
         st.markdown(f"###### {index_name_str} 시장 지수 추이 (최근 120영업일)")
@@ -1234,7 +1234,7 @@ if df_display is not None:
         try:
             res_idx_chart = (
                 supabase.table("daily_analysis")
-                .select("price_date, close_price, ma20")
+                .select("price_date, close_price, ma20, ma50, ma200")
                 .eq("ticker", target_index_symbol)
                 .order("price_date", desc=True)
                 .limit(120)
@@ -1249,9 +1249,13 @@ if df_display is not None:
                     df_idx_c["date_str"] = df_idx_c["price_date_dt"].dt.strftime("%Y-%m-%d")
                     
                     df_idx_c["close_val"] = pd.to_numeric(df_idx_c["close_price"], errors="coerce")
-                    df_idx_c["ma20_val"] = pd.to_numeric(df_idx_c["ma20"], errors="coerce")
+                    df_idx_c["ma20_val"] = pd.to_numeric(df_idx_c.get("ma20"), errors="coerce")
+                    df_idx_c["ma50_val"] = pd.to_numeric(df_idx_c.get("ma50"), errors="coerce")
+                    df_idx_c["ma200_val"] = pd.to_numeric(df_idx_c.get("ma200"), errors="coerce")
 
                     fig_market_idx = gg.Figure()
+                    
+                    # 1. 지수 종가
                     fig_market_idx.add_trace(gg.Scatter(
                         x=df_idx_c["date_str"],
                         y=df_idx_c["close_val"],
@@ -1259,6 +1263,8 @@ if df_display is not None:
                         name=f"{index_name_str} 종가",
                         line=dict(color="#9467bd", width=2.5)
                     ))
+                    
+                    # 2. MA20 (20일선)
                     if df_idx_c["ma20_val"].notna().any():
                         fig_market_idx.add_trace(gg.Scatter(
                             x=df_idx_c["date_str"],
@@ -1266,6 +1272,26 @@ if df_display is not None:
                             mode="lines",
                             name="MA20 (20일선)",
                             line=dict(color="#ff7f0e", width=1.5, dash="dash")
+                        ))
+
+                    # 3. MA50 (50일선)
+                    if df_idx_c["ma50_val"].notna().any():
+                        fig_market_idx.add_trace(gg.Scatter(
+                            x=df_idx_c["date_str"],
+                            y=df_idx_c["ma50_val"],
+                            mode="lines",
+                            name="MA50 (50일선)",
+                            line=dict(color="#2ca02c", width=1.5, dash="dot")
+                        ))
+
+                    # 4. MA200 (200일선)
+                    if df_idx_c["ma200_val"].notna().any():
+                        fig_market_idx.add_trace(gg.Scatter(
+                            x=df_idx_c["date_str"],
+                            y=df_idx_c["ma200_val"],
+                            mode="lines",
+                            name="MA200 (200일선)",
+                            line=dict(color="#d62728", width=1.5, dash="dashdot")
                         ))
 
                     fig_market_idx.update_layout(
@@ -1277,9 +1303,9 @@ if df_display is not None:
                     )
                     st.plotly_chart(fig_market_idx, use_container_width=True)
                 else:
-                    st.info(f"[{target_index_symbol}] 지수 시계열 데이터가 daily_analysis 테이블에 없습니다.")
+                    st.info(f"[{target_index_symbol}] 지수 시계열 데이터가 daily_analysis 테이블에 존재하지 않습니다.")
             else:
-                st.info("daily_analysis 테이블에서 지수 데이터를 가져올 수 없습니다.")
+                st.info("daily_analysis 테이블에서 지수 데이터를 불러올 수 없습니다.")
         except Exception as e:
             st.error(f"지수 차트 불러오기 실패: {e}")
 
