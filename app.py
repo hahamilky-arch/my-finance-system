@@ -167,12 +167,26 @@ def apply_styles(df):
                         "background-color: rgba(189, 215, 238, 0.4);"
                     )
 
-    if "수급" in df.columns:
-        matched_mask = df["수급"] == "포착"
-        df_s.loc[matched_mask, :] += (
-            "background-color: rgba(200, 230, 201, 0.7); font-weight: bold;"
-        )
-        df_s.loc[matched_mask, "수급"] += "color: #2e7d32; font-weight: bold;"
+    if "수급(10일)" in df.columns:
+        for idx, val in df["수급(10일)"].items():
+            val_str = str(val)
+            if "🔥" in val_str:
+                if "🔥🔥🔥" in val_str:
+                    df_s.loc[idx, "수급(10일)"] += (
+                        "background-color: rgba(255, 205, 210, 0.8); color: #b71c1c; font-weight: bold;"
+                    )
+                elif "🔥🔥" in val_str:
+                    df_s.loc[idx, "수급(10일)"] += (
+                        "background-color: rgba(255, 224, 178, 0.8); color: #e65100; font-weight: bold;"
+                    )
+                else:
+                    df_s.loc[idx, "수급(10일)"] += (
+                        "background-color: rgba(255, 249, 196, 0.8); color: #f57f17; font-weight: bold;"
+                    )
+            elif "✨" in val_str:
+                df_s.loc[idx, "수급(10일)"] += (
+                    "background-color: rgba(225, 245, 254, 0.8); color: #0288d1; font-weight: bold;"
+                )
 
     return df_s
 
@@ -230,7 +244,7 @@ def display_trade_list(
             rank_val = (
                 int(row.get("순위", 0)) if pd.notna(row.get("순위")) else "-"
             )
-            rec_rank_val = row.get("추천순위", row.get("매수추천순위", ""))
+            rec_rank_val = row.get("추천", row.get("추천순위", row.get("매수추천순위", "")))
             rec_rank_display = (
                 f"{rec_rank_val}위" if rec_rank_val != "" else "-"
             )
@@ -376,7 +390,7 @@ def display_trade_list(
                 rank_val = (
                     int(row.get("순위", 0)) if pd.notna(row.get("순위")) else "-"
                 )
-                rec_rank_val = row.get("추천순위", row.get("매수추천순위", ""))
+                rec_rank_val = row.get("추천", row.get("추천순위", row.get("매수추천순위", "")))
                 rec_rank_display = (
                     f"{rec_rank_val}위" if rec_rank_val != "" else "-"
                 )
@@ -690,7 +704,9 @@ df_display = get_data(
 
 if df_display is not None:
     if "매수추천순위" in df_display.columns:
-        df_display = df_display.rename(columns={"매수추천순위": "추천순위"})
+        df_display = df_display.rename(columns={"매수추천순위": "추천"})
+    elif "추천순위" in df_display.columns:
+        df_display = df_display.rename(columns={"추천순위": "추천"})
 
     if "매매상태" in df_display.columns:
         df_display["매매상태"] = df_display["매매상태"].replace({
@@ -1069,7 +1085,7 @@ if df_display is not None:
 
                 st.divider()
 
-                # 📌 당일 TOP 5 & 최근 수급 분석 탭 확장 (20일 내 최초 포착 종목 추가)
+                # 당일 TOP 5 & 최근 수급 분석 탭
                 st.markdown("###### 당일 TOP 5 & 최근 수급 분석")
                 
                 try:
@@ -1158,7 +1174,7 @@ if df_display is not None:
                     else:
                         st.caption("최근 수급 데이터가 없습니다.")
 
-                # 🆕 20일 내 처음으로 수급 상위에 등장한 종목 탭
+                # 20일 내 처음으로 수급 상위에 등장한 종목 탭
                 with tab_new_20d:
                     if not df_first_appear.empty:
                         st.caption("✨ 최근 20영업일 동안 수급 상위 데이터에 없다가 **오늘 처음 포착된 신규 수급 유입주**입니다.")
@@ -1273,9 +1289,43 @@ if df_display is not None:
         if "atr" not in df_target.columns:
             df_target["atr"] = 0.0
 
+        # 최근 10일 수급 유입 횟수 계산 및 맵핑 로직
+        supply_count_map = {}
+        if market_type == "KR":
+            try:
+                res_liq_10d = (
+                    supabase.table("daily_top_liquidity")
+                    .select("ticker, foreign_net, inst_net, trade_date")
+                    .lte("trade_date", target_date_str)
+                    .order("trade_date", desc=True)
+                    .limit(300)
+                    .execute()
+                )
+                if res_liq_10d.data:
+                    df_l10 = pd.DataFrame(res_liq_10d.data)
+                    df_l10_pos = df_l10[(df_l10["foreign_net"] > 0) | (df_l10["inst_net"] > 0)]
+                    supply_count_map = df_l10_pos.groupby("ticker")["trade_date"].nunique().to_dict()
+            except Exception:
+                pass
+
+        def format_supply_badge(ticker):
+            cnt = supply_count_map.get(ticker, 0)
+            if cnt >= 8:
+                return f"🔥🔥🔥 {cnt}일 (최상)"
+            elif cnt >= 5:
+                return f"🔥🔥 {cnt}일 (강함)"
+            elif cnt >= 2:
+                return f"🔥 {cnt}일 (보통)"
+            elif cnt == 1:
+                return f"✨ {cnt}일 (신규/1회)"
+            return "-"
+
+        df_target["수급(10일)"] = df_target["ticker"].apply(format_supply_badge)
+
+        # 요수 사항 1 반영: '추천순위' -> '추천' 변경
         col_order = [
             "순위",
-            "추천순위",
+            "추천",
             "변동",
             "매매상태",
             "종목명",
@@ -1283,6 +1333,7 @@ if df_display is not None:
             "MOT",
             "RS(90)",
             "RS(10)",
+            "수급(10일)",
             "MA20",
             "atr",
             "제외사유",
@@ -1291,12 +1342,18 @@ if df_display is not None:
             "상승률",
             "ticker",
         ]
-        df_target = df_target[col_order].rename(columns={
-            "추천순위": "추천순위",
+
+        df_target = df_target.rename(columns={
+            "추천순위": "추천",
+            "매수추천순위": "추천",
             "매매상태": "상태",
             "이격도": "이격(%)",
             "atr": "ATR",
         })
+
+        # 존재하지 않는 칼럼 방지
+        existing_cols = [c for c in col_order if c in df_target.columns]
+        df_target = df_target[existing_cols]
 
         if filter_opt == "추천 종목만":
             df_target = df_target[df_target["상태"] == "추천"]
