@@ -18,7 +18,7 @@ def draw_integrated_chart(
     sell_price=None,
     supply_dates=None,
 ):
-    """개별 종목 기술적 차트 + 수급 포착 표시 + 거래량 + 최하단 지수 차트(MA20, MA50, MA200) 통합 그리기"""
+    """개별 종목 기술적 차트 + 거래량 + 최하단 지수 차트(MA20, MA50, MA200) 통합 차트"""
     stock_name = ticker_name_map.get(ticker, ticker)
     index_symbol = "^KS11" if market_type == "KR" else "^GSPC"
     index_name = "코스피 (^KS11)" if market_type == "KR" else "S&P 500 (^GSPC)"
@@ -69,15 +69,15 @@ def draw_integrated_chart(
                 if col in df_index.columns:
                     df_index[col] = pd.to_numeric(df_index[col], errors="coerce")
 
-        # 📌 3개 행 서브플롯 생성 (Row 1: 종목 차트, Row 2: 거래량, Row 3: 최하단 지수 차트)
+        # 📌 3개 행 서브플롯 생성
         fig = make_subplots(
             rows=3,
             cols=1,
             shared_xaxes=True,
-            vertical_spacing=0.05,
-            row_heights=[0.50, 0.20, 0.30],
+            vertical_spacing=0.06,
+            row_heights=[0.50, 0.18, 0.32],
             subplot_titles=(
-                f"[{ticker}] {stock_name} 주가 및 이동평균선",
+                f"[{ticker}] {stock_name} 주가 추이",
                 "거래량",
                 f"{index_name} 지수 추이 (20/50/200일선)",
             ),
@@ -154,7 +154,7 @@ def draw_integrated_chart(
                     col=1,
                 )
 
-        # 매수/매도 타점 표시 (복기용)
+        # 매수/매도 타점 표시
         if buy_date and buy_date in df_stock["price_date"].values:
             b_row = df_stock[df_stock["price_date"] == buy_date].iloc[0]
             fig.add_trace(
@@ -187,7 +187,7 @@ def draw_integrated_chart(
                 col=1,
             )
 
-        # --- Row 2: 거래량 (가운데) ---
+        # --- Row 2: 거래량 ---
         colors = [
             "#d62728" if c >= o else "#1f77b4"
             for c, o in zip(df_stock["close_price"], df_stock["open_price"])
@@ -198,27 +198,26 @@ def draw_integrated_chart(
                 y=df_stock["volume"],
                 name="거래량",
                 marker_color=colors,
+                showlegend=False,  # 거래량 범례 제거하여 글자 겹침 방지
             ),
             row=2,
             col=1,
         )
 
-        # --- Row 3: 최하단 지수 차트 (거래량 아래) ---
+        # --- Row 3: 최하단 지수 차트 ---
         if not df_index.empty:
-            # 지수 종가
             fig.add_trace(
                 go.Scatter(
                     x=df_index["date_str"],
                     y=df_index["close_price"],
                     mode="lines",
-                    name=f"{index_name} 종가",
+                    name=f"지수종가",
                     line=dict(color="#9467bd", width=2),
                 ),
                 row=3,
                 col=1,
             )
 
-            # 지수 MA20
             if "ma20" in df_index.columns and df_index["ma20"].notna().any():
                 fig.add_trace(
                     go.Scatter(
@@ -227,12 +226,12 @@ def draw_integrated_chart(
                         mode="lines",
                         name="지수 MA20",
                         line=dict(color="#ff7f0e", width=1.2, dash="dash"),
+                        showlegend=False,
                     ),
                     row=3,
                     col=1,
                 )
 
-            # 지수 MA50
             if "ma50" in df_index.columns and df_index["ma50"].notna().any():
                 fig.add_trace(
                     go.Scatter(
@@ -241,12 +240,12 @@ def draw_integrated_chart(
                         mode="lines",
                         name="지수 MA50",
                         line=dict(color="#2ca02c", width=1.2, dash="dot"),
+                        showlegend=False,
                     ),
                     row=3,
                     col=1,
                 )
 
-            # 지수 MA200
             if "ma200" in df_index.columns and df_index["ma200"].notna().any():
                 fig.add_trace(
                     go.Scatter(
@@ -255,27 +254,28 @@ def draw_integrated_chart(
                         mode="lines",
                         name="지수 MA200",
                         line=dict(color="#d62728", width=1.2, dash="dashdot"),
+                        showlegend=False,
                     ),
                     row=3,
                     col=1,
                 )
 
-        # 레이아웃 설정
+        # 레이아웃 설정 (높이 확대 및 범례 배치 수정)
         fig.update_layout(
-            height=720,
-            margin=dict(l=20, r=20, t=40, b=20),
+            height=850,
+            margin=dict(l=10, r=10, t=60, b=20),
             xaxis_rangeslider_visible=False,
             xaxis3=dict(type="category", tickangle=-45),
             legend=dict(
                 orientation="h",
                 yanchor="bottom",
-                y=1.01,
-                xanchor="right",
-                x=1,
+                y=1.06,  # 서브플롯 제목 위로 완전히 이동
+                xanchor="center",
+                x=0.5,
+                font=dict(size=11),
             ),
         )
 
-        # Y축 스케일 설정
         fig.update_yaxes(autorange=True, fixedrange=False, row=1, col=1)
         fig.update_yaxes(autorange=True, fixedrange=False, row=2, col=1)
         fig.update_yaxes(autorange=True, fixedrange=False, row=3, col=1)
@@ -287,37 +287,74 @@ def draw_integrated_chart(
 
 
 def draw_attribution_charts(df_hist, market_type):
-    """성과 분석 탭용 수익 기여도 시각화 차트"""
+    """성과 분석 탭용 수익 기여도 막대 그래프 + 수익률/보유기간 분포도(산점도) 복원"""
     if df_hist.empty:
         return
 
-    profit_by_stock = (
-        df_hist.groupby("종목명")["profit_amount"]
-        .sum()
-        .reset_index()
-        .sort_values("profit_amount", ascending=False)
-    )
-
     fmt_unit = "$" if market_type == "US" else "원"
 
-    fig_bar = go.Figure()
-    fig_bar.add_trace(
-        go.Bar(
-            x=profit_by_stock["종목명"],
-            y=profit_by_stock["profit_amount"],
-            marker_color=[
-                "#d62728" if v > 0 else "#1f77b4"
-                for v in profit_by_stock["profit_amount"]
-            ],
-            text=[f"{v:+,.0f}{fmt_unit}" for v in profit_by_stock["profit_amount"]],
-            textposition="auto",
-        )
-    )
-    fig_bar.update_layout(
-        title="종목별 누적 실현 손익 기여도",
-        height=300,
-        margin=dict(l=20, r=20, t=40, b=20),
-        xaxis=dict(tickangle=-45),
-    )
+    col_chart1, col_chart2 = st.columns(2)
 
-    st.plotly_chart(fig_bar, use_container_width=True)
+    # 1. 종목별 누적 실현 손익 막대 그래프
+    with col_chart1:
+        profit_by_stock = (
+            df_hist.groupby("종목명")["profit_amount"]
+            .sum()
+            .reset_index()
+            .sort_values("profit_amount", ascending=False)
+        )
+
+        fig_bar = go.Figure()
+        fig_bar.add_trace(
+            go.Bar(
+                x=profit_by_stock["종목명"],
+                y=profit_by_stock["profit_amount"],
+                marker_color=[
+                    "#d62728" if v > 0 else "#1f77b4"
+                    for v in profit_by_stock["profit_amount"]
+                ],
+                text=[f"{v:+,.0f}{fmt_unit}" for v in profit_by_stock["profit_amount"]],
+                textposition="auto",
+            )
+        )
+        fig_bar.update_layout(
+            title="종목별 누적 실현 손익 기여도",
+            height=360,
+            margin=dict(l=20, r=20, t=40, b=20),
+            xaxis=dict(tickangle=-45),
+        )
+        st.plotly_chart(fig_bar, use_container_width=True)
+
+    # 2. 📌 복원된 수익률 vs 보유일수 분포도 (산점도 / Scatter Plot)
+    with col_chart2:
+        fig_scatter = go.Figure()
+        
+        # 보유일수 수치 처리
+        df_hist["holding_days_val"] = pd.to_numeric(df_hist.get("holding_days", 0), errors="coerce").fillna(0)
+        df_hist["profit_rate_val"] = pd.to_numeric(df_hist.get("profit_rate", 0), errors="coerce").fillna(0)
+
+        fig_scatter.add_trace(
+            go.Scatter(
+                x=df_hist["holding_days_val"],
+                y=df_hist["profit_rate_val"],
+                mode="markers",
+                marker=dict(
+                    size=10,
+                    color=["#d62728" if r > 0 else "#1f77b4" for r in df_hist["profit_rate_val"]],
+                    line=dict(width=1, color="DarkSlateGrey")
+                ),
+                text=df_hist["종목명"],
+                hovertemplate="<b>%{text}</b><br>보유일수: %{x}일<br>수익률: %{y:+.2f}%<extra></extra>",
+            )
+        )
+        # 0% 기준선 가로선 추가
+        fig_scatter.add_hline(y=0, line_dash="dash", line_color="gray")
+
+        fig_scatter.update_layout(
+            title="보유기간 대비 수익률 분포도",
+            xaxis_title="보유일수 (일)",
+            yaxis_title="수익률 (%)",
+            height=360,
+            margin=dict(l=20, r=20, t=40, b=20),
+        )
+        st.plotly_chart(fig_scatter, use_container_width=True)
