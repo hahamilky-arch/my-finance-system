@@ -58,7 +58,7 @@ def draw_integrated_chart(
             if col in df_stock.columns:
                 df_stock[col] = pd.to_numeric(df_stock[col], errors="coerce")
 
-        # 📌 핵심 1: 가격이 0 이하이거나 결측치인 이상 데이터 완전 제거 (캔들 바닥 꽂힘 원천 차단)
+        # 가격 이상 데이터 제거
         df_stock = df_stock[
             (df_stock["close_price"] > 0) &
             (df_stock["open_price"] > 0) &
@@ -77,7 +77,7 @@ def draw_integrated_chart(
                 if col in df_index.columns:
                     df_index[col] = pd.to_numeric(df_index[col], errors="coerce")
             
-            # 📌 핵심 2: 종목 차트의 날짜 축과 1:1로 완벽히 매칭 (지수 거미줄 선 꼬임 방지)
+            # 날짜 기준 1:1 매칭
             df_merged = pd.merge(
                 df_stock[["price_date", "date_str"]],
                 df_index[["price_date", "close_price", "ma20", "ma50", "ma200"]],
@@ -156,51 +156,55 @@ def draw_integrated_chart(
                 col=1,
             )
 
-        # 수급 포착 마커
+        # 📌 세로선 표시 처리 (수급, 매수, 매도)
+        # 1. 수급 포착 세로선 (초록색 파선)
         if supply_dates:
             supp_df = df_stock[df_stock["price_date"].isin(supply_dates)]
-            if not supp_df.empty:
-                fig.add_trace(
-                    go.Scatter(
-                        x=supp_df["date_str"],
-                        y=supp_df["high_price"] * 1.02,
-                        mode="markers",
-                        name="수급포착",
-                        marker=dict(symbol="triangle-down", size=10, color="#2e7d32"),
-                    ),
+            for _, s_row in supp_df.iterrows():
+                s_date_str = s_row["date_str"]
+                fig.add_vline(
+                    x=s_date_str,
+                    line_width=1.5,
+                    line_dash="dash",
+                    line_color="#2e7d32",
+                    annotation_text="수급",
+                    annotation_position="top left",
+                    annotation_font_size=10,
+                    annotation_font_color="#2e7d32",
                     row=1,
                     col=1,
                 )
 
-        # 매수/매도 타점 표시
+        # 2. 매수 타점 세로선 (빨간색 실선)
         if buy_date and buy_date in df_stock["price_date"].values:
             b_row = df_stock[df_stock["price_date"] == buy_date].iloc[0]
-            fig.add_trace(
-                go.Scatter(
-                    x=[b_row["date_str"]],
-                    y=[buy_price if buy_price else b_row["close_price"]],
-                    mode="markers+text",
-                    name="매수타점",
-                    text=["매수"],
-                    textposition="bottom center",
-                    marker=dict(symbol="circle", size=12, color="red"),
-                ),
+            b_date_str = b_row["date_str"]
+            fig.add_vline(
+                x=b_date_str,
+                line_width=2,
+                line_dash="solid",
+                line_color="#d62728",
+                annotation_text="매수",
+                annotation_position="bottom left",
+                annotation_font_size=11,
+                annotation_font_color="#d62728",
                 row=1,
                 col=1,
             )
 
+        # 3. 매도 타점 세로선 (파란색 실선)
         if sell_date and sell_date in df_stock["price_date"].values:
             s_row = df_stock[df_stock["price_date"] == sell_date].iloc[0]
-            fig.add_trace(
-                go.Scatter(
-                    x=[s_row["date_str"]],
-                    y=[sell_price if sell_price else s_row["close_price"]],
-                    mode="markers+text",
-                    name="매도타점",
-                    text=["매도"],
-                    textposition="top center",
-                    marker=dict(symbol="x", size=12, color="blue"),
-                ),
+            s_date_str = s_row["date_str"]
+            fig.add_vline(
+                x=s_date_str,
+                line_width=2,
+                line_dash="solid",
+                line_color="#1f77b4",
+                annotation_text="매도",
+                annotation_position="top right",
+                annotation_font_size=11,
+                annotation_font_color="#1f77b4",
                 row=1,
                 col=1,
             )
@@ -222,7 +226,7 @@ def draw_integrated_chart(
             col=1,
         )
 
-        # --- Row 3: 최하단 지수 차트 (동기화된 df_merged 사용) ---
+        # --- Row 3: 최하단 지수 차트 ---
         if not df_merged.empty:
             fig.add_trace(
                 go.Scatter(
@@ -297,7 +301,6 @@ def draw_integrated_chart(
             ),
         )
 
-        # 날짜 축 카테고리화 및 Y축 스케일 자동 설정
         fig.update_xaxes(type="category", tickangle=-45)
         fig.update_yaxes(autorange=True, fixedrange=False, row=1, col=1)
         fig.update_yaxes(autorange=True, fixedrange=False, row=2, col=1)
@@ -318,7 +321,6 @@ def draw_attribution_charts(df_hist, market_type):
 
     col_chart1, col_chart2 = st.columns(2)
 
-    # 1. 종목별 누적 실현 손익 막대 그래프
     with col_chart1:
         profit_by_stock = (
             df_hist.groupby("종목명")["profit_amount"]
@@ -348,7 +350,6 @@ def draw_attribution_charts(df_hist, market_type):
         )
         st.plotly_chart(fig_bar, use_container_width=True)
 
-    # 2. 수익률 vs 보유일수 분포도
     with col_chart2:
         fig_scatter = go.Figure()
 
