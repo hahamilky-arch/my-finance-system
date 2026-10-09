@@ -1140,14 +1140,14 @@ if df_display is not None:
 
                 st.divider()
 
-                # TAB 1 하단 [조회일 당일 전체 수급 데이터 표] (안전 로딩 적용)
+                # TAB 1 하단 [조회일 당일 전체 수급 데이터 표] (desc=False 적용)
                 st.markdown(f"###### [{supply_target_date_str}] 거래대금 / 수급 상위 전체 종목 리스트")
                 try:
                     res_day_all = (
                         supabase.table("daily_top_liquidity")
                         .select("*")
                         .eq("trade_date", supply_target_date_str)
-                        .order("rank", ascending=True)
+                        .order("rank", desc=False)
                         .limit(1000)
                         .execute()
                     )
