@@ -15,11 +15,14 @@ def draw_integrated_chart(
     supply_dates=None,
 ):
     """
-    개별 종목 및 매매 복기용 기술적 차트 (Altair 기반 - 가로 넓이 완벽 동기화)
+    개별 종목 및 매매 복기용 기술적 차트 (Altair vconcat 기반)
+    - 상단: 주가 추세선 + 지수 추세선 + MA20 + 모멘텀 순위(우측 Y축)
+    - 하단: 거래량 바 차트 (Volume)
+    - 좌우 여백 완벽 동기화 (Dummy Right Axis 적용)
     """
     ticker_name_map = ticker_name_map or {}
     
-    # 1. DB 주가 및 지표 조회
+    # 1. DB 개별 종목 주가 및 지표 조회
     chart_res = (
         supabase.table("daily_analysis")
         .select("price_date, open_price, high_price, low_price, close_price, volume, momentum_rank, ma20")
@@ -44,17 +47,37 @@ def draw_integrated_chart(
     df_chart["ma20"] = pd.to_numeric(df_chart["ma20"], errors="coerce")
     df_chart.loc[df_chart["ma20"] == 0, "ma20"] = None
 
+    # 2. 시장 지수 데이터 조회 (KOSPI/KOSDAQ 또는 S&P500/NASDAQ)
+    index_ticker = "KOSPI" if market_type == "KR" else "SP500"
+    try:
+        idx_res = (
+            supabase.table("market_regime")
+            .select("trade_date, index_close, ma20")
+            .order("trade_date", desc=True)
+            .limit(125)
+            .execute()
+        )
+        if idx_res.data:
+            df_idx = pd.DataFrame(idx_res.data)
+            df_idx["price_date"] = pd.to_datetime(df_idx["trade_date"])
+            df_idx["index_close"] = pd.to_numeric(df_idx["index_close"], errors="coerce")
+            df_chart = pd.merge(df_chart, df_idx[["price_date", "index_close"]], on="price_date", how="left")
+        else:
+            df_chart["index_close"] = None
+    except Exception:
+        df_chart["index_close"] = None
+
     stock_name = ticker_name_map.get(selected_chart_ticker, selected_chart_ticker)
 
     # X축 공유
     x_scale_ordinal = alt.X("date_str:N", title=None, axis=alt.Axis(labelAngle=-45, tickCount=10))
 
     # ----------------------------------------------------
-    # 1. 상단 차트: 주가 + MA20 + 모멘텀 순위(우측 Y축)
+    # 1. 상단 차트: 주가 + 지수 + MA20 + 모멘텀 순위(우측 Y축)
     # ----------------------------------------------------
     area_stock = (
         alt.Chart(df_chart)
-        .mark_area(color="#87CEEB", opacity=0.2)
+        .mark_area(color="#87CEEB", opacity=0.15)
         .encode(
             x=x_scale_ordinal,
             y=alt.Y("close_price:Q", title="주가", scale=alt.Scale(zero=False, padding=15)),
@@ -84,6 +107,20 @@ def draw_integrated_chart(
         )
     )
 
+    # 지수 추세선 (보라색 점선)
+    line_index = (
+        alt.Chart(df_chart)
+        .mark_line(color="#9467bd", strokeWidth=1.2, strokeDash=[2, 2], opacity=0.7)
+        .encode(
+            x=x_scale_ordinal,
+            y=alt.Y("index_close:Q", title=None, scale=alt.Scale(zero=False)),
+            tooltip=[
+                alt.Tooltip("date_str:N", title="날짜"),
+                alt.Tooltip("index_close:Q", title=f"시장 지수 ({index_ticker})", format=",.2f"),
+            ],
+        )
+    )
+
     # 우측 Y축 (모멘텀 순위)
     line_rank = (
         alt.Chart(df_chart)
@@ -103,7 +140,7 @@ def draw_integrated_chart(
         )
     )
 
-    chart_price = alt.layer(area_stock, line_stock, line_ma20)
+    chart_price = alt.layer(area_stock, line_stock, line_ma20, line_index)
 
     # 수급 유입일 점선
     if supply_dates:
@@ -149,7 +186,7 @@ def draw_integrated_chart(
     )
 
     # ----------------------------------------------------
-    # 2. 하단 차트: 거래량 (우측 여백 맞춤용 Dummy Y축 추가)
+    # 2. 하단 차트: 거래량 (우측 여백 맞춤용 Dummy Y축 포함)
     # ----------------------------------------------------
     bar_volume = (
         alt.Chart(df_chart)
@@ -164,7 +201,6 @@ def draw_integrated_chart(
         )
     )
 
-    # 📌 핵심: 상단 순위 Y축과 동일한 라벨 넓이를 확보하기 위한 빈 우측 축 생성
     dummy_right_axis = (
         alt.Chart(df_chart)
         .mark_line(opacity=0)
@@ -185,7 +221,7 @@ def draw_integrated_chart(
     )
 
     # ----------------------------------------------------
-    # 3. vconcat 및 정렬(align='all', bounds='flush')
+    # 3. vconcat 및 정렬
     # ----------------------------------------------------
     combined_chart = (
         alt.vconcat(chart_top, chart_bottom)
@@ -194,7 +230,7 @@ def draw_integrated_chart(
         .bounds("flush")
     )
 
-    legend_text = f"[{stock_name}] 하늘색 주가 추세선 | --- MA20 | ━ 모멘텀 순위"
+    legend_text = f"[{stock_name}] 하늘색 주가 추세선 | --- MA20 | ┈ 지수 추세선 | ━ 모멘텀 순위"
     if supply_dates:
         legend_text += " | --- 수급 유입일"
     if buy_date or sell_date:
@@ -202,3 +238,63 @@ def draw_integrated_chart(
 
     st.caption(legend_text)
     st.altair_chart(combined_chart, use_container_width=True)
+
+
+def draw_attribution_charts(df_hist, market_type="KR"):
+    if df_hist.empty:
+        return
+
+    df_grouped = (
+        df_hist.groupby(["ticker", "종목명"])["profit_amount"]
+        .sum()
+        .reset_index()
+    )
+
+    top5 = df_grouped.nlargest(5, "profit_amount")
+    worst5 = df_grouped.nsmallest(5, "profit_amount")
+
+    df_top_worst = pd.concat([top5, worst5]).drop_duplicates()
+    df_top_worst["color"] = df_top_worst["profit_amount"].apply(
+        lambda x: "#00BFFF" if x > 0 else "#d62728"
+    )
+    df_top_worst["display_name"] = df_top_worst.apply(
+        lambda r: f"{r['종목명']} ({r['ticker']})", axis=1
+    )
+
+    bar_chart = (
+        alt.Chart(df_top_worst)
+        .mark_bar()
+        .encode(
+            y=alt.Y("display_name:N", sort=alt.EncodingSortField(field="profit_amount", order="descending"), title=None),
+            x=alt.X("profit_amount:Q", title="총 실현 손익"),
+            color=alt.Color("color:N", scale=None),
+            tooltip=[
+                alt.Tooltip("display_name:N", title="종목"),
+                alt.Tooltip("profit_amount:Q", title="손익", format=",.0f" if market_type == "KR" else ",.2f"),
+            ],
+        )
+        .properties(height=260, title="기여도 Top 5 & Worst 5")
+    )
+
+    scatter_chart = (
+        alt.Chart(df_hist)
+        .mark_circle(size=60, opacity=0.6)
+        .encode(
+            x=alt.X("holding_days:Q", title="보유 기간 (일)"),
+            y=alt.Y("profit_rate:Q", title="수익률 (%)", scale=alt.Scale(zero=True)),
+            color=alt.condition(alt.datum.profit_rate > 0, alt.value("#00BFFF"), alt.value("#d62728")),
+            tooltip=[
+                alt.Tooltip("종목명:N", title="종목"),
+                alt.Tooltip("holding_days:Q", title="보유일수"),
+                alt.Tooltip("profit_rate:Q", title="수익률(%)", format=".2f"),
+                alt.Tooltip("profit_amount:Q", title="손익", format=",.0f" if market_type == "KR" else ",.2f"),
+            ],
+        )
+        .properties(height=260, title="보유 기간 대비 수익률 분포")
+    )
+
+    col1, col2 = st.columns(2)
+    with col1:
+        st.altair_chart(bar_chart, use_container_width=True)
+    with col2:
+        st.altair_chart(scatter_chart, use_container_width=True)
