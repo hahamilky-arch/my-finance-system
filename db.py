@@ -76,26 +76,38 @@ def get_market_regime(market_type="KR", target_date_str=None):
         return True, False, False
 
 
-def get_recently_sold_info(market_type="KR", days_limit=30):
+def get_recently_sold_info(market_type="KR", target_date_str=None, cooldown_days=3):
     """
-    최근 청산 완료된 매도 종목 및 청산일 정보 조회 (전략 재진입 제한 판정용)
+    최근 N일 이내 매도 완료된 종목 및 매도가 조회 (재진입 쿨다운 필터용)
+    - 반환값: {ticker: sell_price}
     """
     table_name = get_holdings_table(market_type)
+    if not target_date_str:
+        return {}
+
     try:
+        target_dt = pd.to_datetime(target_date_str)
+        min_sell_dt = (target_dt - pd.Timedelta(days=cooldown_days)).strftime("%Y-%m-%d")
+
         res = (
             supabase.table(table_name)
-            .select("ticker, sell_date")
+            .select("ticker, sell_date, sell_price")
             .not_.is_("sell_date", "null")
+            .gte("sell_date", min_sell_dt)
+            .lte("sell_date", target_date_str)
             .execute()
         )
+        
+        sold_dict = {}
         if res.data:
-            df_sold = pd.DataFrame(res.data)
-            df_sold["ticker"] = df_sold["ticker"].astype(str).str.strip().str.upper()
-            return df_sold
-        return pd.DataFrame(columns=["ticker", "sell_date"])
+            for row in res.data:
+                tk = str(row["ticker"]).strip().upper()
+                s_price = float(row.get("sell_price", 0.0) or 0.0)
+                sold_dict[tk] = s_price
+        return sold_dict
     except Exception as e:
-        print(f"최근 매도 정보 조회 실패: {e}")
-        return pd.DataFrame(columns=["ticker", "sell_date"])
+        print(f"최근 매도 내역 조회 실패: {e}")
+        return {}
 
 
 def update_holdings(ticker, trade_type, price, trade_date, quantity, market_type="KR", exit_reason=None):
