@@ -130,12 +130,22 @@ def apply_styles(df):
             df_s.loc[df[col] > 0, col] += "color: red;"
             df_s.loc[df[col] < 0, col] += "color: blue;"
     if "상태" in df.columns:
-        df_s.loc[df["상태"] == "추천", "상태"] += "color: #d62728; font-weight: bold;"
-        df_s.loc[df["상태"] == "매도", "상태"] += "color: #1f77b4; font-weight: bold;"
-        df_s.loc[df["상태"] == "보유", "상태"] += "color: #2ca02c; font-weight: bold;"
+        df_s.loc[df["상태"] == "추천", "상태"] += (
+            "color: #d62728; font-weight: bold;"
+        )
+        df_s.loc[df["상태"] == "매도", "상태"] += (
+            "color: #1f77b4; font-weight: bold;"
+        )
+        df_s.loc[df["상태"] == "보유", "상태"] += (
+            "color: #2ca02c; font-weight: bold;"
+        )
     if "제외사유" in df.columns:
-        df_s.loc[df["제외사유"] != "", "제외사유"] += "color: #888888; font-size: 0.9em;"
-        df_s.loc[df["제외사유"] == "조건충족", "제외사유"] += "color: #d62728; font-weight: bold;"
+        df_s.loc[df["제외사유"] != "", "제외사유"] += (
+            "color: #888888; font-size: 0.9em;"
+        )
+        df_s.loc[df["제외사유"] == "조건충족", "제외사유"] += (
+            "color: #d62728; font-weight: bold;"
+        )
     for col in ["RS(90)", "RS(10)"]:
         if col in df.columns:
             df_s.loc[df[col] > 0, col] += "color: #d62728; font-weight: bold;"
@@ -145,24 +155,24 @@ def apply_styles(df):
         for idx, rank in df["순위"].items():
             if pd.notna(rank):
                 if rank <= 10:
-                    df_s.loc[idx, :] += "background-color: rgba(255, 235, 156, 0.4);"
+                    df_s.loc[idx, :] += (
+                        "background-color: rgba(255, 235, 156, 0.4);"
+                    )
                 elif rank <= 20:
-                    df_s.loc[idx, :] += "background-color: rgba(198, 239, 206, 0.4);"
+                    df_s.loc[idx, :] += (
+                        "background-color: rgba(198, 239, 206, 0.4);"
+                    )
                 elif rank <= 30:
-                    df_s.loc[idx, :] += "background-color: rgba(189, 215, 238, 0.4);"
+                    df_s.loc[idx, :] += (
+                        "background-color: rgba(189, 215, 238, 0.4);"
+                    )
 
-    if "수급(10일)" in df.columns:
-        for idx, val in df["수급(10일)"].items():
-            val_str = str(val)
-            if "🔥" in val_str:
-                if "🔥🔥🔥" in val_str:
-                    df_s.loc[idx, "수급(10일)"] += "background-color: rgba(255, 205, 210, 0.85); color: #b71c1c; font-weight: bold;"
-                elif "🔥🔥" in val_str:
-                    df_s.loc[idx, "수급(10일)"] += "background-color: rgba(255, 224, 178, 0.85); color: #e65100; font-weight: bold;"
-                else:
-                    df_s.loc[idx, "수급(10일)"] += "background-color: rgba(255, 249, 196, 0.85); color: #f57f17; font-weight: bold;"
-            elif "✨" in val_str:
-                df_s.loc[idx, "수급(10일)"] += "background-color: rgba(225, 245, 254, 0.85); color: #0288d1; font-weight: bold;"
+    if "수급" in df.columns:
+        matched_mask = df["수급"] == "포착"
+        df_s.loc[matched_mask, :] += (
+            "background-color: rgba(200, 230, 201, 0.7); font-weight: bold;"
+        )
+        df_s.loc[matched_mask, "수급"] += "color: #2e7d32; font-weight: bold;"
 
     return df_s
 
@@ -220,7 +230,7 @@ def display_trade_list(
             rank_val = (
                 int(row.get("순위", 0)) if pd.notna(row.get("순위")) else "-"
             )
-            rec_rank_val = row.get("추천", row.get("추천순위", row.get("매수추천순위", "")))
+            rec_rank_val = row.get("추천순위", row.get("매수추천순위", ""))
             rec_rank_display = (
                 f"{rec_rank_val}위" if rec_rank_val != "" else "-"
             )
@@ -366,7 +376,7 @@ def display_trade_list(
                 rank_val = (
                     int(row.get("순위", 0)) if pd.notna(row.get("순위")) else "-"
                 )
-                rec_rank_val = row.get("추천", row.get("추천순위", row.get("매수추천순위", "")))
+                rec_rank_val = row.get("추천순위", row.get("매수추천순위", ""))
                 rec_rank_display = (
                     f"{rec_rank_val}위" if rec_rank_val != "" else "-"
                 )
@@ -610,7 +620,6 @@ with st.sidebar:
     col_side_kr.metric("KR추천", f"{kr_buy_count}개")
     col_side_us.metric("US추천", f"{us_buy_count}개")
 
-# 상단 헤더 & 잠금해제 UI
 col_title, col_auth_status = st.columns([2.5, 1.5])
 with col_title:
     st.markdown("##### Quant Alpha Strategy")
@@ -680,9 +689,7 @@ df_display = get_data(
 
 if df_display is not None:
     if "매수추천순위" in df_display.columns:
-        df_display = df_display.rename(columns={"매수추천순위": "추천"})
-    elif "추천순위" in df_display.columns:
-        df_display = df_display.rename(columns={"추천순위": "추천"})
+        df_display = df_display.rename(columns={"매수추천순위": "추천순위"})
 
     if "매매상태" in df_display.columns:
         df_display["매매상태"] = df_display["매매상태"].replace({
@@ -775,15 +782,6 @@ if df_display is not None:
         c4.metric("오늘의 매도 종목", f"{sell_cnt}개")
 
         st.divider()
-
-        # 수급 지표 변수 초기화
-        p_zscore = 0.0
-        z_tag = "N/A (미국장 수급 미수집)"
-        k_f_5d = 0
-        k_f_days = 0
-        k_inst_5d = 0
-        k_inst_days = 0
-        divergence_msg = ""
 
         if market_type == "US":
             st.info(
@@ -975,7 +973,6 @@ if df_display is not None:
                 if divergence_msg:
                     st.warning(divergence_msg)
 
-                # 수급 주요 카드 및 주체별 동향
                 col_t1_left, col_t1_right = st.columns([1.1, 0.9])
                 
                 with col_t1_left:
@@ -990,18 +987,46 @@ if df_display is not None:
                     )
 
                     r1_1, r1_2, r1_3 = st.columns(3)
-                    r1_1.metric("비차익 Z-Score", f"{p_zscore:+.2f}", delta=z_tag, delta_color="off", help=z_help_text)
-                    r1_2.metric("비차익 5일 누적", f"{p_non_5d:+,d} 백만", delta=f"10일 중 {p_non_10d_cnt}일 순매수")
-                    r1_3.metric("KOSPI 외인 5일", f"{k_f_5d:+,d} 백만", delta=f"10일 중 {k_f_10d_cnt}일 순매수")
+                    r1_1.metric(
+                        "비차익 Z-Score",
+                        f"{p_zscore:+.2f}",
+                        delta=z_tag,
+                        delta_color="off",
+                        help=z_help_text,
+                    )
+                    r1_2.metric(
+                        "비차익 5일 누적",
+                        f"{p_non_5d:+,d} 백만",
+                        delta=f"10일 중 {p_non_10d_cnt}일 순매수",
+                    )
+                    r1_3.metric(
+                        "KOSPI 외인 5일",
+                        f"{k_f_5d:+,d} 백만",
+                        delta=f"10일 중 {k_f_10d_cnt}일 순매수",
+                    )
 
                     st.write("")
                     r2_1, r2_2, r2_3 = st.columns(3)
-                    r2_1.metric("KOSPI 기관 5일", f"{k_inst_5d:+,d} 백만", delta=f"10일 중 {k_i_10d_cnt}일 순매수")
-                    r2_2.metric("KOSDAQ 외인 5일", f"{kq_f_5d:+,d} 백만", delta=f"10일 중 {kq_f_10d_cnt}일 순매수")
-                    r2_3.metric("KOSDAQ 기관 5일", f"{kq_inst_5d:+,d} 백만", delta=f"10일 중 {kq_i_10d_cnt}일 순매수")
+                    r2_1.metric(
+                        "KOSPI 기관 5일",
+                        f"{k_inst_5d:+,d} 백만",
+                        delta=f"10일 중 {k_i_10d_cnt}일 순매수",
+                    )
+                    r2_2.metric(
+                        "KOSDAQ 외인 5일",
+                        f"{kq_f_5d:+,d} 백만",
+                        delta=f"10일 중 {kq_f_10d_cnt}일 순매수",
+                    )
+                    r2_3.metric(
+                        "KOSDAQ 기관 5일",
+                        f"{kq_inst_5d:+,d} 백만",
+                        delta=f"10일 중 {kq_i_10d_cnt}일 순매수",
+                    )
 
                 with col_t1_right:
-                    st.markdown(f"###### 주체별 매매 동향 ({supply_target_date_str} 기준 / 백만원)")
+                    st.markdown(
+                        f"###### 주체별 매매 동향 ({supply_target_date_str} 기준 / 백만원)"
+                    )
                     disp_inv_summary = pd.DataFrame([
                         {
                             "시장": "KOSPI",
@@ -1018,42 +1043,40 @@ if df_display is not None:
                     ])
                     st.dataframe(
                         disp_inv_summary.style.format({
-                            "외국인": "{:+,d}", "개인": "{:+,d}", "기관계": "{:+,d}"
+                            "외국인": "{:+,d}",
+                            "개인": "{:+,d}",
+                            "기관계": "{:+,d}",
                         }).map(
-                            lambda v: "color: red;" if v > 0 else ("color: blue;" if v < 0 else ""),
-                            subset=["외국인", "개인", "기관계"]
+                            lambda v: "color: red;"
+                            if v > 0
+                            else ("color: blue;" if v < 0 else ""),
+                            subset=["외국인", "개인", "기관계"],
                         ),
-                        hide_index=True, use_container_width=True
+                        hide_index=True,
+                        use_container_width=True,
                     )
 
                 st.divider()
 
-                # 당일 TOP 5 & 최근 수급 분석 탭
-                st.markdown("###### 당일 TOP 5 & 최근 수급 분석")
+                st.markdown("###### 당일 TOP 5 & 최근 10일 수급 빈도 상위")
                 
                 try:
-                    res_liq_20d = (
+                    res_liq_10d = (
                         supabase.table("daily_top_liquidity")
                         .select("*")
                         .lte("trade_date", supply_target_date_str)
                         .order("trade_date", desc=True)
-                        .limit(400)
+                        .limit(200)
                         .execute()
                     )
-                    df_liq_20d = pd.DataFrame(res_liq_20d.data) if res_liq_20d.data else pd.DataFrame()
+                    df_liq_10d = pd.DataFrame(res_liq_10d.data) if res_liq_10d.data else pd.DataFrame()
                 except Exception:
-                    df_liq_20d = pd.DataFrame()
+                    df_liq_10d = pd.DataFrame()
 
-                df_stock_liq = df_liq_20d[df_liq_20d["trade_date"] == supply_target_date_str] if not df_liq_20d.empty else pd.DataFrame()
+                df_stock_liq = df_liq_10d[df_liq_10d["trade_date"] == supply_target_date_str] if not df_liq_10d.empty else pd.DataFrame()
 
-                df_first_appear = pd.DataFrame()
-                if not df_liq_20d.empty and not df_stock_liq.empty:
-                    past_19d_df = df_liq_20d[df_liq_20d["trade_date"] < supply_target_date_str]
-                    past_tickers = set(past_19d_df["ticker"].unique()) if not past_19d_df.empty else set()
-                    df_first_appear = df_stock_liq[~df_stock_liq["ticker"].isin(past_tickers)].copy()
-
-                tab_f_day, tab_i_day, tab_f_10d, tab_i_10d, tab_new_20d = st.tabs(
-                    ["외국인 당일", "기관 당일", "외국인 10일 빈도", "기관 10일 빈도", "🔥 20일내 최초 등장"]
+                tab_f_day, tab_i_day, tab_f_10d, tab_i_10d = st.tabs(
+                    ["외국인 당일", "기관 당일", "외국인 10일 빈도", "기관 10일 빈도"]
                 )
 
                 with tab_f_day:
@@ -1081,8 +1104,8 @@ if df_display is not None:
                         st.caption("당일 데이터가 존재하지 않습니다.")
 
                 with tab_f_10d:
-                    if not df_liq_20d.empty:
-                        df_f_pos = df_liq_20d[df_liq_20d["foreign_net"] > 0]
+                    if not df_liq_10d.empty:
+                        df_f_pos = df_liq_10d[df_liq_10d["foreign_net"] > 0]
                         freq_f = df_f_pos.groupby(["ticker", "name"]).agg(
                             빈도수=("trade_date", "nunique"),
                             누적순매수=("foreign_net", "sum"),
@@ -1096,11 +1119,11 @@ if df_display is not None:
                             hide_index=True, use_container_width=True
                         )
                     else:
-                        st.caption("최근 수급 데이터가 없습니다.")
+                        st.caption("최근 10일 수급 데이터가 없습니다.")
 
                 with tab_i_10d:
-                    if not df_liq_20d.empty:
-                        df_i_pos = df_liq_20d[df_liq_20d["inst_net"] > 0]
+                    if not df_liq_10d.empty:
+                        df_i_pos = df_liq_10d[df_liq_10d["inst_net"] > 0]
                         freq_i = df_i_pos.groupby(["ticker", "name"]).agg(
                             빈도수=("trade_date", "nunique"),
                             누적순매수=("inst_net", "sum"),
@@ -1114,79 +1137,85 @@ if df_display is not None:
                             hide_index=True, use_container_width=True
                         )
                     else:
-                        st.caption("최근 수급 데이터가 없습니다.")
-
-                with tab_new_20d:
-                    if not df_first_appear.empty:
-                        st.caption("✨ 최근 20영업일 동안 수급 상위 데이터에 없다가 **오늘 처음 포착된 신규 수급 유입주**입니다.")
-                        disp_first = df_first_appear[["rank", "ticker", "name", "close_price", "change_rate", "foreign_net", "inst_net"]].copy()
-                        disp_first = disp_first.rename(columns={
-                            "rank": "순위", "ticker": "티커", "name": "종목명", 
-                            "close_price": "종가", "change_rate": "등락률", 
-                            "foreign_net": "외국인순매수", "inst_net": "기관순매수"
-                        })
-                        st.dataframe(
-                            disp_first.style.format({
-                                "종가": "{:,.0f}원", "등락률": "{:+.2f}%", 
-                                "외국인순매수": "{:+,.0f}", "기관순매수": "{:+,.0f}"
-                            }).map(
-                                lambda v: "color: red;" if float(v) > 0 else ("color: blue;" if float(v) < 0 else ""), 
-                                subset=["등락률", "외국인순매수", "기관순매수"]
-                            ),
-                            hide_index=True, use_container_width=True
-                        )
-                    else:
-                        st.info("최근 20일 내에 등장하지 않았던 신규 포착 종목이 오늘 존재하지 않습니다.")
+                        st.caption("최근 10일 수급 데이터가 없습니다.")
 
                 st.divider()
 
-                # TAB 1 하단 [조회일 당일 전체 수급 데이터 표] (desc=False 적용)
-                st.markdown(f"###### [{supply_target_date_str}] 거래대금 / 수급 상위 전체 종목 리스트")
-                try:
-                    res_day_all = (
-                        supabase.table("daily_top_liquidity")
-                        .select("*")
-                        .eq("trade_date", supply_target_date_str)
-                        .order("rank", desc=False)
-                        .limit(1000)
-                        .execute()
-                    )
-                    df_day_all = pd.DataFrame(res_day_all.data) if res_day_all.data else pd.DataFrame()
-                except Exception as e:
-                    st.error(f"수급 데이터 조회 중 오류 발생: {e}")
-                    df_day_all = pd.DataFrame()
+                st.markdown("###### 최근 20영업일 비차익 & 차익 프로그램 순매수 합계 추이 (백만원)")
+                
+                if not df_p_sorted.empty:
+                    df_p_20d = df_p_sorted.head(20).sort_values("trade_date").copy()
+                    df_p_20d["date_fmt"] = pd.to_datetime(df_p_20d["trade_date"]).dt.strftime("%Y-%m-%d")
+                    df_p_20d["non_arb"] = pd.to_numeric(df_p_20d.get("non_arbitrage_net", 0), errors="coerce").fillna(0)
+                    df_p_20d["arb"] = pd.to_numeric(df_p_20d.get("arbitrage_net", 0), errors="coerce").fillna(0)
+                    df_p_20d["tot_prog"] = df_p_20d["non_arb"] + df_p_20d["arb"]
 
-                if not df_day_all.empty:
-                    col_rename_map = {
-                        "rank": "순위", "ticker": "티커", "name": "종목명",
-                        "close_price": "종가", "change_rate": "등락률",
-                        "foreign_net": "외국인순매수", "inst_net": "기관순매수",
-                        "net_total": "합계순매수", "volume_power": "체결강도"
-                    }
-                    df_day_all = df_day_all.rename(columns=col_rename_map)
-                    
-                    show_cols = [c for c in ["순위", "티커", "종목명", "종가", "등락률", "외국인순매수", "기관순매수", "합계순매수", "체결강도"] if c in df_day_all.columns]
-                    df_day_disp = df_day_all[show_cols].copy()
+                    df_p_20d["non_arb_cum"] = df_p_20d["non_arb"].cumsum()
+                    df_p_20d["arb_cum"] = df_p_20d["arb"].cumsum()
+                    df_p_20d["tot_prog_cum"] = df_p_20d["tot_prog"].cumsum()
 
-                    fmt_dict = {}
-                    if "종가" in df_day_disp.columns: fmt_dict["종가"] = "{:,.0f}원"
-                    if "등락률" in df_day_disp.columns: fmt_dict["등락률"] = "{:+.2f}%"
-                    if "외국인순매수" in df_day_disp.columns: fmt_dict["외국인순매수"] = "{:+,.0f}"
-                    if "기관순매수" in df_day_disp.columns: fmt_dict["기관순매수"] = "{:+,.0f}"
-                    if "합계순매수" in df_day_disp.columns: fmt_dict["합계순매수"] = "{:+,.0f}"
-                    if "체결강도" in df_day_disp.columns: fmt_dict["체결강도"] = "{:.1f}%"
+                    col_prg_chart, col_prg_table = st.columns([1.2, 1])
 
-                    target_color_cols = [c for c in ["등락률", "외국인순매수", "기관순매수", "합계순매수"] if c in df_day_disp.columns]
+                    with col_prg_chart:
+                        fig_p_trend = gg.Figure()
+                        fig_p_trend.add_trace(gg.Scatter(x=df_p_20d["date_fmt"], y=df_p_20d["non_arb_cum"], mode="lines+markers", name="비차익 누적", line=dict(color="#d62728", width=2.5)))
+                        fig_p_trend.add_trace(gg.Scatter(x=df_p_20d["date_fmt"], y=df_p_20d["arb_cum"], mode="lines+markers", name="차익 누적", line=dict(color="#ff7f0e", width=1.5, dash="dash")))
+                        fig_p_trend.add_trace(gg.Scatter(x=df_p_20d["date_fmt"], y=df_p_20d["tot_prog_cum"], mode="lines+markers", name="프로그램 전체 누적", line=dict(color="#1f77b4", width=2)))
+                        
+                        fig_p_trend.update_layout(
+                            height=300,
+                            margin=dict(l=10, r=10, t=20, b=20),
+                            xaxis=dict(type="category", tickangle=-45),
+                            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+                        )
+                        st.plotly_chart(fig_p_trend, use_container_width=True)
+
+                    with col_prg_table:
+                        disp_p_table = df_p_20d[["date_fmt", "non_arb", "arb", "tot_prog"]].sort_values("date_fmt", ascending=False).rename(columns={
+                            "date_fmt": "일자", "non_arb": "비차익", "arb": "차익", "tot_prog": "합계"
+                        })
+                        st.dataframe(
+                            disp_p_table.style.format({"비차익": "{:+,.0f}", "차익": "{:+,.0f}", "합계": "{:+,.0f}"})
+                            .map(lambda v: "color: red;" if float(v) > 0 else ("color: blue;" if float(v) < 0 else ""), subset=["비차익", "차익", "합계"]),
+                            hide_index=True, use_container_width=True
+                        )
+                else:
+                    st.info("프로그램 추이 데이터가 부족합니다.")
+
+                st.divider()
+                st.markdown(f"###### {supply_target_date_str} 해당 일자 전체 수급 데이터 현황")
+                if not df_stock_liq.empty:
+                    df_liq_full = df_stock_liq.sort_values("rank", ascending=True)[["rank", "ticker", "name", "close_price", "change_rate", "foreign_net", "inst_net"]].copy()
+                    df_liq_full = df_liq_full.rename(columns={"rank": "순위", "ticker": "티커", "name": "종목명", "close_price": "종가", "change_rate": "등락률", "foreign_net": "외국인순매수", "inst_net": "기관순매수"})
 
                     st.dataframe(
-                        df_day_disp.style.format(fmt_dict).map(
-                            lambda v: "color: red;" if float(v) > 0 else ("color: blue;" if float(v) < 0 else ""),
-                            subset=target_color_cols
-                        ),
+                        df_liq_full.style.format({"종가": "{:,.0f}원", "등락률": "{:+.2f}%", "외국인순매수": "{:+,.0f}", "기관순매수": "{:+,.0f}"})
+                        .map(lambda v: "color: red;" if float(v) > 0 else ("color: blue;" if float(v) < 0 else ""), subset=["등락률", "외국인순매수", "기관순매수"]),
                         hide_index=True, use_container_width=True
                     )
                 else:
-                    st.info(f"[{supply_target_date_str}] 날짜의 수급 상위 데이터가 존재하지 않습니다.")
+                    st.info(f"{supply_target_date_str} 일자에 수집된 전체 수급 종목 내역이 존재하지 않습니다.")
+
+        with st.expander("Gemini AI 시장 전체 수급 종합 분석 리포트", expanded=False):
+            prompt_text = f"""[Market Regime 및 수급 종합 분석 요청]
+- 분석 일자: {supply_target_date_str}
+- Market Regime 상태: {regime_status_str}
+- 비차익 Z-Score: {p_zscore:+.2f} ({z_tag})
+- KOSPI 외인 5일 누적: {k_f_5d:+,d} 백만원 (5일 중 {k_f_days}일 순매수)
+- KOSPI 기관 5일 누적: {k_inst_5d:+,d} 백만원 (5일 중 {k_inst_days}일 순매수)
+- 지수-수급 다이버전스: {divergence_msg if divergence_msg else "특이사항 없음"}"""
+
+            st.code(prompt_text, language="markdown")
+            if st.button("Gemini AI 수급 종합 분석 실행", type="primary", use_container_width=True, key="btn_run_gemini_market_analysis"):
+                with st.spinner("수급 흐름을 종합 분석 중입니다..."):
+                    analysis_res = analyze_stock_with_gemini(
+                        "MARKET_TREND",
+                        "코스피/코스닥 수급동향",
+                        {"MOT": 0, "RS(90)": 0, "이격도": 0, "종가": 0},
+                        prompt_text,
+                    )
+                st.success("수급 분석 완료")
+                st.markdown(analysis_res)
 
     # TAB 2: 알파 시그널
     with tab2:
@@ -1202,68 +1231,30 @@ if df_display is not None:
         if "atr" not in df_target.columns:
             df_target["atr"] = 0.0
 
-        supply_count_map = {}
-        if market_type == "KR":
-            try:
-                res_liq_10d = (
-                    supabase.table("daily_top_liquidity")
-                    .select("ticker, foreign_net, inst_net, trade_date")
-                    .lte("trade_date", target_date_str)
-                    .order("trade_date", desc=True)
-                    .limit(400)
-                    .execute()
-                )
-                if res_liq_10d.data:
-                    df_l10 = pd.DataFrame(res_liq_10d.data)
-                    df_l10_pos = df_l10[(df_l10["foreign_net"] > 0) | (df_l10["inst_net"] > 0)]
-                    supply_count_map = df_l10_pos.groupby("ticker")["trade_date"].nunique().to_dict()
-            except Exception:
-                pass
-
-        def format_supply_badge(ticker):
-            cnt = supply_count_map.get(ticker, 0)
-            if cnt >= 8:
-                return f"🔥🔥🔥 {cnt}일 (최상)"
-            elif cnt >= 5:
-                return f"🔥🔥 {cnt}일 (강함)"
-            elif cnt >= 2:
-                return f"🔥 {cnt}일 (보통)"
-            elif cnt == 1:
-                return f"✨ {cnt}일 (신규)"
-            return "-"
-
-        df_target["수급(10일)"] = df_target["ticker"].apply(format_supply_badge)
-
-        df_target = df_target.rename(columns={
-            "추천순위": "추천",
-            "매수추천순위": "추천",
-            "매매상태": "상태",
-            "이격도": "이격(%)",
-            "atr": "ATR",
-        })
-
         col_order = [
             "순위",
-            "추천",
+            "추천순위",
             "변동",
-            "상태",
+            "매매상태",
             "종목명",
-            "수급(10일)",
-            "이격(%)",
+            "이격도",
             "MOT",
             "RS(90)",
             "RS(10)",
             "MA20",
-            "ATR",
+            "atr",
             "제외사유",
             "종가",
             "상승금액",
             "상승률",
             "ticker",
         ]
-
-        existing_cols = [c for c in col_order if c in df_target.columns]
-        df_target = df_target[existing_cols]
+        df_target = df_target[col_order].rename(columns={
+            "추천순위": "추천순위",
+            "매매상태": "상태",
+            "이격도": "이격(%)",
+            "atr": "ATR",
+        })
 
         if filter_opt == "추천 종목만":
             df_target = df_target[df_target["상태"] == "추천"]
@@ -1346,24 +1337,9 @@ if df_display is not None:
             )
 
             if sel_chart_ticker:
-                supply_dates_list = []
-                if market_type == "KR":
-                    try:
-                        res_stock_supp = (
-                            supabase.table("daily_top_liquidity")
-                            .select("trade_date")
-                            .eq("ticker", sel_chart_ticker)
-                            .or_("foreign_net.gt.0,inst_net.gt.0")
-                            .execute()
-                        )
-                        if res_stock_supp.data:
-                            supply_dates_list = [r["trade_date"] for r in res_stock_supp.data]
-                    except Exception:
-                        pass
-
                 st.markdown("###### 개별 종목 기술적 차트")
                 draw_integrated_chart(
-                    sel_chart_ticker, market_type, ticker_name_map, supply_dates=supply_dates_list
+                    sel_chart_ticker, market_type, ticker_name_map
                 )
 
                 st.write("")
@@ -1694,6 +1670,7 @@ if df_display is not None:
             with st.expander("보유 종목 수동 매수/매도 입력 센터", expanded=False):
                 col_m_left, col_m_right = st.columns(2)
                 
+                # 1. 수동 매수 구역
                 with col_m_left:
                     st.markdown("###### 수동 매수")
                     with st.container(border=True):
@@ -1736,6 +1713,7 @@ if df_display is not None:
                                 )
                                 st.success(f"[{m_ticker}] 수동 매수 등록 완료")
 
+                # 2. 수동 매도 구역
                 with col_m_right:
                     st.markdown("###### 수동 매도")
                     with st.container(border=True):
@@ -1880,7 +1858,30 @@ if df_display is not None:
                 unsafe_allow_html=True,
             )
 
-    # TAB 4: 성과 분석
+            if market_type == "US" or current_engine_key == "short_term":
+                st.info(
+                    """
+                    **미국장 단기 타점 모멘텀 전략 (목표익절 +15%) 매매 기준**
+                    * **매수 조건**: 모멘텀 순위 **상위 200위** 이내 & 모멘텀 점수(MOT) **>= 0.9** & 이격도 **-5.0% ~ +7.0%** 안착
+                    * **매도/청산 조건**:
+                      1. **목표 익절**: 진입가 대비 **+15.0%** 달성 시
+                      2. **손절/이탈**: 진입가 대비 **-5.0%** 하락 또는 **20일선(MA20)** 이탈 시
+                      3. **기간 초과**: 보유 **14일 경과** 시점 수익률 **+5.0% 미만** 정체 시 청산 (+5.0% 이상 시 추세 계속 유지)
+                    """
+                )
+            else:
+                st.success(
+                    """
+                    **전략 3: Top 7 Regime (한국장 기본) 매매 기준**
+                    * **매수 조건**: 모멘텀 순위 **상위 15위** 이내 & RS(90) > 0, RS(10) > 0 & 지수 20일선 안착 종목 중 이격도 낮은 순 7개 선택
+                    * **매도/청산 조건**:
+                      1. **ATR 손절(2번)**: 진입가 대비 **-2.5x ATR** 이탈 시
+                      2. **트레일링 스탑(1번)**: 수익률 **+8.0%** 달성 후 최고가 대비 **-8.0%** 밀릴 시 (최소 본절가 보장)
+                      3. **MA20 이탈**: 20일 이동평균선 하회 시 즉시 매도
+                    """
+                )
+
+    # TAB 4: 성과 분석 (📌 DB 조회 실패 예외 방지 안전화 적용 완료)
     with tab4:
         st.markdown(f"##### {market_type} 시장 성과 분석 리포트")
 
@@ -1891,19 +1892,24 @@ if df_display is not None:
         else:
             current_table_name = get_holdings_table(market_type)
             try:
+                # 전체 데이터를 수신한 뒤 sell_date 존재 여부를 파이썬 단에서 안전하게 체크
                 history_res = (
                     supabase.table(current_table_name)
                     .select("*")
-                    .not_.is_("sell_date", "null")
                     .execute()
                 )
-            except Exception:
-                history_res = type("obj", (object,), {"data": []})
+                df_all_h = pd.DataFrame(history_res.data) if history_res.data else pd.DataFrame()
+                if not df_all_h.empty and "sell_date" in df_all_h.columns:
+                    df_hist_raw = df_all_h[df_all_h["sell_date"].notna() & (df_all_h["sell_date"] != "")].copy()
+                else:
+                    df_hist_raw = pd.DataFrame()
+            except Exception as e:
+                st.error(f"성과 분석 데이터 조회 실패: {e}")
+                df_hist_raw = pd.DataFrame()
 
-            if not history_res.data:
+            if df_hist_raw.empty:
                 st.info("청산 완료된 매매 이력이 존재하지 않습니다.")
             else:
-                df_hist_raw = pd.DataFrame(history_res.data)
                 df_hist_raw["sell_date_dt"] = pd.to_datetime(
                     df_hist_raw["sell_date"]
                 )
@@ -2183,7 +2189,6 @@ if df_display is not None:
                         st.write("")
                         st.markdown("###### 매매 당시 주가 차트 및 진입/청산 타점 (매수 / 매도)")
 
-                        # 복기 종목 수급 유입일 조회
                         perf_supply_dates = []
                         if market_type == "KR":
                             try:
@@ -2253,7 +2258,9 @@ if df_display is not None:
     # TAB 5: 백테스트 리포트
     with tab5:
         st.markdown("##### [Top 7 Regime] 자동 백테스트 검증 리포트")
-        st.caption("GitHub Actions를 통해 시뮬레이션된 백테스트 결과 내역입니다.")
+        st.caption(
+            "GitHub Actions를 통해 시뮬레이션된 백테스트 결과 및 청산 매매 내역입니다."
+        )
 
         try:
             res_bt = (
@@ -2263,24 +2270,38 @@ if df_display is not None:
                 .execute()
             )
             bt_data = res_bt.data if res_bt.data else []
-        except Exception:
+        except Exception as e:
             bt_data = []
 
         if not bt_data:
-            st.info("아직 저장된 백테스트 매매 내역이 없습니다.")
+            st.info(
+                "아직 저장된 백테스트 매매 내역이 없습니다. GitHub Actions에서 `backtest.py`를 실행해 주십시오."
+            )
         else:
             df_bt = pd.DataFrame(bt_data)
-            df_bt["profit_amount"] = pd.to_numeric(df_bt["profit_amount"], errors="coerce").fillna(0.0)
-            df_bt["profit_rate"] = pd.to_numeric(df_bt["profit_rate"], errors="coerce").fillna(0.0)
+            df_bt["profit_amount"] = pd.to_numeric(
+                df_bt["profit_amount"], errors="coerce"
+            ).fillna(0.0)
+            df_bt["profit_rate"] = pd.to_numeric(
+                df_bt["profit_rate"], errors="coerce"
+            ).fillna(0.0)
 
             total_bt_trades = len(df_bt)
             win_bt = df_bt[df_bt["profit_amount"] > 0]
             loss_bt = df_bt[df_bt["profit_amount"] < 0]
 
             tot_bt_profit = df_bt["profit_amount"].sum()
-            win_bt_rate = (len(win_bt) / total_bt_trades * 100) if total_bt_trades > 0 else 0.0
+            win_bt_rate = (
+                (len(win_bt) / total_bt_trades * 100)
+                if total_bt_trades > 0
+                else 0.0
+            )
             avg_bt_win = win_bt["profit_amount"].mean() if not win_bt.empty else 0.0
-            avg_bt_loss = abs(loss_bt["profit_amount"].mean()) if not loss_bt.empty else 0.0
+            avg_bt_loss = (
+                abs(loss_bt["profit_amount"].mean())
+                if not loss_bt.empty
+                else 0.0
+            )
             bt_pf = (avg_bt_win / avg_bt_loss) if avg_bt_loss > 0 else 999.0
 
             st.markdown("###### 백테스트 종합 요약 지표")
@@ -2288,28 +2309,54 @@ if df_display is not None:
             b1.metric("총 청산 거래", f"{total_bt_trades}건")
             b2.metric("총 실현 손익", f"{tot_bt_profit:+,.0f}원")
             b3.metric("백테스트 승률", f"{win_bt_rate:.1f}%")
-            b4.metric("손익비 (PF)", f"{bt_pf:.2f}" if bt_pf < 999 else "무한")
+            b4.metric(
+                "손익비 (PF)", f"{bt_pf:.2f}" if bt_pf < 999 else "무한"
+            )
 
             st.divider()
             st.markdown("###### 백테스트 상세 매매 청산 목록")
 
             df_bt_disp = df_bt[[
-                "sell_date", "buy_date", "ticker", "name", "buy_price", "sell_price", "quantity", "profit_amount", "profit_rate", "exit_reason"
-            ]].copy().rename(columns={
-                "sell_date": "매도일", "buy_date": "매수일", "ticker": "티커", "name": "종목명",
-                "buy_price": "매수가", "sell_price": "매도가", "quantity": "수량", "profit_amount": "손익금액",
-                "profit_rate": "수익률(%)", "exit_reason": "청산사유"
+                "sell_date",
+                "buy_date",
+                "ticker",
+                "name",
+                "buy_price",
+                "sell_price",
+                "quantity",
+                "profit_amount",
+                "profit_rate",
+                "exit_reason",
+            ]].copy()
+
+            df_bt_disp = df_bt_disp.rename(columns={
+                "sell_date": "매도일",
+                "buy_date": "매수일",
+                "ticker": "티커",
+                "name": "종목명",
+                "buy_price": "매수가",
+                "sell_price": "매도가",
+                "quantity": "수량",
+                "profit_amount": "손익금액",
+                "profit_rate": "수익률(%)",
+                "exit_reason": "청산사유",
             })
 
             st.dataframe(
                 df_bt_disp.style.format({
-                    "매수가": "{:,.0f}원", "매도가": "{:,.0f}원", "수량": "{:,.0f}주",
-                    "손익금액": "{:+,.0f}원", "수익률(%)": "{:+.2f}%",
+                    "매수가": "{:,.0f}원",
+                    "매도가": "{:,.0f}원",
+                    "수량": "{:,.0f}주",
+                    "손익금액": "{:+,.0f}원",
+                    "수익률(%)": "{:+.2f}%",
                 }).map(
-                    lambda v: "color: red;" if float(v) > 0 else ("color: blue;" if float(v) < 0 else ""),
-                    subset=["손익금액", "수익률(%)"]
+                    lambda v: "color: red;"
+                    if float(v) > 0
+                    else ("color: blue;" if float(v) < 0 else ""),
+                    subset=["손익금액", "수익률(%)"],
                 ),
-                hide_index=True, use_container_width=True
+                hide_index=True,
+                use_container_width=True,
             )
 
 else:
