@@ -17,7 +17,7 @@ def draw_integrated_chart(
     supply_dates=None,
 ):
     """
-    개별 종목 기술적 차트 (휴장일 공백 완벽 제거 & 깔끔한 수급/타점 시각화)
+    개별 종목 기술적 차트 (휴장일 공백 완벽 제거 & 수급/타점 깔끔 표기)
     """
     stock_name = (
         ticker_name_map.get(ticker, ticker) if ticker_name_map else ticker
@@ -44,16 +44,20 @@ def draw_integrated_chart(
 
     # 날짜 오름차순 정렬
     df_chart = df_chart.sort_values("price_date").reset_index(drop=True)
-    
-    # 📌 휴장일 완전히 무시하기 위해 날짜를 'MM-DD' 형태의 순수 텍스트 카테고리로 변환
-    df_chart["date_str"] = pd.to_datetime(df_chart["price_date"]).dt.strftime("%Y-%m-%d")
+    df_chart["price_date_dt"] = pd.to_datetime(df_chart["price_date"])
+    df_chart["date_str"] = df_chart["price_date_dt"].dt.strftime("%Y-%m-%d")
+
+    # 📌 휴장일(주말 및 데이터가 없는 날짜) 산출하여 차트에서 완전히 제거
+    all_dates = pd.date_range(start=df_chart["price_date_dt"].min(), end=df_chart["price_date_dt"].max())
+    dt_existing = set(df_chart["price_date_dt"])
+    missing_dates = [d.strftime("%Y-%m-%d") for d in all_dates if d not in dt_existing]
 
     # 서브플롯 구성 (Row 1: 캔들스틱 + MA, Row 2: 거래량)
     fig = make_subplots(
         rows=2,
         cols=1,
         shared_xaxes=True,
-        vertical_spacing=0.06,
+        vertical_spacing=0.08,
         subplot_titles=(f"[{ticker}] {stock_name} 일봉 차트", "거래량"),
         row_width=[0.25, 0.75],
     )
@@ -69,13 +73,13 @@ def draw_integrated_chart(
             name="주가",
             increasing_line_color="#d62728",  # 양봉 빨강
             decreasing_line_color="#1f77b4",  # 음봉 파랑
-            whiskerwidth=0.4,
+            whiskerwidth=0.3,
         ),
         row=1,
         col=1,
     )
 
-    # 2. 이동평균선 (MA20, MA50, MA200 - 존재하는 컬럼만)
+    # 2. 이동평균선 (MA20, MA50, MA200 - 존재 시 추가)
     if "ma20" in df_chart.columns and df_chart["ma20"].notna().any():
         fig.add_trace(
             go.Scatter(
@@ -132,8 +136,7 @@ def draw_integrated_chart(
         col=1,
     )
 
-    # 📌 4. 수급 유입일 표기 개선 (붉은 기둥 찌그러짐 방지)
-    # vline 세로선 대신, 수급일의 당일 고가(High) 위쪽에 깔끔한 🔥 불꽃 마커 배치
+    # 📌 4. 수급 유입일 표기 (붉은 세로 기둥 현상 제거 및 캔들 상단 🔥 표기)
     if supply_dates:
         chart_dates_set = set(df_chart["date_str"].unique())
         supply_x = []
@@ -142,22 +145,20 @@ def draw_integrated_chart(
         for s_date in supply_dates:
             s_date_str = str(s_date)
             if s_date_str in chart_dates_set:
-                # 해당 날짜의 고가(High) 위치 찾기
                 high_val = df_chart.loc[df_chart["date_str"] == s_date_str, "high_price"].values[0]
                 supply_x.append(s_date_str)
-                supply_y.append(high_val * 1.02) # 고가 살짝 위에 표기
+                supply_y.append(high_val * 1.025)  # 캔들 고가 위쪽에 표시
 
         if supply_x:
             fig.add_trace(
                 go.Scatter(
                     x=supply_x,
                     y=supply_y,
-                    mode="markers+text",
+                    mode="text",
                     name="수급포착",
-                    marker=dict(symbol="circle", size=8, color="#ff5722"),
                     text=["🔥"] * len(supply_x),
                     textposition="top center",
-                    textfont=dict(size=12),
+                    textfont=dict(size=13),
                 ),
                 row=1,
                 col=1,
@@ -173,7 +174,7 @@ def draw_integrated_chart(
                     y=[buy_price],
                     mode="markers+text",
                     name="매수타점",
-                    marker=dict(symbol="triangle-up", size=12, color="#d62728"),
+                    marker=dict(symbol="triangle-up", size=11, color="#d62728"),
                     text=[f"매수: {buy_price:,.0f}" if market_type == "KR" else f"매수: ${buy_price:,.2f}"],
                     textposition="bottom center",
                 ),
@@ -190,7 +191,7 @@ def draw_integrated_chart(
                     y=[sell_price],
                     mode="markers+text",
                     name="매도타점",
-                    marker=dict(symbol="triangle-down", size=12, color="#1f77b4"),
+                    marker=dict(symbol="triangle-down", size=11, color="#1f77b4"),
                     text=[f"매도: {sell_price:,.0f}" if market_type == "KR" else f"매도: ${sell_price:,.2f}"],
                     textposition="top center",
                 ),
@@ -198,26 +199,25 @@ def draw_integrated_chart(
                 col=1,
             )
 
-    # 📌 X축 휴장일 완전히 제거 (Plotly 고유 날짜 파싱 차단)
+    # 📌 X축 휴장일(주말/공휴일) 완전 제거 설정
     fig.update_xaxes(
-        type="category",
-        categoryorder="category ascending",
+        rangebreaks=[dict(values=missing_dates)], # 거래 없는 날짜 숨김
         rangeslider_visible=False,
-        nticks=12,
+        nticks=10,
         tickangle=-45,
         gridcolor="#f0f0f0",
     )
     
     fig.update_yaxes(gridcolor="#f0f0f0")
 
-    # 레이아웃 정돈
+    # 레이아웃 및 범주(Legend) 위치 최적화
     fig.update_layout(
-        height=500,
-        margin=dict(l=10, r=10, t=35, b=10),
+        height=520,
+        margin=dict(l=10, r=10, t=50, b=10),
         legend=dict(
             orientation="h",
             yanchor="bottom",
-            y=1.02,
+            y=1.05,
             xanchor="right",
             x=1,
             font=dict(size=10),
