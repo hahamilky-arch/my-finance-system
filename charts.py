@@ -18,7 +18,7 @@ def draw_integrated_chart(
     sell_price=None,
     supply_dates=None,
 ):
-    """개별 종목 기술적 차트 + 거래량 + 최하단 지수 차트(MA20, MA50, MA200) 통합 차트"""
+    """개별 종목 기술적 차트 + 거래량 + 최하단 지수 차트 통합 차트"""
     stock_name = ticker_name_map.get(ticker, ticker)
     index_symbol = "^KS11" if market_type == "KR" else "^GSPC"
     index_name = "코스피 (^KS11)" if market_type == "KR" else "S&P 500 (^GSPC)"
@@ -34,7 +34,7 @@ def draw_integrated_chart(
             .execute()
         )
 
-        # 2. 시장 지수 시계열 데이터 조회 (최근 150영업일 조회 후 유효 데이터 정렬)
+        # 2. 시장 지수 시계열 데이터 조회 (최근 150영업일)
         res_index = (
             supabase.table("daily_analysis")
             .select("price_date, close_price, ma20, ma50, ma200")
@@ -53,12 +53,10 @@ def draw_integrated_chart(
         df_stock["price_date_dt"] = pd.to_datetime(df_stock["price_date"])
         df_stock = df_stock.sort_values("price_date_dt").reset_index(drop=True)
 
-        # 수치 변환
         for col in ["close_price", "open_price", "high_price", "low_price", "volume", "ma20", "ma50", "ma200"]:
             if col in df_stock.columns:
                 df_stock[col] = pd.to_numeric(df_stock[col], errors="coerce")
 
-        # 가격 이상 데이터 제거
         df_stock = df_stock[
             (df_stock["close_price"] > 0) &
             (df_stock["open_price"] > 0) &
@@ -77,7 +75,6 @@ def draw_integrated_chart(
                 if col in df_index.columns:
                     df_index[col] = pd.to_numeric(df_index[col], errors="coerce")
             
-            # 날짜 기준 1:1 매칭
             df_merged = pd.merge(
                 df_stock[["price_date", "date_str"]],
                 df_index[["price_date", "close_price", "ma20", "ma50", "ma200"]],
@@ -156,56 +153,75 @@ def draw_integrated_chart(
                 col=1,
             )
 
-        # 📌 세로선 표시 처리 (수급, 매수, 매도)
-        # 1. 수급 포착 세로선 (초록색 파선)
+        # 📌 세로 점선 표시 (Row 1: 종목 차트 & Row 3: 지수 차트 동시 적용 / 텍스트 레이블 없음)
+        
+        # 1. 수급 포착 세로 점선 (초록색 점선)
         if supply_dates:
             supp_df = df_stock[df_stock["price_date"].isin(supply_dates)]
             for _, s_row in supp_df.iterrows():
                 s_date_str = s_row["date_str"]
+                # Row 1 (종목)
                 fig.add_vline(
                     x=s_date_str,
                     line_width=1.5,
                     line_dash="dash",
                     line_color="#2e7d32",
-                    annotation_text="수급",
-                    annotation_position="top left",
-                    annotation_font_size=10,
-                    annotation_font_color="#2e7d32",
                     row=1,
                     col=1,
                 )
+                # Row 3 (지수)
+                fig.add_vline(
+                    x=s_date_str,
+                    line_width=1.5,
+                    line_dash="dash",
+                    line_color="#2e7d32",
+                    row=3,
+                    col=1,
+                )
 
-        # 2. 매수 타점 세로선 (빨간색 실선)
+        # 2. 매수 타점 세로 점선 (빨간색 점선)
         if buy_date and buy_date in df_stock["price_date"].values:
             b_row = df_stock[df_stock["price_date"] == buy_date].iloc[0]
             b_date_str = b_row["date_str"]
+            # Row 1 (종목)
             fig.add_vline(
                 x=b_date_str,
                 line_width=2,
-                line_dash="solid",
+                line_dash="dash",
                 line_color="#d62728",
-                annotation_text="매수",
-                annotation_position="bottom left",
-                annotation_font_size=11,
-                annotation_font_color="#d62728",
                 row=1,
                 col=1,
             )
+            # Row 3 (지수)
+            fig.add_vline(
+                x=b_date_str,
+                line_width=2,
+                line_dash="dash",
+                line_color="#d62728",
+                row=3,
+                col=1,
+            )
 
-        # 3. 매도 타점 세로선 (파란색 실선)
+        # 3. 매도 타점 세로 점선 (파란색 점선)
         if sell_date and sell_date in df_stock["price_date"].values:
             s_row = df_stock[df_stock["price_date"] == sell_date].iloc[0]
             s_date_str = s_row["date_str"]
+            # Row 1 (종목)
             fig.add_vline(
                 x=s_date_str,
                 line_width=2,
-                line_dash="solid",
+                line_dash="dash",
                 line_color="#1f77b4",
-                annotation_text="매도",
-                annotation_position="top right",
-                annotation_font_size=11,
-                annotation_font_color="#1f77b4",
                 row=1,
+                col=1,
+            )
+            # Row 3 (지수)
+            fig.add_vline(
+                x=s_date_str,
+                line_width=2,
+                line_dash="dash",
+                line_color="#1f77b4",
+                row=3,
                 col=1,
             )
 
