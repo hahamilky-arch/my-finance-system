@@ -1900,6 +1900,7 @@ if df_display is not None:
         else:
             current_table_name = get_holdings_table(market_type)
             try:
+                # current_holdings / us_current_holdings 안전 조회
                 history_res = (
                     supabase.table(current_table_name)
                     .select("*")
@@ -1911,7 +1912,7 @@ if df_display is not None:
                 else:
                     df_hist_raw = pd.DataFrame()
             except Exception as e:
-                st.error(f"성과 분석 데이터 조회 실패: {e}")
+                st.error(f"분석 데이터 조회 실패: {e}")
                 df_hist_raw = pd.DataFrame()
 
             if df_hist_raw.empty:
