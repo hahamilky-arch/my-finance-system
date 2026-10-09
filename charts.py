@@ -54,10 +54,13 @@ def draw_integrated_chart(
         df_stock = df_stock.sort_values("price_date_dt").reset_index(drop=True)
         df_stock["date_str"] = df_stock["price_date_dt"].dt.strftime("%Y-%m-%d")
 
-        # 수치형 변환
+        # 수치형 변환 및 결측치 제거
         for col in ["close_price", "open_price", "high_price", "low_price", "volume", "ma20", "ma50", "ma200"]:
             if col in df_stock.columns:
                 df_stock[col] = pd.to_numeric(df_stock[col], errors="coerce")
+
+        # 주가 데이터 비어있는 행(종가/시가 없는 날) 제거
+        df_stock = df_stock.dropna(subset=["close_price", "open_price"]).reset_index(drop=True)
 
         # 지수 데이터 정리
         df_index = pd.DataFrame(res_index.data) if res_index.data else pd.DataFrame()
@@ -198,7 +201,7 @@ def draw_integrated_chart(
                 y=df_stock["volume"],
                 name="거래량",
                 marker_color=colors,
-                showlegend=False,  # 거래량 범례 제거하여 글자 겹침 방지
+                showlegend=False,
             ),
             row=2,
             col=1,
@@ -260,21 +263,23 @@ def draw_integrated_chart(
                     col=1,
                 )
 
-        # 레이아웃 설정 (높이 확대 및 범례 배치 수정)
+        # 📌 레이아웃 설정: type='category'를 사용하여 휴장일 및 데이터 없는 날짜 완전 축소 제외
         fig.update_layout(
             height=850,
             margin=dict(l=10, r=10, t=60, b=20),
             xaxis_rangeslider_visible=False,
-            xaxis3=dict(type="category", tickangle=-45),
             legend=dict(
                 orientation="h",
                 yanchor="bottom",
-                y=1.06,  # 서브플롯 제목 위로 완전히 이동
+                y=1.06,
                 xanchor="center",
                 x=0.5,
                 font=dict(size=11),
             ),
         )
+
+        # 모든 x축을 category 타입으로 지정하여 거래가 없거나 비어있는 날짜 축소
+        fig.update_xaxes(type="category", tickangle=-45)
 
         fig.update_yaxes(autorange=True, fixedrange=False, row=1, col=1)
         fig.update_yaxes(autorange=True, fixedrange=False, row=2, col=1)
@@ -287,7 +292,7 @@ def draw_integrated_chart(
 
 
 def draw_attribution_charts(df_hist, market_type):
-    """성과 분석 탭용 수익 기여도 막대 그래프 + 수익률/보유기간 분포도(산점도) 복원"""
+    """성과 분석 탭용 수익 기여도 막대 그래프 + 수익률/보유기간 분포도(산점도)"""
     if df_hist.empty:
         return
 
@@ -325,11 +330,10 @@ def draw_attribution_charts(df_hist, market_type):
         )
         st.plotly_chart(fig_bar, use_container_width=True)
 
-    # 2. 📌 복원된 수익률 vs 보유일수 분포도 (산점도 / Scatter Plot)
+    # 2. 수익률 vs 보유일수 분포도
     with col_chart2:
         fig_scatter = go.Figure()
-        
-        # 보유일수 수치 처리
+
         df_hist["holding_days_val"] = pd.to_numeric(df_hist.get("holding_days", 0), errors="coerce").fillna(0)
         df_hist["profit_rate_val"] = pd.to_numeric(df_hist.get("profit_rate", 0), errors="coerce").fillna(0)
 
@@ -347,7 +351,6 @@ def draw_attribution_charts(df_hist, market_type):
                 hovertemplate="<b>%{text}</b><br>보유일수: %{x}일<br>수익률: %{y:+.2f}%<extra></extra>",
             )
         )
-        # 0% 기준선 가로선 추가
         fig_scatter.add_hline(y=0, line_dash="dash", line_color="gray")
 
         fig_scatter.update_layout(
