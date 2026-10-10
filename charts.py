@@ -18,13 +18,13 @@ def draw_integrated_chart(
     sell_price=None,
     supply_dates=None,
 ):
-    """개별 종목 기술적 차트 + 거래량 + 최하단 지수 차트 통합 차트"""
+    """개별 종목 기술적 차트 + 거래량 + 모멘텀 순위 추이 + 최하단 지수 차트 통합 차트"""
     stock_name = ticker_name_map.get(ticker, ticker)
     index_symbol = "^KS11" if market_type == "KR" else "^GSPC"
     index_name = "코스피 (^KS11)" if market_type == "KR" else "S&P 500 (^GSPC)"
 
     try:
-        # 1. 개별 종목 시계열 데이터 조회
+        # 1. 개별 종목 시계열 데이터 조회 (momentum_rank 포함)
         res_stock = (
             supabase.table("daily_analysis")
             .select("price_date, close_price, open_price, high_price, low_price, volume, ma20, ma50, ma200, momentum_rank")
@@ -64,14 +64,14 @@ def draw_integrated_chart(
             (df_stock["low_price"] > 0)
         ].reset_index(drop=True)
 
-        # 📌 x축 라벨용 YYYY-MM-DD 규격화 문자열 생성
         df_stock["date_str"] = df_stock["price_date_dt"].dt.strftime("%Y-%m-%d")
 
-        latest_rank = "-"
+        # 최신 모멘텀 순위 추출
+        latest_rank_str = "-"
         if "momentum_rank" in df_stock.columns and df_stock["momentum_rank"].notna().any():
-            latest_rank_val = df_stock["momentum_rank"].iloc[-1]
-            if pd.notna(latest_rank_val) and latest_rank_val > 0:
-                latest_rank = f"{int(latest_rank_val)}위"
+            l_val = df_stock["momentum_rank"].iloc[-1]
+            if pd.notna(l_val) and l_val > 0:
+                latest_rank_str = f"{int(l_val)}위"
 
         # --- 지수 데이터 전처리 ---
         df_index = pd.DataFrame(res_index.data) if res_index.data else pd.DataFrame()
@@ -91,16 +91,17 @@ def draw_integrated_chart(
         else:
             df_merged = pd.DataFrame()
 
-        # 📌 3개 행 서브플롯 생성
+        # 📌 4개 행 서브플롯 생성 (Row 1: 주가, Row 2: 거래량, Row 3: 모멘텀 순위 추이, Row 4: 지수)
         fig = make_subplots(
-            rows=3,
+            rows=4,
             cols=1,
             shared_xaxes=True,
-            vertical_spacing=0.05,
-            row_heights=[0.52, 0.18, 0.30],
+            vertical_spacing=0.04,
+            row_heights=[0.42, 0.15, 0.20, 0.23],
             subplot_titles=(
-                f"[{ticker}] {stock_name} 주가 추이 (모멘텀 순위: {latest_rank})",
+                f"[{ticker}] {stock_name} 주가 추이 (최신 순위: {latest_rank_str})",
                 "거래량",
+                "모멘텀 순위 추이 (상단이 1위 - 높을수록 상승)",
                 f"{index_name} 지수 추이 (20/50/200일선)",
             ),
         )
@@ -179,7 +180,24 @@ def draw_integrated_chart(
             col=1,
         )
 
-        # --- Row 3: 최하단 지수 차트 ---
+        # --- 📌 Row 3: 모멘텀 순위 추이 (새로 추가된 서브플롯) ---
+        if "momentum_rank" in df_stock.columns and df_stock["momentum_rank"].notna().any():
+            fig.add_trace(
+                go.Scatter(
+                    x=df_stock["date_str"],
+                    y=df_stock["momentum_rank"],
+                    mode="lines+markers",
+                    name="모멘텀 순위",
+                    line=dict(color="#d32f2f", width=2),
+                    marker=dict(size=4, color="#d32f2f"),
+                    hovertemplate="<b>%{x}</b><br>모멘텀 순위: %{y}위<extra></extra>",
+                    showlegend=False,
+                ),
+                row=3,
+                col=1,
+            )
+
+        # --- Row 4: 최하단 지수 차트 ---
         if not df_merged.empty:
             fig.add_trace(
                 go.Scatter(
@@ -190,7 +208,7 @@ def draw_integrated_chart(
                     line=dict(color="#5e35b1", width=1.8),
                     connectgaps=True,
                 ),
-                row=3,
+                row=4,
                 col=1,
             )
 
@@ -205,7 +223,7 @@ def draw_integrated_chart(
                         showlegend=False,
                         connectgaps=True,
                     ),
-                    row=3,
+                    row=4,
                     col=1,
                 )
 
@@ -220,7 +238,7 @@ def draw_integrated_chart(
                         showlegend=False,
                         connectgaps=True,
                     ),
-                    row=3,
+                    row=4,
                     col=1,
                 )
 
@@ -235,19 +253,15 @@ def draw_integrated_chart(
                         showlegend=False,
                         connectgaps=True,
                     ),
-                    row=3,
+                    row=4,
                     col=1,
                 )
 
-        # 📌 세로 점선(shapes) 정확한 날짜 매칭 생성
+        # 📌 전체 차트를 관통하는 세로 점선 설정 (shapes)
         v_shapes = []
 
-        # 1. 수급 포착 날짜 매칭 (YYYY-MM-DD 날짜 포맷 통일)
         if supply_dates:
-            # supply_dates 리스트 내의 날짜들을 pd.to_datetime으로 표준 YYYY-MM-DD 스트링 변환
             clean_supp_dates = [pd.to_datetime(d).strftime("%Y-%m-%d") for d in supply_dates if pd.notna(d)]
-            
-            # 차트에 실제로 존재하는 날짜에만 세로선 생성
             supp_df = df_stock[df_stock["date_str"].isin(clean_supp_dates)]
             for _, s_row in supp_df.iterrows():
                 v_shapes.append(
@@ -263,7 +277,6 @@ def draw_integrated_chart(
                     )
                 )
 
-        # 2. 매수 타점 세로 점선
         if buy_date:
             clean_buy_date = pd.to_datetime(buy_date).strftime("%Y-%m-%d")
             if clean_buy_date in df_stock["date_str"].values:
@@ -280,7 +293,6 @@ def draw_integrated_chart(
                     )
                 )
 
-        # 3. 매도 타점 세로 점선
         if sell_date:
             clean_sell_date = pd.to_datetime(sell_date).strftime("%Y-%m-%d")
             if clean_sell_date in df_stock["date_str"].values:
@@ -297,9 +309,9 @@ def draw_integrated_chart(
                     )
                 )
 
-        # 레이아웃 스타일 설정
+        # 레이아웃 스타일 설정 (높이 확대)
         fig.update_layout(
-            height=850,
+            height=950,
             margin=dict(l=10, r=10, t=60, b=20),
             xaxis_rangeslider_visible=False,
             shapes=v_shapes,
@@ -317,7 +329,11 @@ def draw_integrated_chart(
         fig.update_xaxes(type="category", tickangle=-45, gridcolor="#f0f0f0")
         fig.update_yaxes(autorange=True, fixedrange=False, gridcolor="#f0f0f0", row=1, col=1)
         fig.update_yaxes(autorange=True, fixedrange=False, gridcolor="#f0f0f0", row=2, col=1)
-        fig.update_yaxes(autorange=True, fixedrange=False, gridcolor="#f0f0f0", row=3, col=1)
+        
+        # 📌 Row 3 Y축: 순위 차트 Y축 반전 (1위가 맨 위로 위치하게 설정)
+        fig.update_yaxes(autorange="reversed", fixedrange=False, gridcolor="#f0f0f0", row=3, col=1)
+        
+        fig.update_yaxes(autorange=True, fixedrange=False, gridcolor="#f0f0f0", row=4, col=1)
 
         st.plotly_chart(fig, use_container_width=True)
 
