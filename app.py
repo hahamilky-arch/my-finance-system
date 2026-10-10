@@ -42,7 +42,7 @@ components.html(
 
 st.markdown("<div id='top-section'></div>", unsafe_allow_html=True)
 
-# 1. 모바일 반응형(2x2 타일형) CSS 설정 (모바일 잘림 완벽 해결)
+# 1. 커스텀 CSS (모바일 2x2 타일 + 스마트폰 8:2 비밀번호 밀착 + 카드 디자인)
 st.markdown(
     """
     <style>
@@ -72,49 +72,90 @@ st.markdown(
         box-shadow: 0px 2px 6px rgba(0,0,0,0.05);
     }
 
-    /* 📌 모바일 화면 전용 (폭 640px 이하) 2x2 타일형 반응형 레이아웃 */
+    /* 🎨 커스텀 메트릭 카드 스타일링 */
+    .metric-card-container {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 8px;
+        margin-bottom: 12px;
+    }
+
+    .metric-card {
+        background-color: #f8f9fa;
+        border: 1px solid #e9ecef;
+        border-radius: 8px;
+        padding: 8px 10px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+    }
+
+    .metric-card-title {
+        font-size: 0.75rem;
+        color: #6c757d;
+        font-weight: 600;
+        margin-bottom: 2px;
+    }
+
+    .metric-card-value {
+        font-size: 1.05rem;
+        font-weight: 700;
+        color: #212529;
+    }
+
+    .metric-badge {
+        display: inline-block;
+        padding: 2px 6px;
+        font-size: 0.7rem;
+        font-weight: 700;
+        border-radius: 4px;
+        margin-left: 4px;
+    }
+
+    .badge-bull { background-color: #e8f5e9; color: #2e7d32; }
+    .badge-bear { background-color: #ffebee; color: #c62828; }
+    .badge-info { background-color: #e3f2fd; color: #1565c0; }
+    .badge-warn { background-color: #fff3cd; color: #856404; }
+
+    /* 📌 반응형 미디어 쿼리 (모바일 화면 폭 640px 이하) */
     @media (max-width: 640px) {
-        /* 컬럼 줄바꿈 자연스럽게 허용 (화면 넘침/잘림 방지) */
+        /* 지표 카드 2x2 격자 자동 전환 */
+        .metric-card-container {
+            grid-template-columns: repeat(2, 1fr) !important;
+            gap: 6px !important;
+        }
+
+        .metric-card {
+            padding: 6px 8px !important;
+        }
+
+        .metric-card-value {
+            font-size: 0.95rem !important;
+        }
+
+        /* st.columns 모바일 줄바꿈 허용 및 비율 핏 */
         div[data-testid="stHorizontalBlock"] {
             flex-wrap: wrap !important;
             gap: 0.2rem !important;
         }
-        
-        /* 2개 컬럼 메트릭이 모바일에서 50%씩 차지하여 2x2로 정렬 */
+
         div[data-testid="column"] {
-            min-width: 45% !important;
-            flex: 1 1 45% !important;
-            padding: 1px !important;
+            min-width: 0 !important;
         }
 
-        /* 메트릭 박스 카드 디자인 */
-        [data-testid="stMetric"] {
-            padding: 4px 6px !important;
-            background-color: #f8f9fa !important;
-            border-radius: 6px !important;
-            border: 1px solid #e9ecef !important;
+        /* 비밀번호 해제 영역 수평 밀착 */
+        .auth-wrapper {
+            display: flex !important;
+            align-items: center !important;
+            gap: 4px !important;
         }
-        [data-testid="stMetricValue"] {
-            font-size: 0.9rem !important;
-            line-height: 1.2 !important;
-        }
-        [data-testid="stMetricLabel"] {
-            font-size: 0.75rem !important;
-            white-space: nowrap !important;
-        }
-        [data-testid="stMetricDelta"] {
-            font-size: 0.7rem !important;
-        }
-        
-        /* 상단 버튼 높이 및 글자 축소 */
+
         .stButton button {
-            padding: 2px 4px !important;
+            padding: 2px 6px !important;
             font-size: 0.75rem !important;
-            height: 30px !important;
-            min-height: 30px !important;
+            height: 32px !important;
+            min-height: 32px !important;
         }
     }
-    
+
     .backup-tag {
         background-color: #fff3cd; color: #856404; font-size: 0.75em; font-weight: bold;
         padding: 1px 4px; border-radius: 3px; border: 1px solid #ffeeba; margin-left: 2px;
@@ -669,10 +710,10 @@ with st.sidebar:
     col_side_kr.metric("KR추천", f"{kr_buy_count}개")
     col_side_us.metric("US추천", f"{us_buy_count}개")
 
-# 헤더 및 인증 영역
-col_title, col_auth_status = st.columns([1.8, 2.2])
+# 📌 8:2 모바일 수평 밀착 헤더 및 비밀번호 해제
+col_title, col_auth_status = st.columns([1.5, 2.5])
 with col_title:
-    st.markdown("<h5 style='margin:0; padding:0;'>Quant Alpha</h5>", unsafe_allow_html=True)
+    st.markdown("<h5 style='margin:0; padding:0; line-height:1.8;'>Quant Alpha</h5>", unsafe_allow_html=True)
 
 with col_auth_status:
     if is_authenticated:
@@ -695,7 +736,8 @@ with col_auth_status:
                 st.session_state["last_auth_time"] = 0
                 st.rerun()
     else:
-        c_p1, c_p2 = st.columns([2, 1])
+        # 📌 비밀번호 8:2 밀착 수평 배치
+        c_p1, c_p2 = st.columns([3.2, 1.0])
         with c_p1:
             input_pwd_global = st.text_input(
                 "PW",
@@ -792,34 +834,37 @@ if df_display is not None:
         k_inst_days = 0
         divergence_msg = ""
 
-        # 📌 일반 폰에서도 잘리지 않는 반응형 2x2 타일 메트릭
-        m_col1, m_col2 = st.columns(2)
-        with m_col1:
-            st.metric(
-                "전략 엔진",
-                "Top 7" if current_engine_key == "strat3_top7" else ("단기타점" if current_engine_key == "short_term" else "듀얼"),
-            )
-        with m_col2:
-            regime_status_str = "상승(Bull)" if is_bull else "하락(Bear)"
-            st.metric(
-                "Regime",
-                regime_status_str,
-                delta="중지" if stop_new_buy else ("축소" if reduce_holdings else "허용"),
-                delta_color="off",
-            )
+        # 📌 2x2 반응형 HTML/CSS 카드 지표
+        engine_str = "Top 7" if current_engine_key == "strat3_top7" else ("단기타점" if current_engine_key == "short_term" else "듀얼")
+        regime_str = "상승 (Bull)" if is_bull else "하락 (Bear)"
+        regime_badge_cls = "badge-bull" if is_bull else "badge-bear"
+        regime_delta = "중지" if stop_new_buy else ("축소" if reduce_holdings else "허용")
 
-        m_col3, m_col4 = st.columns(2)
-        with m_col3:
-            buy_cnt = len(df_display[df_display["매매상태"] == "추천"])
-            buy_cnt_display = min(buy_cnt, needed_slots)
-            st.metric(
-                "추천 종목",
-                f"{buy_cnt_display}개",
-                delta=f"잔여 {needed_slots}/{top_n_cfg}",
-            )
-        with m_col4:
-            sell_cnt = len(df_display[df_display["매매상태"] == "매도"])
-            st.metric("매도 종목", f"{sell_cnt}개")
+        buy_cnt = len(df_display[df_display["매매상태"] == "추천"])
+        buy_cnt_display = min(buy_cnt, needed_slots)
+        sell_cnt = len(df_display[df_display["매매상태"] == "매도"])
+
+        cards_html = f"""
+        <div class="metric-card-container">
+            <div class="metric-card">
+                <div class="metric-card-title">전략 엔진</div>
+                <div class="metric-card-value">{engine_str}</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-card-title">Regime</div>
+                <div class="metric-card-value">{regime_str} <span class="metric-badge {regime_badge_cls}">{regime_delta}</span></div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-card-title">추천 종목</div>
+                <div class="metric-card-value">{buy_cnt_display}개 <span class="metric-badge badge-info">잔여 {needed_slots}/{top_n_cfg}</span></div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-card-title">매도 필요 종목</div>
+                <div class="metric-card-value">{sell_cnt}개 <span class="metric-badge {'badge-bear' if sell_cnt > 0 else 'badge-bull'}">{'청산' if sell_cnt > 0 else '정상'}</span></div>
+            </div>
+        </div>
+        """
+        st.markdown(cards_html, unsafe_allow_html=True)
 
         st.divider()
 
