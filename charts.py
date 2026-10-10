@@ -18,13 +18,13 @@ def draw_integrated_chart(
     sell_price=None,
     supply_dates=None,
 ):
-    """개별 종목 기술적 차트 + 거래량 + 최하단 지수 차트 통합 차트 (모멘텀 순위 표기 추가)"""
+    """개별 종목 기술적 차트 + 거래량 + 최하단 지수 차트 통합 차트"""
     stock_name = ticker_name_map.get(ticker, ticker)
     index_symbol = "^KS11" if market_type == "KR" else "^GSPC"
     index_name = "코스피 (^KS11)" if market_type == "KR" else "S&P 500 (^GSPC)"
 
     try:
-        # 1. 개별 종목 시계열 데이터 조회 (momentum_rank 컬럼 추가 조회)
+        # 1. 개별 종목 시계열 데이터 조회
         res_stock = (
             supabase.table("daily_analysis")
             .select("price_date, close_price, open_price, high_price, low_price, volume, ma20, ma50, ma200, momentum_rank")
@@ -34,7 +34,7 @@ def draw_integrated_chart(
             .execute()
         )
 
-        # 2. 시장 지수 시계열 데이터 조회 (최근 150영업일)
+        # 2. 시장 지수 시계열 데이터 조회
         res_index = (
             supabase.table("daily_analysis")
             .select("price_date, close_price, ma20, ma50, ma200")
@@ -64,9 +64,9 @@ def draw_integrated_chart(
             (df_stock["low_price"] > 0)
         ].reset_index(drop=True)
 
+        # 📌 x축 라벨용 YYYY-MM-DD 규격화 문자열 생성
         df_stock["date_str"] = df_stock["price_date_dt"].dt.strftime("%Y-%m-%d")
 
-        # 최신 모멘텀 순위 정보 추출
         latest_rank = "-"
         if "momentum_rank" in df_stock.columns and df_stock["momentum_rank"].notna().any():
             latest_rank_val = df_stock["momentum_rank"].iloc[-1]
@@ -91,7 +91,7 @@ def draw_integrated_chart(
         else:
             df_merged = pd.DataFrame()
 
-        # 📌 3개 행 서브플롯 생성 (서브타이틀에 모멘텀 순위 표기 추가)
+        # 📌 3개 행 서브플롯 생성
         fig = make_subplots(
             rows=3,
             cols=1,
@@ -239,11 +239,16 @@ def draw_integrated_chart(
                     col=1,
                 )
 
-        # 📌 관통 세로 점선 설정 (수급포착일, 매수, 매도)
+        # 📌 세로 점선(shapes) 정확한 날짜 매칭 생성
         v_shapes = []
 
+        # 1. 수급 포착 날짜 매칭 (YYYY-MM-DD 날짜 포맷 통일)
         if supply_dates:
-            supp_df = df_stock[df_stock["price_date"].isin(supply_dates)]
+            # supply_dates 리스트 내의 날짜들을 pd.to_datetime으로 표준 YYYY-MM-DD 스트링 변환
+            clean_supp_dates = [pd.to_datetime(d).strftime("%Y-%m-%d") for d in supply_dates if pd.notna(d)]
+            
+            # 차트에 실제로 존재하는 날짜에만 세로선 생성
+            supp_df = df_stock[df_stock["date_str"].isin(clean_supp_dates)]
             for _, s_row in supp_df.iterrows():
                 v_shapes.append(
                     dict(
@@ -258,35 +263,39 @@ def draw_integrated_chart(
                     )
                 )
 
-        if buy_date and buy_date in df_stock["price_date"].values:
-            b_row = df_stock[df_stock["price_date"] == buy_date].iloc[0]
-            v_shapes.append(
-                dict(
-                    type="line",
-                    xref="x",
-                    yref="paper",
-                    x0=b_row["date_str"],
-                    x1=b_row["date_str"],
-                    y0=0,
-                    y1=1,
-                    line=dict(color="#e53935", width=1.8, dash="dash"),
+        # 2. 매수 타점 세로 점선
+        if buy_date:
+            clean_buy_date = pd.to_datetime(buy_date).strftime("%Y-%m-%d")
+            if clean_buy_date in df_stock["date_str"].values:
+                v_shapes.append(
+                    dict(
+                        type="line",
+                        xref="x",
+                        yref="paper",
+                        x0=clean_buy_date,
+                        x1=clean_buy_date,
+                        y0=0,
+                        y1=1,
+                        line=dict(color="#e53935", width=1.8, dash="dash"),
+                    )
                 )
-            )
 
-        if sell_date and sell_date in df_stock["price_date"].values:
-            s_row = df_stock[df_stock["price_date"] == sell_date].iloc[0]
-            v_shapes.append(
-                dict(
-                    type="line",
-                    xref="x",
-                    yref="paper",
-                    x0=s_row["date_str"],
-                    x1=s_row["date_str"],
-                    y0=0,
-                    y1=1,
-                    line=dict(color="#1e88e5", width=1.8, dash="dash"),
+        # 3. 매도 타점 세로 점선
+        if sell_date:
+            clean_sell_date = pd.to_datetime(sell_date).strftime("%Y-%m-%d")
+            if clean_sell_date in df_stock["date_str"].values:
+                v_shapes.append(
+                    dict(
+                        type="line",
+                        xref="x",
+                        yref="paper",
+                        x0=clean_sell_date,
+                        x1=clean_sell_date,
+                        y0=0,
+                        y1=1,
+                        line=dict(color="#1e88e5", width=1.8, dash="dash"),
+                    )
                 )
-            )
 
         # 레이아웃 스타일 설정
         fig.update_layout(
