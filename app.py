@@ -42,7 +42,7 @@ components.html(
 
 st.markdown("<div id='top-section'></div>", unsafe_allow_html=True)
 
-# 1. 커스텀 CSS (모바일 2x2 타일 + 스마트폰 8:2 비밀번호 밀착 + 카드 디자인)
+# 1. 커스텀 CSS (상단 스팀릿 메뉴 보정 + 반응형 메트릭/수급 카드)
 st.markdown(
     """
     <style>
@@ -58,24 +58,32 @@ st.markdown(
     html, body, [class*="st-"] { font-size: 13px !important; }
     h5 { font-size: 1.0rem !important; margin-bottom: 0.2rem !important; }
     
-    /* Sticky 탭 반응형 최적화 */
+    /* 📌 Sticky 탭 위치 보정: Streamlit 상단 툴바(Share, GitHub) 높이만큼 내림 */
     div[data-testid="stTabs"] > div:first-child,
     div[data-baseweb="tab-list"],
     .stTabs [role="tablist"] {
         position: sticky !important;
-        top: 0px !important;
+        top: 2.8rem !important;
         background-color: #ffffff !important;
         z-index: 99999 !important;
-        padding-top: 2px !important;
-        padding-bottom: 2px !important;
+        padding-top: 4px !important;
+        padding-bottom: 4px !important;
         border-bottom: 2px solid #e0e0e0 !important;
         box-shadow: 0px 2px 6px rgba(0,0,0,0.05);
     }
 
-    /* 🎨 커스텀 메트릭 카드 스타일링 */
+    /* 🎨 커스텀 상단 메트릭 카드 4개 Grid */
     .metric-card-container {
         display: grid;
         grid-template-columns: repeat(4, 1fr);
+        gap: 8px;
+        margin-bottom: 12px;
+    }
+
+    /* 🎨 커스텀 수급 강도 지표 6개 Grid */
+    .supply-card-container {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
         gap: 8px;
         margin-bottom: 12px;
     }
@@ -115,10 +123,16 @@ st.markdown(
     .badge-info { background-color: #e3f2fd; color: #1565c0; }
     .badge-warn { background-color: #fff3cd; color: #856404; }
 
-    /* 📌 반응형 미디어 쿼리 (모바일 화면 폭 640px 이하) */
+    /* 📌 모바일 화면 전용 미디어 쿼리 (폭 640px 이하) */
     @media (max-width: 640px) {
-        /* 지표 카드 2x2 격자 자동 전환 */
+        /* 상단 4개 지표: 2x2 격자 */
         .metric-card-container {
+            grid-template-columns: repeat(2, 1fr) !important;
+            gap: 6px !important;
+        }
+
+        /* 중간 수급 지표 6개: 모바일 2x3 컴팩트 격자 */
+        .supply-card-container {
             grid-template-columns: repeat(2, 1fr) !important;
             gap: 6px !important;
         }
@@ -128,10 +142,9 @@ st.markdown(
         }
 
         .metric-card-value {
-            font-size: 0.95rem !important;
+            font-size: 0.92rem !important;
         }
 
-        /* st.columns 모바일 줄바꿈 허용 및 비율 핏 */
         div[data-testid="stHorizontalBlock"] {
             flex-wrap: wrap !important;
             gap: 0.2rem !important;
@@ -139,13 +152,6 @@ st.markdown(
 
         div[data-testid="column"] {
             min-width: 0 !important;
-        }
-
-        /* 비밀번호 해제 영역 수평 밀착 */
-        .auth-wrapper {
-            display: flex !important;
-            align-items: center !important;
-            gap: 4px !important;
         }
 
         .stButton button {
@@ -468,7 +474,7 @@ def display_trade_list(
                 )
                 rec_rank_val = row.get("추천순위", row.get("매수추천순위", ""))
                 rec_rank_display = (
-                    f"{rec_rank_val}위" if rec_rank_val != "" else "-"
+                    f"{rec_rank_val}위" if rec_rank_display != "" else "-"
                 )
                 reason_desc = (
                     f"후순위 대체 종목 [추천순위: {rec_rank_display}]"
@@ -710,7 +716,7 @@ with st.sidebar:
     col_side_kr.metric("KR추천", f"{kr_buy_count}개")
     col_side_us.metric("US추천", f"{us_buy_count}개")
 
-# 📌 8:2 모바일 수평 밀착 헤더 및 비밀번호 해제
+# 📌 헤더 및 8:2 모바일 수평 밀착 비밀번호 해제
 col_title, col_auth_status = st.columns([1.5, 2.5])
 with col_title:
     st.markdown("<h5 style='margin:0; padding:0; line-height:1.8;'>Quant Alpha</h5>", unsafe_allow_html=True)
@@ -736,7 +742,6 @@ with col_auth_status:
                 st.session_state["last_auth_time"] = 0
                 st.rerun()
     else:
-        # 📌 비밀번호 8:2 밀착 수평 배치
         c_p1, c_p2 = st.columns([3.2, 1.0])
         with c_p1:
             input_pwd_global = st.text_input(
@@ -834,7 +839,7 @@ if df_display is not None:
         k_inst_days = 0
         divergence_msg = ""
 
-        # 📌 2x2 반응형 HTML/CSS 카드 지표
+        # 📌 상단 4개 반응형 카드
         engine_str = "Top 7" if current_engine_key == "strat3_top7" else ("단기타점" if current_engine_key == "short_term" else "듀얼")
         regime_str = "상승 (Bull)" if is_bull else "하락 (Bear)"
         regime_badge_cls = "badge-bull" if is_bull else "badge-bear"
@@ -844,7 +849,7 @@ if df_display is not None:
         buy_cnt_display = min(buy_cnt, needed_slots)
         sell_cnt = len(df_display[df_display["매매상태"] == "매도"])
 
-        cards_html = f"""
+        top_cards_html = f"""
         <div class="metric-card-container">
             <div class="metric-card">
                 <div class="metric-card-title">전략 엔진</div>
@@ -864,7 +869,7 @@ if df_display is not None:
             </div>
         </div>
         """
-        st.markdown(cards_html, unsafe_allow_html=True)
+        st.markdown(top_cards_html, unsafe_allow_html=True)
 
         st.divider()
 
@@ -1059,16 +1064,36 @@ if df_display is not None:
 
                 st.markdown("###### 수급 강도 & 연속성 지표 (백만원)")
                 
-                r1_1, r1_2, r1_3 = st.columns(3)
-                r1_1.metric("비차익 Z", f"{p_zscore:+.2f}", delta=z_tag, delta_color="off")
-                r1_2.metric("비차익 5일", f"{p_non_5d:+,d}", delta=f"10일중 {p_non_10d_cnt}일")
-                r1_3.metric("KOSPI 외인", f"{k_f_5d:+,d}", delta=f"10일중 {k_f_10d_cnt}일")
-
-                st.write("")
-                r2_1, r2_2, r2_3 = st.columns(3)
-                r2_1.metric("KOSPI 기관", f"{k_inst_5d:+,d}", delta=f"10일중 {k_i_10d_cnt}일")
-                r2_2.metric("KOSDAQ 외인", f"{kq_f_5d:+,d}", delta=f"10일중 {kq_f_10d_cnt}일")
-                r2_3.metric("KOSDAQ 기관", f"{kq_inst_5d:+,d}", delta=f"10일중 {kq_i_10d_cnt}일")
+                # 📌 중간 수급 지표 6개 반응형 Grid 카드
+                supply_cards_html = f"""
+                <div class="supply-card-container">
+                    <div class="metric-card">
+                        <div class="metric-card-title">비차익 Z</div>
+                        <div class="metric-card-value">{p_zscore:+.2f} <span class="metric-badge badge-info">{z_tag}</span></div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-card-title">비차익 5일</div>
+                        <div class="metric-card-value">{p_non_5d:+,d} <span class="metric-badge badge-bull">10일중 {p_non_10d_cnt}일</span></div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-card-title">KOSPI 외인</div>
+                        <div class="metric-card-value">{k_f_5d:+,d} <span class="metric-badge badge-bull">10일중 {k_f_10d_cnt}일</span></div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-card-title">KOSPI 기관</div>
+                        <div class="metric-card-value">{k_inst_5d:+,d} <span class="metric-badge badge-bull">10일중 {k_i_10d_cnt}일</span></div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-card-title">KOSDAQ 외인</div>
+                        <div class="metric-card-value">{kq_f_5d:+,d} <span class="metric-badge badge-bull">10일중 {kq_f_10d_cnt}일</span></div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-card-title">KOSDAQ 기관</div>
+                        <div class="metric-card-value">{kq_inst_5d:+,d} <span class="metric-badge badge-bull">10일중 {kq_i_10d_cnt}일</span></div>
+                    </div>
+                </div>
+                """
+                st.markdown(supply_cards_html, unsafe_allow_html=True)
 
                 st.divider()
 
