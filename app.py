@@ -317,6 +317,7 @@ def display_trade_list(
             primary_data = data
             backup_data = pd.DataFrame()
 
+        # 1) 주 종목 출력 루프
         for p_idx, (_, row) in enumerate(primary_data.iterrows(), 1):
             ticker = row["ticker"]
             c1, c2 = st.columns([4, 1])
@@ -326,7 +327,7 @@ def display_trade_list(
             )
             rec_rank_val = row.get("추천순위", row.get("매수추천순위", ""))
             rec_rank_display = (
-                f"{rec_rank_val}위" if rec_rank_val != "" else "-"
+                f"{rec_rank_val}위" if (rec_rank_val != "" and pd.notna(rec_rank_val)) else "-"
             )
 
             raw_reason = str(row.get("제외사유", "")).strip()
@@ -460,6 +461,7 @@ def display_trade_list(
                     unsafe_allow_html=True,
                 )
 
+        # 2) 예비 종목 출력 루프 (수정 완료)
         if not backup_data.empty:
             st.markdown("---")
             st.markdown("###### 예비 목록 (대기/교체용)")
@@ -472,7 +474,7 @@ def display_trade_list(
                 )
                 rec_rank_val = row.get("추천순위", row.get("매수추천순위", ""))
                 rec_rank_display = (
-                    f"{rec_rank_val}위" if rec_rank_display != "" else "-"
+                    f"{rec_rank_val}위" if (rec_rank_val != "" and pd.notna(rec_rank_val)) else "-"
                 )
                 reason_desc = (
                     f"후순위 대체 종목 [추천순위: {rec_rank_display}]"
