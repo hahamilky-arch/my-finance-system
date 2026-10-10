@@ -58,7 +58,7 @@ st.markdown(
     html, body, [class*="st-"] { font-size: 13px !important; }
     h5 { font-size: 1.0rem !important; margin-bottom: 0.2rem !important; }
     
-    /* 📌 Sticky 탭 위치 보정: Streamlit 상단 툴바(Share, GitHub) 높이만큼 내림 */
+    /* 📌 Sticky 탭 위치 보정 */
     div[data-testid="stTabs"] > div:first-child,
     div[data-baseweb="tab-list"],
     .stTabs [role="tablist"] {
@@ -123,15 +123,13 @@ st.markdown(
     .badge-info { background-color: #e3f2fd; color: #1565c0; }
     .badge-warn { background-color: #fff3cd; color: #856404; }
 
-    /* 📌 모바일 화면 전용 미디어 쿼리 (폭 640px 이하) */
+    /* 📌 모바일 화면 전용 미디어 쿼리 */
     @media (max-width: 640px) {
-        /* 상단 4개 지표: 2x2 격자 */
         .metric-card-container {
             grid-template-columns: repeat(2, 1fr) !important;
             gap: 6px !important;
         }
 
-        /* 중간 수급 지표 6개: 모바일 2x3 컴팩트 격자 */
         .supply-card-container {
             grid-template-columns: repeat(2, 1fr) !important;
             gap: 6px !important;
@@ -474,7 +472,7 @@ def display_trade_list(
                 )
                 rec_rank_val = row.get("추천순위", row.get("매수추천순위", ""))
                 rec_rank_display = (
-                    f"{rec_rank_val}위" if rec_rank_val != "" else "-"
+                    f"{rec_rank_val}위" if rec_rank_display != "" else "-"
                 )
                 reason_desc = (
                     f"후순위 대체 종목 [추천순위: {rec_rank_display}]"
@@ -1423,6 +1421,7 @@ if df_display is not None:
                     pass
 
                 st.markdown("###### 개별 종목 기술적 차트")
+                # 📌 supply_dates 파라미터 전달
                 draw_integrated_chart(
                     sel_chart_ticker,
                     market_type,
@@ -2064,7 +2063,7 @@ if df_display is not None:
                     st.divider()
 
                     st.markdown("###### 상세 청산 매매 내역 및 타점 복기")
-                    st.caption("표에서 매매 건을 선택하거나 아래 선택 상자에서 복기할 종목을 고르면 매수/매도 시점이 차트에 표시됩니다.")
+                    st.caption("표에서 매매 건을 선택하거나 아래 선택 상자에서 복기할 종목을 고르면 매수/매도 시점 및 수급일이 차트에 표시됩니다.")
 
                     df_hist_sorted = df_hist.sort_values("sell_date", ascending=False).reset_index(drop=True)
                     disp_cols = [
@@ -2127,14 +2126,32 @@ if df_display is not None:
                     rev_s_price = float(review_row["sell_price"])
                     rev_profit_rate = float(review_row["profit_rate"])
 
-                    st.markdown(f"###### 📈 [{review_row['종목명']}] 매수/매도 타점 복기 차트")
+                    # 📌 해당 종목의 수급 포착일 조회
+                    rev_supply_dates = []
+                    try:
+                        res_supp_rev = (
+                            supabase.table("daily_top_liquidity")
+                            .select("trade_date")
+                            .eq("ticker", rev_ticker)
+                            .or_("foreign_net.gt.0,inst_net.gt.0")
+                            .execute()
+                        )
+                        if res_supp_rev.data:
+                            rev_supply_dates = [r["trade_date"] for r in res_supp_rev.data]
+                    except Exception:
+                        pass
 
-                    # 타점 표시 차트 호출
+                    st.markdown(f"###### 📈 [{review_row['종목명']}] 매수/매도 타점 및 수급 복기 차트")
+
+                    # 📌 buy_date, sell_date, supply_dates 전달
                     ticker_map = {rev_ticker: review_row["종목명"]}
                     draw_integrated_chart(
                         rev_ticker,
                         market_type,
-                        ticker_map
+                        ticker_map,
+                        buy_date=rev_b_date,
+                        sell_date=rev_s_date,
+                        supply_dates=rev_supply_dates
                     )
 
                     st.info(
