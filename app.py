@@ -42,7 +42,7 @@ components.html(
 
 st.markdown("<div id='top-section'></div>", unsafe_allow_html=True)
 
-# 1. 모바일 초밀착 수평 핏(Fit) CSS 설정
+# 1. 모바일 반응형(2x2 타일형) CSS 설정 (모바일 잘림 완벽 해결)
 st.markdown(
     """
     <style>
@@ -50,13 +50,13 @@ st.markdown(
         overflow: visible !important;
     }
     .block-container { 
-        padding-top: 0.2rem !important; 
+        padding-top: 0.3rem !important; 
         padding-bottom: 0.5rem !important; 
-        padding-left: 0.3rem !important;
-        padding-right: 0.3rem !important;
+        padding-left: 0.4rem !important;
+        padding-right: 0.4rem !important;
     }
-    html, body, [class*="st-"] { font-size: 12px !important; }
-    h5 { font-size: 0.95rem !important; margin-bottom: 0.2rem !important; }
+    html, body, [class*="st-"] { font-size: 13px !important; }
+    h5 { font-size: 1.0rem !important; margin-bottom: 0.2rem !important; }
     
     /* Sticky 탭 반응형 최적화 */
     div[data-testid="stTabs"] > div:first-child,
@@ -72,44 +72,47 @@ st.markdown(
         box-shadow: 0px 2px 6px rgba(0,0,0,0.05);
     }
 
-    /* 📌 모바일 초밀착 강제 수평 핏 (Flex-Wrap 차단) */
-    div[data-testid="stHorizontalBlock"] {
-        flex-wrap: nowrap !important;
-        gap: 0.3rem !important;
-    }
-    div[data-testid="column"] {
-        min-width: 0 !important;
-        flex: 1 1 0% !important;
-        padding: 0px !important;
-    }
-    
-    /* 메트릭 박스 글자 및 여백 초밀착 축소 */
-    [data-testid="stMetric"] {
-        padding: 2px 4px !important;
-        background-color: #f8f9fa !important;
-        border-radius: 4px !important;
-        border: 1px solid #e9ecef !important;
-    }
-    [data-testid="stMetricValue"] {
-        font-size: 0.85rem !important;
-        line-height: 1.1 !important;
-    }
-    [data-testid="stMetricLabel"] {
-        font-size: 0.7rem !important;
-        line-height: 1.0 !important;
-        white-space: nowrap !important;
-    }
-    [data-testid="stMetricDelta"] {
-        font-size: 0.65rem !important;
-        line-height: 1.0 !important;
-    }
-    
-    /* 상단 버튼 높이 및 글자 축소 */
-    .stButton button {
-        padding: 1px 4px !important;
-        font-size: 0.72rem !important;
-        height: 28px !important;
-        min-height: 28px !important;
+    /* 📌 모바일 화면 전용 (폭 640px 이하) 2x2 타일형 반응형 레이아웃 */
+    @media (max-width: 640px) {
+        /* 컬럼 줄바꿈 자연스럽게 허용 (화면 넘침/잘림 방지) */
+        div[data-testid="stHorizontalBlock"] {
+            flex-wrap: wrap !important;
+            gap: 0.2rem !important;
+        }
+        
+        /* 2개 컬럼 메트릭이 모바일에서 50%씩 차지하여 2x2로 정렬 */
+        div[data-testid="column"] {
+            min-width: 45% !important;
+            flex: 1 1 45% !important;
+            padding: 1px !important;
+        }
+
+        /* 메트릭 박스 카드 디자인 */
+        [data-testid="stMetric"] {
+            padding: 4px 6px !important;
+            background-color: #f8f9fa !important;
+            border-radius: 6px !important;
+            border: 1px solid #e9ecef !important;
+        }
+        [data-testid="stMetricValue"] {
+            font-size: 0.9rem !important;
+            line-height: 1.2 !important;
+        }
+        [data-testid="stMetricLabel"] {
+            font-size: 0.75rem !important;
+            white-space: nowrap !important;
+        }
+        [data-testid="stMetricDelta"] {
+            font-size: 0.7rem !important;
+        }
+        
+        /* 상단 버튼 높이 및 글자 축소 */
+        .stButton button {
+            padding: 2px 4px !important;
+            font-size: 0.75rem !important;
+            height: 30px !important;
+            min-height: 30px !important;
+        }
     }
     
     .backup-tag {
@@ -666,7 +669,7 @@ with st.sidebar:
     col_side_kr.metric("KR추천", f"{kr_buy_count}개")
     col_side_us.metric("US추천", f"{us_buy_count}개")
 
-# 📌 헤더 & 인증 영역 초밀착 수평 처리
+# 헤더 및 인증 영역
 col_title, col_auth_status = st.columns([1.8, 2.2])
 with col_title:
     st.markdown("<h5 style='margin:0; padding:0;'>Quant Alpha</h5>", unsafe_allow_html=True)
@@ -789,32 +792,34 @@ if df_display is not None:
         k_inst_days = 0
         divergence_msg = ""
 
-        # 📌 모바일 초밀착 수평 지표 배치 (Flex-wrap 차단 적용)
-        c1, c2, c3, c4 = st.columns([1, 1, 1, 1])
+        # 📌 일반 폰에서도 잘리지 않는 반응형 2x2 타일 메트릭
+        m_col1, m_col2 = st.columns(2)
+        with m_col1:
+            st.metric(
+                "전략 엔진",
+                "Top 7" if current_engine_key == "strat3_top7" else ("단기타점" if current_engine_key == "short_term" else "듀얼"),
+            )
+        with m_col2:
+            regime_status_str = "상승(Bull)" if is_bull else "하락(Bear)"
+            st.metric(
+                "Regime",
+                regime_status_str,
+                delta="중지" if stop_new_buy else ("축소" if reduce_holdings else "허용"),
+                delta_color="off",
+            )
 
-        c1.metric(
-            "전략 엔진",
-            "Top 7" if current_engine_key == "strat3_top7" else ("단기타점" if current_engine_key == "short_term" else "듀얼"),
-        )
-
-        regime_status_str = "상승(Bull)" if is_bull else "하락(Bear)"
-        c2.metric(
-            "Regime",
-            regime_status_str,
-            delta="중지" if stop_new_buy else ("축소" if reduce_holdings else "허용"),
-            delta_color="off",
-        )
-
-        buy_cnt = len(df_display[df_display["매매상태"] == "추천"])
-        buy_cnt_display = min(buy_cnt, needed_slots)
-        c3.metric(
-            "추천 종목",
-            f"{buy_cnt_display}개",
-            delta=f"잔여 {needed_slots}/{top_n_cfg}",
-        )
-
-        sell_cnt = len(df_display[df_display["매매상태"] == "매도"])
-        c4.metric("매도 종목", f"{sell_cnt}개")
+        m_col3, m_col4 = st.columns(2)
+        with m_col3:
+            buy_cnt = len(df_display[df_display["매매상태"] == "추천"])
+            buy_cnt_display = min(buy_cnt, needed_slots)
+            st.metric(
+                "추천 종목",
+                f"{buy_cnt_display}개",
+                delta=f"잔여 {needed_slots}/{top_n_cfg}",
+            )
+        with m_col4:
+            sell_cnt = len(df_display[df_display["매매상태"] == "매도"])
+            st.metric("매도 종목", f"{sell_cnt}개")
 
         st.divider()
 
