@@ -18,7 +18,7 @@ def draw_integrated_chart(
     sell_price=None,
     supply_dates=None,
 ):
-    """개별 종목 기술적 차트 + 거래량 + 최하단 지수 차트 통합 차트"""
+    """개별 종목 기술적 차트 + 거래량 + 최하단 지수 차트 통합 차트 (가독성 향상 버전)"""
     stock_name = ticker_name_map.get(ticker, ticker)
     index_symbol = "^KS11" if market_type == "KR" else "^GSPC"
     index_name = "코스피 (^KS11)" if market_type == "KR" else "S&P 500 (^GSPC)"
@@ -89,16 +89,16 @@ def draw_integrated_chart(
             rows=3,
             cols=1,
             shared_xaxes=True,
-            vertical_spacing=0.06,
-            row_heights=[0.50, 0.18, 0.32],
+            vertical_spacing=0.05,
+            row_heights=[0.52, 0.18, 0.30],
             subplot_titles=(
-                f"[{ticker}] {stock_name} 주가 추이",
+                f"[{ticker}] {stock_name} 주가 및 이동평균선",
                 "거래량",
                 f"{index_name} 지수 추이 (20/50/200일선)",
             ),
         )
 
-        # --- Row 1: 개별 종목 캔들스틱 및 이동평균선 ---
+        # --- Row 1: 개별 종목 캔들스틱 및 이동평균선 (가독성 강화) ---
         fig.add_trace(
             go.Candlestick(
                 x=df_stock["date_str"],
@@ -107,21 +107,25 @@ def draw_integrated_chart(
                 low=df_stock["low_price"],
                 close=df_stock["close_price"],
                 name="주가",
-                increasing_line_color="#d62728" if market_type == "KR" else "#2ca02c",
-                decreasing_line_color="#1f77b4" if market_type == "KR" else "#d62728",
+                increasing_line_color="#e53935" if market_type == "KR" else "#2e7d32",
+                increasing_fillcolor="#e53935" if market_type == "KR" else "#2e7d32",
+                decreasing_line_color="#1e88e5" if market_type == "KR" else "#e53935",
+                decreasing_fillcolor="#1e88e5" if market_type == "KR" else "#e53935",
+                line=dict(width=1.2),
             ),
             row=1,
             col=1,
         )
 
+        # 이동평균선 (선 굵기 및 대시 스타일 조정으로 가독성 향상)
         if "ma20" in df_stock.columns and df_stock["ma20"].notna().any():
             fig.add_trace(
                 go.Scatter(
                     x=df_stock["date_str"],
                     y=df_stock["ma20"],
                     mode="lines",
-                    name="MA20",
-                    line=dict(color="#ff7f0e", width=1.5),
+                    name="MA20 (20일선)",
+                    line=dict(color="#f57c00", width=2.0),
                 ),
                 row=1,
                 col=1,
@@ -133,8 +137,8 @@ def draw_integrated_chart(
                     x=df_stock["date_str"],
                     y=df_stock["ma50"],
                     mode="lines",
-                    name="MA50",
-                    line=dict(color="#2ca02c", width=1.5, dash="dot"),
+                    name="MA50 (50일선)",
+                    line=dict(color="#388e3c", width=1.5, dash="dash"),
                 ),
                 row=1,
                 col=1,
@@ -146,8 +150,8 @@ def draw_integrated_chart(
                     x=df_stock["date_str"],
                     y=df_stock["ma200"],
                     mode="lines",
-                    name="MA200",
-                    line=dict(color="#d62728", width=1.5, dash="dashdot"),
+                    name="MA200 (200일선)",
+                    line=dict(color="#8e24aa", width=1.5, dash="dashdot"),
                 ),
                 row=1,
                 col=1,
@@ -155,7 +159,7 @@ def draw_integrated_chart(
 
         # --- Row 2: 거래량 ---
         colors = [
-            "#d62728" if c >= o else "#1f77b4"
+            "#e53935" if c >= o else "#1e88e5"
             for c, o in zip(df_stock["close_price"], df_stock["open_price"])
         ]
         fig.add_trace(
@@ -177,8 +181,8 @@ def draw_integrated_chart(
                     x=df_merged["date_str"],
                     y=df_merged["close_price"],
                     mode="lines",
-                    name="지수종가",
-                    line=dict(color="#9467bd", width=2),
+                    name="지수 종가",
+                    line=dict(color="#5e35b1", width=2.0),
                     connectgaps=True,
                 ),
                 row=3,
@@ -192,7 +196,7 @@ def draw_integrated_chart(
                         y=df_merged["ma20"],
                         mode="lines",
                         name="지수 MA20",
-                        line=dict(color="#ff7f0e", width=1.2, dash="dash"),
+                        line=dict(color="#f57c00", width=1.2, dash="dash"),
                         showlegend=False,
                         connectgaps=True,
                     ),
@@ -207,7 +211,7 @@ def draw_integrated_chart(
                         y=df_merged["ma50"],
                         mode="lines",
                         name="지수 MA50",
-                        line=dict(color="#2ca02c", width=1.2, dash="dot"),
+                        line=dict(color="#388e3c", width=1.2, dash="dot"),
                         showlegend=False,
                         connectgaps=True,
                     ),
@@ -222,7 +226,7 @@ def draw_integrated_chart(
                         y=df_merged["ma200"],
                         mode="lines",
                         name="지수 MA200",
-                        line=dict(color="#d62728", width=1.2, dash="dashdot"),
+                        line=dict(color="#8e24aa", width=1.2, dash="dashdot"),
                         showlegend=False,
                         connectgaps=True,
                     ),
@@ -230,7 +234,7 @@ def draw_integrated_chart(
                     col=1,
                 )
 
-        # 📌 전체 차트를 관통하는 관통 세로 점선 설정 (shapes)
+        # 📌 관통 세로 점선 설정 (수급포착일, 매수, 매도)
         v_shapes = []
 
         # 1. 수급 포착 세로 점선 (초록색 점선)
@@ -262,7 +266,7 @@ def draw_integrated_chart(
                     x1=b_row["date_str"],
                     y0=0,
                     y1=1,
-                    line=dict(color="#d62728", width=2, dash="dash"),
+                    line=dict(color="#e53935", width=2.0, dash="dash"),
                 )
             )
 
@@ -278,30 +282,31 @@ def draw_integrated_chart(
                     x1=s_row["date_str"],
                     y0=0,
                     y1=1,
-                    line=dict(color="#1f77b4", width=2, dash="dash"),
+                    line=dict(color="#1e88e5", width=2.0, dash="dash"),
                 )
             )
 
-        # 레이아웃 설정
+        # 레이아웃 스타일 설정
         fig.update_layout(
             height=850,
             margin=dict(l=10, r=10, t=60, b=20),
             xaxis_rangeslider_visible=False,
-            shapes=v_shapes,  # 관통 세로선 적용
+            shapes=v_shapes,
             legend=dict(
                 orientation="h",
                 yanchor="bottom",
-                y=1.06,
+                y=1.05,
                 xanchor="center",
                 x=0.5,
                 font=dict(size=11),
             ),
+            plot_bgcolor="#ffffff",  # 깔끔한 하얀색 배경
         )
 
-        fig.update_xaxes(type="category", tickangle=-45)
-        fig.update_yaxes(autorange=True, fixedrange=False, row=1, col=1)
-        fig.update_yaxes(autorange=True, fixedrange=False, row=2, col=1)
-        fig.update_yaxes(autorange=True, fixedrange=False, row=3, col=1)
+        fig.update_xaxes(type="category", tickangle=-45, gridcolor="#f0f0f0")
+        fig.update_yaxes(autorange=True, fixedrange=False, gridcolor="#f0f0f0", row=1, col=1)
+        fig.update_yaxes(autorange=True, fixedrange=False, gridcolor="#f0f0f0", row=2, col=1)
+        fig.update_yaxes(autorange=True, fixedrange=False, gridcolor="#f0f0f0", row=3, col=1)
 
         st.plotly_chart(fig, use_container_width=True)
 
@@ -332,7 +337,7 @@ def draw_attribution_charts(df_hist, market_type):
                 x=profit_by_stock["종목명"],
                 y=profit_by_stock["profit_amount"],
                 marker_color=[
-                    "#d62728" if v > 0 else "#1f77b4"
+                    "#e53935" if v > 0 else "#1e88e5"
                     for v in profit_by_stock["profit_amount"]
                 ],
                 text=[f"{v:+,.0f}{fmt_unit}" for v in profit_by_stock["profit_amount"]],
@@ -344,7 +349,10 @@ def draw_attribution_charts(df_hist, market_type):
             height=360,
             margin=dict(l=20, r=20, t=40, b=20),
             xaxis=dict(tickangle=-45),
+            plot_bgcolor="#ffffff",
         )
+        fig_bar.update_xaxes(gridcolor="#f0f0f0")
+        fig_bar.update_yaxes(gridcolor="#f0f0f0")
         st.plotly_chart(fig_bar, use_container_width=True)
 
     with col_chart2:
@@ -360,7 +368,7 @@ def draw_attribution_charts(df_hist, market_type):
                 mode="markers",
                 marker=dict(
                     size=10,
-                    color=["#d62728" if r > 0 else "#1f77b4" for r in df_hist["profit_rate_val"]],
+                    color=["#e53935" if r > 0 else "#1e88e5" for r in df_hist["profit_rate_val"]],
                     line=dict(width=1, color="DarkSlateGrey")
                 ),
                 text=df_hist["종목명"],
@@ -375,5 +383,8 @@ def draw_attribution_charts(df_hist, market_type):
             yaxis_title="수익률 (%)",
             height=360,
             margin=dict(l=20, r=20, t=40, b=20),
+            plot_bgcolor="#ffffff",
         )
+        fig_scatter.update_xaxes(gridcolor="#f0f0f0")
+        fig_scatter.update_yaxes(gridcolor="#f0f0f0")
         st.plotly_chart(fig_scatter, use_container_width=True)
