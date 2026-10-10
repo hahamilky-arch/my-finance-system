@@ -42,7 +42,7 @@ components.html(
 
 st.markdown("<div id='top-section'></div>", unsafe_allow_html=True)
 
-# 1. 상단 탭 Sticky 설정 및 모바일 반응형 수평 핏(Fit) CSS
+# 1. 모바일 초밀착 수평 핏(Fit) CSS 설정
 st.markdown(
     """
     <style>
@@ -50,13 +50,13 @@ st.markdown(
         overflow: visible !important;
     }
     .block-container { 
-        padding-top: 0.5rem !important; 
-        padding-bottom: 1rem !important; 
-        padding-left: 0.5rem !important;
-        padding-right: 0.5rem !important;
+        padding-top: 0.2rem !important; 
+        padding-bottom: 0.5rem !important; 
+        padding-left: 0.3rem !important;
+        padding-right: 0.3rem !important;
     }
-    html, body, [class*="st-"] { font-size: 13px !important; }
-    h5 { font-size: 1.05rem !important; margin-bottom: 0.3rem !important; }
+    html, body, [class*="st-"] { font-size: 12px !important; }
+    h5 { font-size: 0.95rem !important; margin-bottom: 0.2rem !important; }
     
     /* Sticky 탭 반응형 최적화 */
     div[data-testid="stTabs"] > div:first-child,
@@ -66,47 +66,60 @@ st.markdown(
         top: 0px !important;
         background-color: #ffffff !important;
         z-index: 99999 !important;
-        padding-top: 4px !important;
+        padding-top: 2px !important;
         padding-bottom: 2px !important;
         border-bottom: 2px solid #e0e0e0 !important;
         box-shadow: 0px 2px 6px rgba(0,0,0,0.05);
     }
 
-    /* 📌 모바일 전용 반응형 레이아웃 (폭이 좁은 폰 화면 강제 수평 컴팩트화) */
-    @media (max-width: 640px) {
-        /* st.columns가 세로로 무너지는 현상 방지 (강제 수평 유지) */
-        div[data-testid="column"] {
-            min-width: 0 !important;
-            flex: 1 1 0% !important;
-        }
-        
-        /* 메트릭 박스 글자 및 여백 줄이기 */
-        [data-testid="stMetricValue"] {
-            font-size: 0.95rem !important;
-        }
-        [data-testid="stMetricLabel"] {
-            font-size: 0.75rem !important;
-        }
-        [data-testid="stMetricDelta"] {
-            font-size: 0.7rem !important;
-        }
-        
-        /* 상단 버튼 높이 및 글자 축소 */
-        .stButton button {
-            padding: 2px 6px !important;
-            font-size: 0.75rem !important;
-            height: 32px !important;
-        }
+    /* 📌 모바일 초밀착 강제 수평 핏 (Flex-Wrap 차단) */
+    div[data-testid="stHorizontalBlock"] {
+        flex-wrap: nowrap !important;
+        gap: 0.3rem !important;
+    }
+    div[data-testid="column"] {
+        min-width: 0 !important;
+        flex: 1 1 0% !important;
+        padding: 0px !important;
+    }
+    
+    /* 메트릭 박스 글자 및 여백 초밀착 축소 */
+    [data-testid="stMetric"] {
+        padding: 2px 4px !important;
+        background-color: #f8f9fa !important;
+        border-radius: 4px !important;
+        border: 1px solid #e9ecef !important;
+    }
+    [data-testid="stMetricValue"] {
+        font-size: 0.85rem !important;
+        line-height: 1.1 !important;
+    }
+    [data-testid="stMetricLabel"] {
+        font-size: 0.7rem !important;
+        line-height: 1.0 !important;
+        white-space: nowrap !important;
+    }
+    [data-testid="stMetricDelta"] {
+        font-size: 0.65rem !important;
+        line-height: 1.0 !important;
+    }
+    
+    /* 상단 버튼 높이 및 글자 축소 */
+    .stButton button {
+        padding: 1px 4px !important;
+        font-size: 0.72rem !important;
+        height: 28px !important;
+        min-height: 28px !important;
     }
     
     .backup-tag {
-        background-color: #fff3cd; color: #856404; font-size: 0.8em; font-weight: bold;
-        padding: 1px 6px; border-radius: 4px; border: 1px solid #ffeeba; margin-left: 4px;
+        background-color: #fff3cd; color: #856404; font-size: 0.75em; font-weight: bold;
+        padding: 1px 4px; border-radius: 3px; border: 1px solid #ffeeba; margin-left: 2px;
         display: inline-block;
     }
     .primary-tag {
-        background-color: #e3f2fd; color: #0d47a1; font-size: 0.8em; font-weight: bold;
-        padding: 1px 6px; border-radius: 4px; border: 1px solid #bbdefb; margin-left: 4px;
+        background-color: #e3f2fd; color: #0d47a1; font-size: 0.75em; font-weight: bold;
+        padding: 1px 4px; border-radius: 3px; border: 1px solid #bbdefb; margin-left: 2px;
         display: inline-block;
     }
     </style>
@@ -280,7 +293,7 @@ def display_trade_list(
                 tag_html = ""
             else:
                 if strategy_engine_mode == "short_term":
-                    reason_desc = f"단기 모멘텀 타점 포착 (상위 200위 / 익절 +15% / 손절 -5%) [추천순위: {rec_rank_display}]"
+                    reason_desc = f"단기 모멘텀 타점 포착 [추천순위: {rec_rank_display}]"
                 else:
                     reason_desc = f"진입 조건 충족 (지수 2일 안착 완료) [추천순위: {rec_rank_display}]"
 
@@ -291,18 +304,18 @@ def display_trade_list(
                     if market_type == "US"
                     else f"{atr_val:,.0f}"
                 )
-                position_info = f"<br><span style='font-size: 0.85em; color: #1b5e20; font-weight: bold;'>분산 금액: {fmt_str} (비중 {target_pct:.1f}%) | ATR: {atr_str}</span>"
+                position_info = f"<br><span style='font-size: 0.85em; color: #1b5e20; font-weight: bold;'>분산 금액: {fmt_str} ({target_pct:.1f}%) | ATR: {atr_str}</span>"
                 tag_html = f"<span class='primary-tag'>추천 {p_idx}</span>"
 
             card_html = (
-                f"<div style='line-height: 1.6; margin-top: 4px;'>"
-                f"<strong style='font-size: 1.1em; color: #111111;'>{row['종목명']}</strong> "
-                f"<span style='font-size: 0.8em; color: #888888; margin-left: 4px;'>({ticker})</span> "
+                f"<div style='line-height: 1.5; margin-top: 2px;'>"
+                f"<strong style='font-size: 1.05em; color: #111111;'>{row['종목명']}</strong> "
+                f"<span style='font-size: 0.8em; color: #888888;'>({ticker})</span> "
                 f"{tag_html} "
-                f"<span style='font-size: 0.8em; color: #1565c0; font-weight: bold; margin-left: 6px;'>[순위: {rank_val}위 | 추천: {rec_rank_display}]</span>"
+                f"<span style='font-size: 0.8em; color: #1565c0; font-weight: bold;'>[순위: {rank_val}위 | 추천: {rec_rank_display}]</span>"
                 f"<br><span style='font-size: 0.85em; color: #d62728; font-weight: bold;'>사유: {reason_desc}</span>"
                 f"{position_info}"
-                f"<br><span style='font-size: 0.85em; color: #444444;'>MOT: {row['MOT']:.2f} | RS(90): {row['RS(90)']:.2f} | 이격도: {row['이격도']:+.2f}%</span>"
+                f"<br><span style='font-size: 0.8em; color: #444444;'>MOT: {row['MOT']:.2f} | RS(90): {row['RS(90)']:.2f} | 이격: {row['이격도']:+.2f}%</span>"
                 f"</div>"
             )
             c1.markdown(card_html, unsafe_allow_html=True)
@@ -395,7 +408,7 @@ def display_trade_list(
                         )
             else:
                 c2.markdown(
-                    "<div style='color:#999999; font-size:0.85em; margin-top:8px; text-align:right;'>과거일 불가</div>",
+                    "<div style='color:#999999; font-size:0.8em; margin-top:4px; text-align:right;'>과거불가</div>",
                     unsafe_allow_html=True,
                 )
 
@@ -426,14 +439,14 @@ def display_trade_list(
                 position_info = f"<br><span style='font-size: 0.85em; color: #856404; font-weight: bold;'>예비 분산 금액: {fmt_str} | ATR: {atr_str}</span>"
 
                 backup_html = (
-                    f"<div style='line-height: 1.6; margin-top: 4px; background-color: #fffde7; padding: 8px 12px; border-radius: 6px; border-left: 4px solid #fbc02d;'>"
-                    f"<strong style='font-size: 1.05em; color: #111111;'>{row['종목명']}</strong> "
-                    f"<span style='font-size: 0.8em; color: #888888; margin-left: 4px;'>({ticker})</span> "
+                    f"<div style='line-height: 1.5; margin-top: 2px; background-color: #fffde7; padding: 6px 8px; border-radius: 4px; border-left: 3px solid #fbc02d;'>"
+                    f"<strong style='font-size: 1.0em; color: #111111;'>{row['종목명']}</strong> "
+                    f"<span style='font-size: 0.8em; color: #888888;'>({ticker})</span> "
                     f"<span class='backup-tag'>예비{backup_idx}</span> "
-                    f"<span style='font-size: 0.8em; color: #d7ccc8; font-weight: bold; margin-left: 4px;'>[순위: {rank_val}위 | 추천: {rec_rank_display}]</span>"
+                    f"<span style='font-size: 0.8em; color: #d7ccc8; font-weight: bold;'>[순위: {rank_val}위 | 추천: {rec_rank_display}]</span>"
                     f"<br><span style='font-size: 0.85em; color: #e65100; font-weight: bold;'>사유: {reason_desc}</span>"
                     f"{position_info}"
-                    f"<br><span style='font-size: 0.85em; color: #444444;'>MOT: {row['MOT']:.2f} | RS(90): {row['RS(90)']:.2f} | 이격도: {row['이격도']:+.2f}%</span>"
+                    f"<br><span style='font-size: 0.8em; color: #444444;'>MOT: {row['MOT']:.2f} | RS(90): {row['RS(90)']:.2f} | 이격: {row['이격도']:+.2f}%</span>"
                     f"</div>"
                 )
                 c1.markdown(backup_html, unsafe_allow_html=True)
@@ -484,7 +497,7 @@ def display_trade_list(
                             )
                 else:
                     c2.markdown(
-                        "<div style='color:#999999; font-size:0.85em; margin-top:8px; text-align:right;'>과거일 불가</div>",
+                        "<div style='color:#999999; font-size:0.8em; margin-top:4px; text-align:right;'>과거불가</div>",
                         unsafe_allow_html=True,
                     )
 
@@ -653,9 +666,10 @@ with st.sidebar:
     col_side_kr.metric("KR추천", f"{kr_buy_count}개")
     col_side_us.metric("US추천", f"{us_buy_count}개")
 
-col_title, col_auth_status = st.columns([2.5, 1.5])
+# 📌 헤더 & 인증 영역 초밀착 수평 처리
+col_title, col_auth_status = st.columns([1.8, 2.2])
 with col_title:
-    st.markdown("##### Quant Alpha Strategy")
+    st.markdown("<h5 style='margin:0; padding:0;'>Quant Alpha</h5>", unsafe_allow_html=True)
 
 with col_auth_status:
     if is_authenticated:
@@ -663,9 +677,9 @@ with col_auth_status:
         remaining_sec = max(0, int(LOGIN_TIMEOUT_SECONDS - elapsed))
         rem_min, rem_sec = remaining_sec // 60, remaining_sec % 60
 
-        c_time, c_ext, c_lock = st.columns([1.5, 1, 1])
+        c_time, c_ext, c_lock = st.columns([1.4, 1, 1])
         c_time.markdown(
-            f"<div style='margin-top:6px; font-size:0.85em; color:#2e7d32; font-weight:bold;'>인증됨 ({rem_min}:{rem_sec:02d})</div>",
+            f"<div style='font-size:0.78em; color:#2e7d32; font-weight:bold; padding-top:4px;'>인증({rem_min}:{rem_sec:02d})</div>",
             unsafe_allow_html=True,
         )
         with c_ext:
@@ -768,77 +782,57 @@ if df_display is not None:
         st.markdown("###### 시장 방향성 & 수급 종합")
 
         p_zscore = 0.0
-        z_tag = "데이터 미수집/초기 상태"
+        z_tag = "초기상태"
         k_f_5d = 0
         k_inst_5d = 0
         k_f_days = 0
         k_inst_days = 0
         divergence_msg = ""
 
-        c0, c1, c2, c3, c4 = st.columns([1.2, 1, 1, 1, 1])
-
-        with c0:
-            market_supply_date = st.date_input(
-                "수급 조회일",
-                value=selected_date,
-                key="tab1_market_supply_date_picker",
-                label_visibility="collapsed",
-            )
-            supply_target_date_str = pd.to_datetime(
-                market_supply_date
-            ).strftime("%Y-%m-%d")
+        # 📌 모바일 초밀착 수평 지표 배치 (Flex-wrap 차단 적용)
+        c1, c2, c3, c4 = st.columns([1, 1, 1, 1])
 
         c1.metric(
             "전략 엔진",
-            "전략 3 (Top 7)"
-            if current_engine_key == "strat3_top7"
-            else (
-                "단기 타점 (+15% 목표)"
-                if current_engine_key == "short_term"
-                else ("강세장" if is_bull else "약세장")
-            ),
+            "Top 7" if current_engine_key == "strat3_top7" else ("단기타점" if current_engine_key == "short_term" else "듀얼"),
         )
 
-        regime_status_str = (
-            "상승장 (Bull)" if is_bull else "하락장 (Bear)"
-        )
+        regime_status_str = "상승(Bull)" if is_bull else "하락(Bear)"
         c2.metric(
-            "Market Regime",
+            "Regime",
             regime_status_str,
-            delta="신규중지"
-            if stop_new_buy
-            else ("비중축소" if reduce_holdings else "매수허용"),
+            delta="중지" if stop_new_buy else ("축소" if reduce_holdings else "허용"),
             delta_color="off",
         )
 
         buy_cnt = len(df_display[df_display["매매상태"] == "추천"])
         buy_cnt_display = min(buy_cnt, needed_slots)
         c3.metric(
-            "오늘의 추천 종목",
+            "추천 종목",
             f"{buy_cnt_display}개",
-            delta=f"슬롯 잔여: {needed_slots}/{top_n_cfg}",
+            delta=f"잔여 {needed_slots}/{top_n_cfg}",
         )
 
         sell_cnt = len(df_display[df_display["매매상태"] == "매도"])
-        c4.metric("오늘의 매도 종목", f"{sell_cnt}개")
+        c4.metric("매도 종목", f"{sell_cnt}개")
 
         st.divider()
 
         if market_type == "US":
             st.info(
-                "미국 시장 안내: 현재 한국장(KR)의 외국인/기관/비차익 수급 데이터만 수집하고 있습니다. 미국 시장(US)은 지수 추세 및 종목별 모멘텀 지표(Rank, RS)를 기준으로 전략이 동작합니다."
+                "미국 시장 안내: 현재 한국장(KR) 수급 데이터를 수집 중입니다. 미국장(US)은 지수 추세 및 종목별 모멘텀 지표(Rank, RS)를 기준으로 전략이 동작합니다."
             )
         else:
             if not is_authenticated:
                 st.info(
-                    "상세 투자자별/프로그램 매매동향 및 수급 지표는 우측 상단 [비밀번호 해제] 후 확인하실 수 있습니다."
+                    "상세 수급 지표는 우측 상단 [비밀번호 해제] 후 확인하실 수 있습니다."
                 )
             else:
                 try:
                     res_inv_all = (
                         supabase.table("market_investor_trends")
                         .select("*")
-                        .lte("trade_date", supply_target_date_str)
+                        .lte("trade_date", target_date_str)
                         .order("trade_date", desc=True)
                         .limit(60)
                         .execute()
@@ -855,7 +849,7 @@ if df_display is not None:
                     res_prog_all = (
                         supabase.table("market_program_trends")
                         .select("*")
-                        .lte("trade_date", supply_target_date_str)
+                        .lte("trade_date", target_date_str)
                         .order("trade_date", desc=True)
                         .limit(60)
                         .execute()
@@ -870,14 +864,14 @@ if df_display is not None:
 
                 df_inv = (
                     df_inv_all[
-                        df_inv_all["trade_date"] == supply_target_date_str
+                        df_inv_all["trade_date"] == target_date_str
                     ]
                     if not df_inv_all.empty
                     else pd.DataFrame()
                 )
                 df_prog = (
                     df_prog_all[
-                        df_prog_all["trade_date"] == supply_target_date_str
+                        df_prog_all["trade_date"] == target_date_str
                     ]
                     if not df_prog_all.empty
                     else pd.DataFrame()
@@ -999,102 +993,64 @@ if df_display is not None:
                     p_zscore = 0.0
 
                 if p_zscore >= 1.5:
-                    z_tag = "강한 수급 유입 (Z >= +1.5)"
+                    z_tag = "강한 유입"
                 elif p_zscore <= -1.5:
-                    z_tag = "강한 수급 이탈 (Z <= -1.5)"
+                    z_tag = "강한 이탈"
                 else:
-                    z_tag = "정상 수급 범위"
+                    z_tag = "정상 범위"
 
                 if market_safe and p_non_5d < 0 and k_f_5d < 0:
-                    divergence_msg = "[약세 다이버전스] 지수는 MA20 위에 있으나, 최근 5일 비차익/외국인 누적 수급이 연속 유출 중입니다."
+                    divergence_msg = "[약세 다이버전스] 지수 MA20 상회 중이나, 최근 5일 비차익/외인 수급 지속 이탈"
                 elif not market_safe and p_non_5d > 0 and k_f_5d > 0:
-                    divergence_msg = "[강세 다이버전스] 지수는 MA20 밑에 있으나, 최근 5일 스마트머니가 지속 저점 매수 중입니다."
+                    divergence_msg = "[강세 다이버전스] 지수 MA20 하회 중이나, 최근 5일 스마트머니 지속 매수 중"
 
                 if divergence_msg:
                     st.warning(divergence_msg)
 
-                col_t1_left, col_t1_right = st.columns([1.1, 0.9])
+                st.markdown("###### 수급 강도 & 연속성 지표 (백만원)")
                 
-                with col_t1_left:
-                    st.markdown("###### 수급 강도 & 연속성 지표 (최근 10일 빈도수 포함)")
-                    z_help_text = (
-                        "비차익 수급 Z-Score 안내\n"
-                        "- 개념: 당일 비차익 순매수 금액이 최근 20영업일 평균 대비 몇 표준편차 떨어져 있는지 나타냅니다.\n"
-                        "- 판독 기준:\n"
-                        "  * Z >= +1.5: 강한 스마트머니 유입\n"
-                        "  * Z <= -1.5: 강한 수급 이탈\n"
-                        "  * -0.5 < Z < +0.5: 정상 범위"
-                    )
+                r1_1, r1_2, r1_3 = st.columns(3)
+                r1_1.metric("비차익 Z", f"{p_zscore:+.2f}", delta=z_tag, delta_color="off")
+                r1_2.metric("비차익 5일", f"{p_non_5d:+,d}", delta=f"10일중 {p_non_10d_cnt}일")
+                r1_3.metric("KOSPI 외인", f"{k_f_5d:+,d}", delta=f"10일중 {k_f_10d_cnt}일")
 
-                    r1_1, r1_2, r1_3 = st.columns(3)
-                    r1_1.metric(
-                        "비차익 Z-Score",
-                        f"{p_zscore:+.2f}",
-                        delta=z_tag,
-                        delta_color="off",
-                        help=z_help_text,
-                    )
-                    r1_2.metric(
-                        "비차익 5일 누적",
-                        f"{p_non_5d:+,d} 백만",
-                        delta=f"10일 중 {p_non_10d_cnt}일 순매수",
-                    )
-                    r1_3.metric(
-                        "KOSPI 외인 5일",
-                        f"{k_f_5d:+,d} 백만",
-                        delta=f"10일 중 {k_f_10d_cnt}일 순매수",
-                    )
+                st.write("")
+                r2_1, r2_2, r2_3 = st.columns(3)
+                r2_1.metric("KOSPI 기관", f"{k_inst_5d:+,d}", delta=f"10일중 {k_i_10d_cnt}일")
+                r2_2.metric("KOSDAQ 외인", f"{kq_f_5d:+,d}", delta=f"10일중 {kq_f_10d_cnt}일")
+                r2_3.metric("KOSDAQ 기관", f"{kq_inst_5d:+,d}", delta=f"10일중 {kq_i_10d_cnt}일")
 
-                    st.write("")
-                    r2_1, r2_2, r2_3 = st.columns(3)
-                    r2_1.metric(
-                        "KOSPI 기관 5일",
-                        f"{k_inst_5d:+,d} 백만",
-                        delta=f"10일 중 {k_i_10d_cnt}일 순매수",
-                    )
-                    r2_2.metric(
-                        "KOSDAQ 외인 5일",
-                        f"{kq_f_5d:+,d} 백만",
-                        delta=f"10일 중 {kq_f_10d_cnt}일 순매수",
-                    )
-                    r2_3.metric(
-                        "KOSDAQ 기관 5일",
-                        f"{kq_inst_5d:+,d} 백만",
-                        delta=f"10일 중 {kq_i_10d_cnt}일 순매수",
-                    )
+                st.divider()
 
-                with col_t1_right:
-                    st.markdown(
-                        f"###### 주체별 매매 동향 ({supply_target_date_str} 기준 / 백만원)"
-                    )
-                    disp_inv_summary = pd.DataFrame([
-                        {
-                            "시장": "KOSPI",
-                            "외국인": int(k_row.get("foreign_net", 0)),
-                            "개인": int(k_row.get("individual_net", 0)),
-                            "기관계": int(k_row.get("institution_net", 0)),
-                        },
-                        {
-                            "시장": "KOSDAQ",
-                            "외국인": int(kq_row.get("foreign_net", 0)),
-                            "개인": int(kq_row.get("individual_net", 0)),
-                            "기관계": int(kq_row.get("institution_net", 0)),
-                        },
-                    ])
-                    st.dataframe(
-                        disp_inv_summary.style.format({
-                            "외국인": "{:+,d}",
-                            "개인": "{:+,d}",
-                            "기관계": "{:+,d}",
-                        }).map(
-                            lambda v: "color: red;"
-                            if v > 0
-                            else ("color: blue;" if v < 0 else ""),
-                            subset=["외국인", "개인", "기관계"],
-                        ),
-                        hide_index=True,
-                        use_container_width=True,
-                    )
+                st.markdown(f"###### 주체별 매매 동향 ({target_date_str} 기준 / 백만원)")
+                disp_inv_summary = pd.DataFrame([
+                    {
+                        "시장": "KOSPI",
+                        "외국인": int(k_row.get("foreign_net", 0)),
+                        "개인": int(k_row.get("individual_net", 0)),
+                        "기관계": int(k_row.get("institution_net", 0)),
+                    },
+                    {
+                        "시장": "KOSDAQ",
+                        "외국인": int(kq_row.get("foreign_net", 0)),
+                        "개인": int(kq_row.get("individual_net", 0)),
+                        "기관계": int(kq_row.get("institution_net", 0)),
+                    },
+                ])
+                st.dataframe(
+                    disp_inv_summary.style.format({
+                        "외국인": "{:+,d}",
+                        "개인": "{:+,d}",
+                        "기관계": "{:+,d}",
+                    }).map(
+                        lambda v: "color: red;"
+                        if v > 0
+                        else ("color: blue;" if v < 0 else ""),
+                        subset=["외국인", "개인", "기관계"],
+                    ),
+                    hide_index=True,
+                    use_container_width=True,
+                )
 
                 st.divider()
 
@@ -1104,7 +1060,7 @@ if df_display is not None:
                     res_liq_10d = (
                         supabase.table("daily_top_liquidity")
                         .select("*")
-                        .lte("trade_date", supply_target_date_str)
+                        .lte("trade_date", target_date_str)
                         .order("trade_date", desc=True)
                         .limit(200)
                         .execute()
@@ -1113,10 +1069,10 @@ if df_display is not None:
                 except Exception:
                     df_liq_10d = pd.DataFrame()
 
-                df_stock_liq = df_liq_10d[df_liq_10d["trade_date"] == supply_target_date_str] if not df_liq_10d.empty else pd.DataFrame()
+                df_stock_liq = df_liq_10d[df_liq_10d["trade_date"] == target_date_str] if not df_liq_10d.empty else pd.DataFrame()
 
                 tab_f_day, tab_i_day, tab_f_10d, tab_i_10d = st.tabs(
-                    ["외국인 당일", "기관 당일", "외국인 10일 빈도", "기관 10일 빈도"]
+                    ["외인 당일", "기관 당일", "외인 10일", "기관 10일"]
                 )
 
                 with tab_f_day:
@@ -1129,7 +1085,7 @@ if df_display is not None:
                             hide_index=True, use_container_width=True
                         )
                     else:
-                        st.caption("당일 데이터가 존재하지 않습니다.")
+                        st.caption("당일 데이터가 없습니다.")
 
                 with tab_i_day:
                     if not df_stock_liq.empty:
@@ -1141,7 +1097,7 @@ if df_display is not None:
                             hide_index=True, use_container_width=True
                         )
                     else:
-                        st.caption("당일 데이터가 존재하지 않습니다.")
+                        st.caption("당일 데이터가 없습니다.")
 
                 with tab_f_10d:
                     if not df_liq_10d.empty:
@@ -1179,87 +1135,9 @@ if df_display is not None:
                     else:
                         st.caption("최근 10일 수급 데이터가 없습니다.")
 
-                st.divider()
-
-                st.markdown("###### 최근 20영업일 비차익 & 차익 프로그램 순매수 합계 추이 (백만원)")
-                
-                if not df_p_sorted.empty:
-                    df_p_20d = df_p_sorted.head(20).sort_values("trade_date").copy()
-                    df_p_20d["date_fmt"] = pd.to_datetime(df_p_20d["trade_date"]).dt.strftime("%Y-%m-%d")
-                    df_p_20d["non_arb"] = pd.to_numeric(df_p_20d.get("non_arbitrage_net", 0), errors="coerce").fillna(0)
-                    df_p_20d["arb"] = pd.to_numeric(df_p_20d.get("arbitrage_net", 0), errors="coerce").fillna(0)
-                    df_p_20d["tot_prog"] = df_p_20d["non_arb"] + df_p_20d["arb"]
-
-                    df_p_20d["non_arb_cum"] = df_p_20d["non_arb"].cumsum()
-                    df_p_20d["arb_cum"] = df_p_20d["arb"].cumsum()
-                    df_p_20d["tot_prog_cum"] = df_p_20d["tot_prog"].cumsum()
-
-                    col_prg_chart, col_prg_table = st.columns([1.2, 1])
-
-                    with col_prg_chart:
-                        fig_p_trend = gg.Figure()
-                        fig_p_trend.add_trace(gg.Scatter(x=df_p_20d["date_fmt"], y=df_p_20d["non_arb_cum"], mode="lines+markers", name="비차익 누적", line=dict(color="#d62728", width=2.5)))
-                        fig_p_trend.add_trace(gg.Scatter(x=df_p_20d["date_fmt"], y=df_p_20d["arb_cum"], mode="lines+markers", name="차익 누적", line=dict(color="#ff7f0e", width=1.5, dash="dash")))
-                        fig_p_trend.add_trace(gg.Scatter(x=df_p_20d["date_fmt"], y=df_p_20d["tot_prog_cum"], mode="lines+markers", name="프로그램 전체 누적", line=dict(color="#1f77b4", width=2)))
-                        
-                        fig_p_trend.update_layout(
-                            height=300,
-                            margin=dict(l=10, r=10, t=20, b=20),
-                            xaxis=dict(type="category", tickangle=-45),
-                            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-                        )
-                        st.plotly_chart(fig_p_trend, use_container_width=True)
-
-                    with col_prg_table:
-                        disp_p_table = df_p_20d[["date_fmt", "non_arb", "arb", "tot_prog"]].sort_values("date_fmt", ascending=False).rename(columns={
-                            "date_fmt": "일자", "non_arb": "비차익", "arb": "차익", "tot_prog": "합계"
-                        })
-                        st.dataframe(
-                            disp_p_table.style.format({"비차익": "{:+,.0f}", "차익": "{:+,.0f}", "합계": "{:+,.0f}"})
-                            .map(lambda v: "color: red;" if float(v) > 0 else ("color: blue;" if float(v) < 0 else ""), subset=["비차익", "차익", "합계"]),
-                            hide_index=True, use_container_width=True
-                        )
-                else:
-                    st.info("프로그램 추이 데이터가 부족합니다.")
-
-                st.divider()
-                st.markdown(f"###### {supply_target_date_str} 해당 일자 전체 수급 데이터 현황")
-                if not df_stock_liq.empty:
-                    df_liq_full = df_stock_liq.sort_values("rank", ascending=True)[["rank", "ticker", "name", "close_price", "change_rate", "foreign_net", "inst_net"]].copy()
-                    df_liq_full = df_liq_full.rename(columns={"rank": "순위", "ticker": "티커", "name": "종목명", "close_price": "종가", "change_rate": "등락률", "foreign_net": "외국인순매수", "inst_net": "기관순매수"})
-
-                    st.dataframe(
-                        df_liq_full.style.format({"종가": "{:,.0f}원", "등락률": "{:+.2f}%", "외국인순매수": "{:+,.0f}", "기관순매수": "{:+,.0f}"})
-                        .map(lambda v: "color: red;" if float(v) > 0 else ("color: blue;" if float(v) < 0 else ""), subset=["등락률", "외국인순매수", "기관순매수"]),
-                        hide_index=True, use_container_width=True
-                    )
-                else:
-                    st.info(f"{supply_target_date_str} 일자에 수집된 전체 수급 종목 내역이 존재하지 않습니다.")
-
-        with st.expander("Gemini AI 시장 전체 수급 종합 분석 리포트", expanded=False):
-            prompt_text = f"""[Market Regime 및 수급 종합 분석 요청]
-- 분석 일자: {supply_target_date_str}
-- Market Regime 상태: {regime_status_str}
-- 비차익 Z-Score: {p_zscore:+.2f} ({z_tag})
-- KOSPI 외인 5일 누적: {k_f_5d:+,d} 백만원 (5일 중 {k_f_days}일 순매수)
-- KOSPI 기관 5일 누적: {k_inst_5d:+,d} 백만원 (5일 중 {k_inst_days}일 순매수)
-- 지수-수급 다이버전스: {divergence_msg if divergence_msg else "특이사항 없음"}"""
-
-            st.code(prompt_text, language="markdown")
-            if st.button("Gemini AI 수급 종합 분석 실행", type="primary", use_container_width=True, key="btn_run_gemini_market_analysis"):
-                with st.spinner("수급 흐름을 종합 분석 중입니다..."):
-                    analysis_res = analyze_stock_with_gemini(
-                        "MARKET_TREND",
-                        "코스피/코스닥 수급동향",
-                        {"MOT": 0, "RS(90)": 0, "이격도": 0, "종가": 0},
-                        prompt_text,
-                    )
-                st.success("수급 분석 완료")
-                st.markdown(analysis_res)
-
         st.divider()
         index_name_str = "코스피 (^KS11)" if market_type == "KR" else "S&P 500 (^GSPC)"
-        st.markdown(f"###### {index_name_str} 시장 지수 추이 (최근 120영업일)")
+        st.markdown(f"###### {index_name_str} 지수 추이 (최근 120영업일)")
 
         target_index_symbol = "^KS11" if market_type == "KR" else "^GSPC"
         try:
@@ -1322,17 +1200,17 @@ if df_display is not None:
                         ))
 
                     fig_market_idx.update_layout(
-                        height=320,
-                        margin=dict(l=20, r=20, t=30, b=20),
+                        height=280,
+                        margin=dict(l=10, r=10, t=20, b=20),
                         xaxis=dict(type="category", tickangle=-45),
                         yaxis=dict(autorange=True, fixedrange=False),
                         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
                     )
                     st.plotly_chart(fig_market_idx, use_container_width=True)
                 else:
-                    st.info(f"[{target_index_symbol}] 지수 시계열 데이터가 daily_analysis 테이블에 존재하지 않습니다.")
+                    st.info(f"[{target_index_symbol}] 지수 시계열 데이터가 존재하지 않습니다.")
             else:
-                st.info("daily_analysis 테이블에서 지수 데이터를 불러올 수 없습니다.")
+                st.info("지수 데이터를 불러올 수 없습니다.")
         except Exception as e:
             st.error(f"지수 차트 불러오기 실패: {e}")
 
@@ -1417,12 +1295,11 @@ if df_display is not None:
 
         st.divider()
 
-        st.markdown("<div id='analysis-center-section'></div>", unsafe_allow_html=True)
-        col_center_title, col_top_btn = st.columns([4, 1])
+        col_center_title, col_top_btn = st.columns([3.5, 1])
         with col_center_title:
-            st.markdown("###### 선택 종목 통합 분석 센터 (기술적 차트 & 수급 동향 & Gemini AI 분석)")
+            st.markdown("###### 선택 종목 통합 분석 센터")
         with col_top_btn:
-            st.markdown("<a href='#top-section' style='float:right; text-decoration:none; background-color:#333; color:white; padding:4px 12px; border-radius:15px; font-weight:bold; font-size:0.85em;'>맨 위로</a>", unsafe_allow_html=True)
+            st.markdown("<a href='#top-section' style='float:right; text-decoration:none; background-color:#333; color:white; padding:2px 8px; border-radius:10px; font-size:0.75em;'>맨 위로</a>", unsafe_allow_html=True)
 
         top200_tickers = [
             str(t).strip().upper()
@@ -1446,7 +1323,7 @@ if df_display is not None:
             else 0
         )
 
-        with st.expander("선택 종목 통합 분석 센터 열기 / 접기", expanded=True):
+        with st.expander("통합 분석 센터 열기 / 접기", expanded=True):
             sel_chart_ticker = st.selectbox(
                 "분석 대상 종목 선택",
                 options=top200_tickers,
@@ -1481,11 +1358,11 @@ if df_display is not None:
                 st.write("")
                 st.divider()
 
-                st.markdown("###### 선택 종목 외국인/기관 수급 동향")
+                st.markdown("###### 외국인/기관 수급 동향")
 
                 if market_type == "US":
                     st.info(
-                        "미국 시장 안내: 현재 미국 주식은 외국인/기관 수급 데이터를 별도 수집하지 않습니다."
+                        "미국 주식은 외국인/기관 수급 데이터를 별도 수집하지 않습니다."
                     )
                 else:
                     try:
@@ -1522,7 +1399,7 @@ if df_display is not None:
                                     x=df_supply["date_fmt"],
                                     y=df_supply["foreign_cum"],
                                     mode="lines+markers",
-                                    name="외국인 누적수급",
+                                    name="외국인 누적",
                                     line=dict(color="#d62728", width=2),
                                 )
                             )
@@ -1531,14 +1408,14 @@ if df_display is not None:
                                     x=df_supply["date_fmt"],
                                     y=df_supply["inst_cum"],
                                     mode="lines+markers",
-                                    name="기관 누적수급",
+                                    name="기관 누적",
                                     line=dict(color="#2ca02c", width=2),
                                 )
                             )
                             fig_supply.update_layout(
-                                title=f"[{sel_chart_ticker}] 최근 외국인 vs 기관 누적 수급 추이 (백만원)",
-                                height=280,
-                                margin=dict(l=20, r=20, t=40, b=20),
+                                title=f"[{sel_chart_ticker}] 외국인 vs 기관 누적 수급 (백만원)",
+                                height=260,
+                                margin=dict(l=10, r=10, t=30, b=10),
                                 xaxis=dict(type="category"),
                                 legend=dict(
                                     orientation="h",
@@ -1587,19 +1464,19 @@ if df_display is not None:
                             )
                     else:
                         st.info(
-                            f"[{sel_chart_ticker}] 종목의 최근 외국인/기관 수급 내역이 존재하지 않습니다."
+                            f"[{sel_chart_ticker}] 종목의 최근 수급 내역이 없습니다."
                         )
 
                 st.write("")
                 st.divider()
 
-                st.markdown("###### Google Gemini AI 개별 종목 분석")
+                st.markdown("###### Gemini AI 개별 종목 분석")
                 used_cnt, remain_cnt = get_remaining_quota()
                 st.caption(
                     f"Gemini 잔여 사용량: **{remain_cnt}/{MAX_DAILY_QUOTA}회**"
                 )
 
-                col_opt, col_btn = st.columns([3, 1])
+                col_opt, col_btn = st.columns([2.5, 1.5])
                 with col_opt:
                     analysis_option = st.selectbox(
                         "분석 항목 선택",
@@ -1614,9 +1491,8 @@ if df_display is not None:
                     )
                 with col_btn:
                     st.write("")
-                    st.write("")
                     run_ai_btn = st.button(
-                        "Gemini 종목 분석 실행",
+                        "AI 분석 실행",
                         type="primary",
                         use_container_width=True,
                         key="btn_run_gemini_stock_analysis",
@@ -1641,12 +1517,12 @@ if df_display is not None:
     # TAB 3: 시스템 매매 지시서
     with tab3:
         st.markdown(
-            f"##### 시스템 매매 지시서 [보유 현황: {current_holdings_count} / {top_n_cfg}개]"
+            f"##### 시스템 매매 지시서 [보유: {current_holdings_count} / {top_n_cfg}개]"
         )
 
         if not is_authenticated:
             st.info(
-                "실제 매매 신호 확인 및 주문 실행을 위해 우측 상단 [비밀번호 해제] 버튼을 클릭해 주십시오."
+                "매매 신호 확인 및 주문 실행을 위해 우측 상단 [비밀번호 해제] 버튼을 클릭해 주십시오."
             )
         else:
             with st.expander(
@@ -1683,8 +1559,8 @@ if df_display is not None:
                         )
                     )
 
-                    st.markdown("###### 포트폴리오 리스크 노출도")
-                    risk_col1, risk_col2 = st.columns([3, 1])
+                    st.markdown("###### 포트폴리오 리스크")
+                    risk_col1, risk_col2 = st.columns([2.5, 1.5])
                     with risk_col1:
                         st.progress(min(total_risk_pct / 100.0, 1.0))
                     with risk_col2:
@@ -1823,12 +1699,6 @@ if df_display is not None:
                         m_date = st.date_input(
                             "매수일", value=selected_date, key="m_date"
                         )
-                        
-                        is_manual_buy = st.checkbox(
-                            "수기 매수 기록 (알고리즘 외 직접 진입)",
-                            value=True,
-                            key="chk_manual_buy"
-                        )
 
                         if st.button(
                             "수동 매수 실행",
@@ -1867,7 +1737,7 @@ if df_display is not None:
                         )
 
                         exit_reason_preset = st.selectbox(
-                            "청산 사유 선택",
+                            "청산 사유",
                             [
                                 "수기 매도 (사용자 임의 청산)",
                                 "목표가 도달 (수동 익절)",
@@ -1878,15 +1748,7 @@ if df_display is not None:
                             key="sb_exit_reason_preset"
                         )
 
-                        if exit_reason_preset == "직접 입력":
-                            custom_reason_input = st.text_input(
-                                "청산 사유 직접 입력",
-                                placeholder="예: 개인 자금 필요로 청산",
-                                key="txt_custom_exit_reason"
-                            )
-                            final_exit_reason = custom_reason_input.strip() if custom_reason_input.strip() else "사용자 수동 청산"
-                        else:
-                            final_exit_reason = exit_reason_preset
+                        final_exit_reason = exit_reason_preset
 
                         if st.button(
                             "수동 매도 실행",
@@ -1904,7 +1766,7 @@ if df_display is not None:
                                     market_type,
                                     exit_reason=final_exit_reason
                                 )
-                                st.success(f"[{ms_ticker}] 매도 처리 완료 (사유: {final_exit_reason})")
+                                st.success(f"[{ms_ticker}] 매도 완료")
 
             st.markdown("---")
 
@@ -1912,7 +1774,7 @@ if df_display is not None:
                 f"[{market_type}] 운용 자금 설정 및 리스크 관리",
                 expanded=False,
             ):
-                col_cap1, col_cap2 = st.columns([3, 1])
+                col_cap1, col_cap2 = st.columns([2.5, 1.5])
                 with col_cap1:
                     new_capital_input = st.number_input(
                         f"[{market_type}] 총 운용 자금 설정",
@@ -1922,7 +1784,6 @@ if df_display is not None:
                         key=f"tab3_cap_input_{market_type}",
                     )
                 with col_cap2:
-                    st.write("")
                     st.write("")
                     if st.button(
                         "자금 저장",
@@ -1951,14 +1812,7 @@ if df_display is not None:
                             supabase.table("strategy_settings").upsert(
                                 existing_data
                             ).execute()
-                            cap_disp = (
-                                f"${new_capital_input:,.2f}"
-                                if market_type == "US"
-                                else f"{new_capital_input:,.0f}원"
-                            )
-                            st.success(
-                                f"총 운용자금이 {cap_disp}으로 업데이트되었습니다."
-                            )
+                            st.success("운용 자금 저장 완료")
                             st.rerun()
                         except Exception as e:
                             st.error(f"DB 저장 실패: {e}")
@@ -1974,53 +1828,13 @@ if df_display is not None:
                 )
                 account_total_input = new_capital_input
 
-            st.markdown("###### 전략 매매 기준 및 스톱기준 상세 가이드")
-
-            st.markdown(
-                """
-                <div style="background-color: #f8f9fa; padding: 15px; border-radius: 8px; border: 1px solid #e9ecef; margin-bottom: 15px;">
-                <h6 style="margin-top: 0; color: #1f77b4;">보유 종목 스톱기준(1번/2번) 산출 공식</h6>
-                <ul style="margin-bottom: 0; padding-left: 20px;">
-                <li><b>1번(익절 - 트레일링 스탑)</b>: 보유 종목이 <b>매수가 대비 +8% 이상 상승 달성 후 적용</b>되는 익절가입니다.<br>
-                <code>스톱가 = max(최고가 × 0.92, 매수가)</code> (최고가 대비 -8% 하락 지점 또는 최소 본절가 보장)</li>
-                <li style="margin-top: 8px;"><b>2번(손절 - ATR 손절가)</b>: 아직 +8% 수익에 도달하지 못한 경우 적용되는 원천 손절가입니다.<br>
-                <code>스톱가 = 매수가 - (2.5 × 진입시 ATR)</code></li>
-                </ul>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-
-            if market_type == "US" or current_engine_key == "short_term":
-                st.info(
-                    """
-                    **미국장 단기 타점 모멘텀 전략 (목표익절 +15%) 매매 기준**
-                    * **매수 조건**: 모멘텀 순위 **상위 200위** 이내 & 모멘텀 점수(MOT) **>= 0.9** & 이격도 **-5.0% ~ +7.0%** 안착
-                    * **매도/청산 조건**:
-                      1. **목표 익절**: 진입가 대비 **+15.0%** 달성 시
-                      2. **손절/이탈**: 진입가 대비 **-5.0%** 하락 또는 **20일선(MA20)** 이탈 시
-                      3. **기간 초과**: 보유 **14일 경과** 시점 수익률 **+5.0% 미만** 정체 시 청산 (+5.0% 이상 시 추세 계속 유지)
-                    """
-                )
-            else:
-                st.success(
-                    """
-                    **전략 3: Top 7 Regime (한국장 기본) 매매 기준**
-                    * **매수 조건**: 모멘텀 순위 **상위 15위** 이내 & RS(90) > 0, RS(10) > 0 & 지수 20일선 안착 종목 중 이격도 낮은 순 7개 선택
-                    * **매도/청산 조건**:
-                      1. **ATR 손절(2번)**: 진입가 대비 **-2.5x ATR** 이탈 시
-                      2. **트레일링 스탑(1번)**: 수익률 **+8.0%** 달성 후 최고가 대비 **-8.0%** 밀릴 시 (최소 본절가 보장)
-                      3. **MA20 이탈**: 20일 이동평균선 하회 시 즉시 매도
-                    """
-                )
-
     # TAB 4: 성과 분석
     with tab4:
         st.markdown(f"##### {market_type} 시장 성과 분석 리포트")
 
         if not is_authenticated:
             st.info(
-                "상세 성과 내역 확인을 위해 우측 상단 [비밀번호 해제] 버튼을 클릭해 주십시오."
+                "성과 내역 확인을 위해 우측 상단 [비밀번호 해제] 버튼을 클릭해 주십시오."
             )
         else:
             current_table_name = get_holdings_table(market_type)
@@ -2172,25 +1986,12 @@ if df_display is not None:
                     )
                     m4.metric("기대 수익", profit_fmt(expectancy))
 
-                    m5, m6, m7, m8 = st.columns(4)
-                    m5.metric("평균 익절", profit_fmt(avg_win_amt))
-                    m6.metric("평균 손절", profit_fmt(avg_loss_amt))
-                    m7.metric(
-                        "평균 수익률", f"{df_hist['profit_rate'].mean():+.2f}%"
-                    )
-                    m8.metric(
-                        "손익비 (PF)",
-                        f"{profit_factor:.2f}"
-                        if profit_factor < 999
-                        else "무한",
-                    )
-
                     st.write("")
                     st.markdown("###### 수익 기여도 시각화 차트")
                     draw_attribution_charts(df_hist, market_type)
 
                     st.write("")
-                    st.markdown("###### 상세 청산 매매 내역 (종목 클릭 시 하단 자동 복기 분석)")
+                    st.markdown("###### 상세 청산 매매 내역")
 
                     df_hist_sorted = df_hist.sort_values("sell_date", ascending=False).reset_index(drop=True)
                     disp_cols = [
@@ -2208,7 +2009,7 @@ if df_display is not None:
                     df_hist_disp = df_hist_sorted.rename(columns={"holding_days": "보유일수"}).copy()
                     disp_cols[-1] = "보유일수"
 
-                    event_perf = st.dataframe(
+                    st.dataframe(
                         df_hist_disp[disp_cols].style.format({
                             "buy_price": price_fmt,
                             "sell_price": price_fmt,
@@ -2219,180 +2020,11 @@ if df_display is not None:
                         }),
                         hide_index=True,
                         use_container_width=True,
-                        on_select="rerun",
-                        selection_mode="single-row",
-                        key="perf_history_table_selection",
                     )
-
-                    if event_perf and event_perf.get("selection", {}).get("rows"):
-                        sel_idx = event_perf["selection"]["rows"][0]
-                        selected_trade = df_hist_sorted.iloc[sel_idx]
-
-                        if st.session_state.get("selected_perf_trade_idx") != sel_idx:
-                            st.session_state["selected_perf_trade_idx"] = sel_idx
-                            st.session_state["selected_perf_trade_data"] = selected_trade.to_dict()
-                            st.rerun()
-
-                    st.divider()
-                    sel_trade_data = st.session_state.get("selected_perf_trade_data")
-
-                    if sel_trade_data:
-                        stock_nm = sel_trade_data.get("종목명", sel_trade_data.get("ticker"))
-                        ticker_code = str(sel_trade_data.get("ticker")).strip().upper()
-                        buy_date_str = str(sel_trade_data.get("buy_date"))
-                        sell_date_str = str(sel_trade_data.get("sell_date"))
-                        p_amt = float(sel_trade_data.get("profit_amount", 0))
-                        p_rate = float(sel_trade_data.get("profit_rate", 0))
-                        h_days = int(sel_trade_data.get("holding_days", 0))
-                        b_price = float(sel_trade_data.get("buy_price", 0))
-                        s_price = float(sel_trade_data.get("sell_price", 0))
-
-                        exit_reason = sel_trade_data.get("exit_reason", sel_trade_data.get("sell_reason", "시스템 조건 청산"))
-
-                        buy_rank, buy_mot, buy_rs90, buy_dispar = "-", "-", "-", "-"
-                        try:
-                            buy_analysis_res = (
-                                supabase.table("daily_analysis")
-                                .select("momentum_rank, weighted_momentum, rs_score, ma20, close_price")
-                                .eq("ticker", ticker_code)
-                                .eq("price_date", buy_date_str)
-                                .execute()
-                            )
-                            if buy_analysis_res.data and len(buy_analysis_res.data) > 0:
-                                buy_info = buy_analysis_res.data[0]
-                                buy_rank = buy_info.get("momentum_rank", "-")
-                                buy_mot = buy_info.get("weighted_momentum", "-")
-                                buy_rs90 = buy_info.get("rs_score", "-")
-
-                                b_close = buy_info.get("close_price")
-                                b_ma20 = buy_info.get("ma20")
-                                if b_close and b_ma20 and float(b_ma20) > 0:
-                                    buy_dispar = ((float(b_close) / float(b_ma20)) - 1) * 100
-                        except Exception:
-                            pass
-
-                        sell_rank, sell_mot, sell_rs90, sell_dispar = "-", "-", "-", "-"
-                        try:
-                            sell_analysis_res = (
-                                supabase.table("daily_analysis")
-                                .select("momentum_rank, weighted_momentum, rs_score, ma20, close_price")
-                                .eq("ticker", ticker_code)
-                                .eq("price_date", sell_date_str)
-                                .execute()
-                            )
-                            if sell_analysis_res.data and len(sell_analysis_res.data) > 0:
-                                sell_info = sell_analysis_res.data[0]
-                                sell_rank = sell_info.get("momentum_rank", "-")
-                                sell_mot = sell_info.get("weighted_momentum", "-")
-                                sell_rs90 = sell_info.get("rs_score", "-")
-
-                                s_close = sell_info.get("close_price")
-                                s_ma20 = sell_info.get("ma20")
-                                if s_close and s_ma20 and float(s_ma20) > 0:
-                                    sell_dispar = ((float(s_close) / float(s_ma20)) - 1) * 100
-                        except Exception:
-                            pass
-
-                        buy_mot_str = f"{float(buy_mot):.2f}" if isinstance(buy_mot, (int, float)) and buy_mot != "-" else str(buy_mot)
-                        buy_rs90_str = f"{float(buy_rs90):.2f}" if isinstance(buy_rs90, (int, float)) and buy_rs90 != "-" else str(buy_rs90)
-                        buy_dispar_str = f"{float(buy_dispar):+.2f}%" if isinstance(buy_dispar, (int, float)) and buy_dispar != "-" else str(buy_dispar)
-
-                        sell_mot_str = f"{float(sell_mot):.2f}" if isinstance(sell_mot, (int, float)) and sell_mot != "-" else str(sell_mot)
-                        sell_rs90_str = f"{float(sell_rs90):.2f}" if isinstance(sell_rs90, (int, float)) and sell_rs90 != "-" else str(sell_rs90)
-                        sell_dispar_str = f"{float(sell_dispar):+.2f}%" if isinstance(sell_dispar, (int, float)) and sell_dispar != "-" else str(sell_dispar)
-
-                        st.markdown(f"###### [{stock_nm} ({ticker_code})] 매매 복기 상세 분석")
-
-                        c_r1, c_r2, c_r3, c_r4, c_r5 = st.columns(5)
-                        c_r1.metric("실현 손익", profit_fmt(p_amt), delta=f"{p_rate:+.2f}%")
-                        c_r2.metric("매수 단가 / 일자", price_fmt.format(b_price), delta=buy_date_str, delta_color="off")
-                        c_r3.metric("매도 단가 / 일자", price_fmt.format(s_price), delta=sell_date_str, delta_color="off")
-                        c_r4.metric("보유 기간", f"{h_days}일")
-                        c_r5.metric("청산 사유", str(exit_reason))
-
-                        st.write("")
-                        st.markdown("###### 진입 & 청산 시점 퀀트 지표 비교")
-                        m_m1, m_m2, m_m3, m_m4 = st.columns(4)
-                        m_m1.metric("모멘텀 순위", f"진입 {buy_rank}위", delta=f"청산 {sell_rank}위", delta_color="off")
-                        m_m2.metric("MOT 점수", f"진입 {buy_mot_str}", delta=f"청산 {sell_mot_str}", delta_color="off")
-                        m_m3.metric("상대강도 (RS 90)", f"진입 {buy_rs90_str}", delta=f"청산 {sell_rs90_str}", delta_color="off")
-                        m_m4.metric("이격도 (MA20 대비)", f"진입 {buy_dispar_str}", delta=f"청산 {sell_dispar_str}", delta_color="off")
-
-                        st.write("")
-                        st.markdown("###### 매매 당시 주가 차트 및 진입/청산 타점 (매수 / 매도)")
-
-                        perf_supply_dates = []
-                        if market_type == "KR":
-                            try:
-                                res_perf_supp = (
-                                    supabase.table("daily_top_liquidity")
-                                    .select("trade_date")
-                                    .eq("ticker", ticker_code)
-                                    .or_("foreign_net.gt.0,inst_net.gt.0")
-                                    .execute()
-                                )
-                                if res_perf_supp.data:
-                                    perf_supply_dates = [r["trade_date"] for r in res_perf_supp.data]
-                            except Exception:
-                                pass
-
-                        draw_integrated_chart(
-                            ticker_code,
-                            market_type,
-                            {ticker_code: stock_nm},
-                            buy_date=buy_date_str,
-                            sell_date=sell_date_str,
-                            buy_price=b_price,
-                            sell_price=s_price,
-                            supply_dates=perf_supply_dates,
-                        )
-
-                        st.write("")
-                        st.markdown("###### Gemini AI 매매 원칙 복기 리포트")
-                        
-                        review_prompt = f"""[매매 복기(Post-Trade Review) 정밀 요청]
-- 종목명: {stock_nm} ({ticker_code})
-- 매수일 / 매수가: {buy_date_str} / {b_price}
-- 매도일 / 매도가: {sell_date_str} / {s_price}
-- 보유기간: {h_days}일
-- 실현손익: {p_amt} ({p_rate:+.2f}%)
-- 적용 전략 엔진: {current_engine_key}
-
-[진입 시점 지표]
-- 순위: {buy_rank}위 | MOT: {buy_mot_str} | RS(90): {buy_rs90_str} | 이격도: {buy_dispar_str}
-
-[청산 시점 지표 & 매도 사유]
-- 순위: {sell_rank}위 | MOT: {sell_mot_str} | RS(90): {sell_rs90_str} | 이격도: {sell_dispar_str}
-- 체결된 청산 사유: {exit_reason}
-
-[복기 요청 사항]
-위의 당시 데이터와 전략 규칙을 비교하여 정밀 평가해 주세요:
-1. **진입 적절성**: 당시 순위, MOT, RS, 이격도 조건이 진입 기준에 충족했는가?
-2. **청산 적절성**: 청산 당시 지표와 발생한 매도 사유({exit_reason})가 원칙에 맞는 청산인가?
-3. **리스크 통제**: 손실폭 제어 및 보유 기간 관리가 적절했는가?
-4. **Actionable Feedback**: Keep(유지) / Problem(문제) / Try(시도) 형태의 피드백"""
-
-                        st.code(review_prompt, language="markdown")
-
-                        if st.button("Gemini AI 매매 복기 실행", type="primary", use_container_width=True, key="btn_run_gemini_trade_review"):
-                            with st.spinner(f"'{stock_nm}' 매매 내역을 종합 복기 중입니다..."):
-                                review_result = analyze_stock_with_gemini(
-                                    ticker_code,
-                                    stock_nm,
-                                    {"MOT": buy_mot_str, "RS(90)": buy_rs90_str, "이격도": buy_dispar_str, "종가": s_price},
-                                    review_prompt,
-                                )
-                            st.success("복기 분석 완료")
-                            st.markdown(review_result)
-                    else:
-                        st.info("상세 청산 매매 내역 표에서 종목 클릭 시 하단에 자동 복기 리포트가 생성됩니다.")
 
     # TAB 5: 백테스트 리포트
     with tab5:
-        st.markdown("##### [Top 7 Regime] 자동 백테스트 검증 리포트")
-        st.caption(
-            "GitHub Actions를 통해 시뮬레이션된 백테스트 결과 및 청산 매매 내역입니다."
-        )
+        st.markdown("##### [Top 7 Regime] 자동 백테스트 리포트")
 
         try:
             res_bt = (
@@ -2406,9 +2038,7 @@ if df_display is not None:
             bt_data = []
 
         if not bt_data:
-            st.info(
-                "아직 저장된 백테스트 매매 내역이 없습니다. GitHub Actions에서 `backtest.py`를 실행해 주십시오."
-            )
+            st.info("저장된 백테스트 내역이 없습니다.")
         else:
             df_bt = pd.DataFrame(bt_data)
             df_bt["profit_amount"] = pd.to_numeric(
@@ -2428,25 +2058,14 @@ if df_display is not None:
                 if total_bt_trades > 0
                 else 0.0
             )
-            avg_bt_win = win_bt["profit_amount"].mean() if not win_bt.empty else 0.0
-            avg_bt_loss = (
-                abs(loss_bt["profit_amount"].mean())
-                if not loss_bt.empty
-                else 0.0
-            )
-            bt_pf = (avg_bt_win / avg_bt_loss) if avg_bt_loss > 0 else 999.0
 
-            st.markdown("###### 백테스트 종합 요약 지표")
-            b1, b2, b3, b4 = st.columns(4)
-            b1.metric("총 청산 거래", f"{total_bt_trades}건")
-            b2.metric("총 실현 손익", f"{tot_bt_profit:+,.0f}원")
-            b3.metric("백테스트 승률", f"{win_bt_rate:.1f}%")
-            b4.metric(
-                "손익비 (PF)", f"{bt_pf:.2f}" if bt_pf < 999 else "무한"
-            )
+            st.markdown("###### 백테스트 요약")
+            b1, b2, b3 = st.columns(3)
+            b1.metric("총 거래", f"{total_bt_trades}건")
+            b2.metric("총 손익", f"{tot_bt_profit:+,.0f}원")
+            b3.metric("승률", f"{win_bt_rate:.1f}%")
 
             st.divider()
-            st.markdown("###### 백테스트 상세 매매 청산 목록")
 
             df_bt_disp = df_bt[[
                 "sell_date",
