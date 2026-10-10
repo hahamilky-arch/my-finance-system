@@ -18,7 +18,7 @@ def draw_integrated_chart(
     sell_price=None,
     supply_dates=None,
 ):
-    """개별 종목 기술적 차트 + 거래량 + 최하단 지수 차트 통합 차트 (가독성 향상 버전)"""
+    """개별 종목 기술적 차트 + 거래량 + 최하단 지수 차트 통합 차트"""
     stock_name = ticker_name_map.get(ticker, ticker)
     index_symbol = "^KS11" if market_type == "KR" else "^GSPC"
     index_name = "코스피 (^KS11)" if market_type == "KR" else "S&P 500 (^GSPC)"
@@ -98,7 +98,7 @@ def draw_integrated_chart(
             ),
         )
 
-        # --- Row 1: 개별 종목 캔들스틱 및 이동평균선 (가독성 강화) ---
+        # --- Row 1: 개별 종목 캔들스틱 (테두리 제거로 깔끔한 표현) 및 이동평균선 ---
         fig.add_trace(
             go.Candlestick(
                 x=df_stock["date_str"],
@@ -111,13 +111,12 @@ def draw_integrated_chart(
                 increasing_fillcolor="#e53935" if market_type == "KR" else "#2e7d32",
                 decreasing_line_color="#1e88e5" if market_type == "KR" else "#e53935",
                 decreasing_fillcolor="#1e88e5" if market_type == "KR" else "#e53935",
-                line=dict(width=1.2),
             ),
             row=1,
             col=1,
         )
 
-        # 이동평균선 (선 굵기 및 대시 스타일 조정으로 가독성 향상)
+        # 이동평균선
         if "ma20" in df_stock.columns and df_stock["ma20"].notna().any():
             fig.add_trace(
                 go.Scatter(
@@ -125,7 +124,7 @@ def draw_integrated_chart(
                     y=df_stock["ma20"],
                     mode="lines",
                     name="MA20 (20일선)",
-                    line=dict(color="#f57c00", width=2.0),
+                    line=dict(color="#f57c00", width=1.8),
                 ),
                 row=1,
                 col=1,
@@ -138,7 +137,7 @@ def draw_integrated_chart(
                     y=df_stock["ma50"],
                     mode="lines",
                     name="MA50 (50일선)",
-                    line=dict(color="#388e3c", width=1.5, dash="dash"),
+                    line=dict(color="#388e3c", width=1.4, dash="dash"),
                 ),
                 row=1,
                 col=1,
@@ -151,7 +150,7 @@ def draw_integrated_chart(
                     y=df_stock["ma200"],
                     mode="lines",
                     name="MA200 (200일선)",
-                    line=dict(color="#8e24aa", width=1.5, dash="dashdot"),
+                    line=dict(color="#8e24aa", width=1.4, dash="dashdot"),
                 ),
                 row=1,
                 col=1,
@@ -182,7 +181,7 @@ def draw_integrated_chart(
                     y=df_merged["close_price"],
                     mode="lines",
                     name="지수 종가",
-                    line=dict(color="#5e35b1", width=2.0),
+                    line=dict(color="#5e35b1", width=1.8),
                     connectgaps=True,
                 ),
                 row=3,
@@ -237,7 +236,6 @@ def draw_integrated_chart(
         # 📌 관통 세로 점선 설정 (수급포착일, 매수, 매도)
         v_shapes = []
 
-        # 1. 수급 포착 세로 점선 (초록색 점선)
         if supply_dates:
             supp_df = df_stock[df_stock["price_date"].isin(supply_dates)]
             for _, s_row in supp_df.iterrows():
@@ -250,11 +248,10 @@ def draw_integrated_chart(
                         x1=s_row["date_str"],
                         y0=0,
                         y1=1,
-                        line=dict(color="#2e7d32", width=1.5, dash="dash"),
+                        line=dict(color="#2e7d32", width=1.2, dash="dash"),
                     )
                 )
 
-        # 2. 매수 타점 세로 점선 (빨간색 점선)
         if buy_date and buy_date in df_stock["price_date"].values:
             b_row = df_stock[df_stock["price_date"] == buy_date].iloc[0]
             v_shapes.append(
@@ -266,11 +263,10 @@ def draw_integrated_chart(
                     x1=b_row["date_str"],
                     y0=0,
                     y1=1,
-                    line=dict(color="#e53935", width=2.0, dash="dash"),
+                    line=dict(color="#e53935", width=1.8, dash="dash"),
                 )
             )
 
-        # 3. 매도 타점 세로 점선 (파란색 점선)
         if sell_date and sell_date in df_stock["price_date"].values:
             s_row = df_stock[df_stock["price_date"] == sell_date].iloc[0]
             v_shapes.append(
@@ -282,7 +278,7 @@ def draw_integrated_chart(
                     x1=s_row["date_str"],
                     y0=0,
                     y1=1,
-                    line=dict(color="#1e88e5", width=2.0, dash="dash"),
+                    line=dict(color="#1e88e5", width=1.8, dash="dash"),
                 )
             )
 
@@ -300,7 +296,7 @@ def draw_integrated_chart(
                 x=0.5,
                 font=dict(size=11),
             ),
-            plot_bgcolor="#ffffff",  # 깔끔한 하얀색 배경
+            plot_bgcolor="#ffffff",
         )
 
         fig.update_xaxes(type="category", tickangle=-45, gridcolor="#f0f0f0")
