@@ -461,7 +461,7 @@ def display_trade_list(
                     unsafe_allow_html=True,
                 )
 
-        # 2) 예비 종목 출력 루프 (수정 완료)
+        # 2) 예비 종목 출력 루프
         if not backup_data.empty:
             st.markdown("---")
             st.markdown("###### 예비 목록 (대기/교체용)")
@@ -1423,7 +1423,6 @@ if df_display is not None:
                     pass
 
                 st.markdown("###### 개별 종목 기술적 차트")
-                # 📌 supply_dates 파라미터 전달
                 draw_integrated_chart(
                     sel_chart_ticker,
                     market_type,
@@ -2100,27 +2099,36 @@ if df_display is not None:
                         key="perf_table_selection",
                     )
 
-                    # 선택된 매매 정보 추출
-                    selected_trade = None
-                    sel_idx = 0
-                    if event_perf and event_perf.get("selection", {}).get("rows"):
-                        sel_idx = event_perf["selection"]["rows"][0]
-                        selected_trade = df_hist_disp.iloc[sel_idx]
-
-                    # 복기 대상 선택 셀렉트박스 (표 클릭과 연동)
+                    # 복기 대상 선택 옵션 리스트
                     trade_options = df_hist_disp.apply(
                         lambda r: f"[{r['sell_date']}] {r['종목명']} ({r['ticker']}) - 손익: {profit_fmt(r['profit_amount'])} ({r['profit_rate']:+.2f}%)", axis=1
                     ).tolist()
 
+                    # 📌 표(st.dataframe)에서 행을 선택했을 때 인덱스를 session_state에 동기화
+                    if event_perf and event_perf.get("selection", {}).get("rows"):
+                        table_sel_idx = event_perf["selection"]["rows"][0]
+                        if st.session_state.get("perf_review_idx") != table_sel_idx:
+                            st.session_state["perf_review_idx"] = table_sel_idx
+                            st.rerun()
+
+                    # 현재 선택된 인덱스 가져오기 (기본값: 0)
+                    current_perf_idx = st.session_state.get("perf_review_idx", 0)
+                    if current_perf_idx >= len(trade_options):
+                        current_perf_idx = 0
+
                     selected_trade_option = st.selectbox(
                         "🔍 복기할 매매 건 선택",
                         options=trade_options,
-                        index=sel_idx if selected_trade is not None else 0,
+                        index=current_perf_idx,
                         key="sb_perf_review_trade"
                     )
 
+                    # 셀렉트박스를 직접 변경했을 경우 인덱스 업데이트
+                    selected_idx_from_sb = trade_options.index(selected_trade_option)
+                    st.session_state["perf_review_idx"] = selected_idx_from_sb
+
                     # 선택한 매매 데이터 로드
-                    review_row = df_hist_disp.iloc[trade_options.index(selected_trade_option)]
+                    review_row = df_hist_disp.iloc[selected_idx_from_sb]
                     rev_ticker = str(review_row["ticker"]).strip().upper()
                     rev_b_date = str(review_row["buy_date"])
                     rev_s_date = str(review_row["sell_date"])
