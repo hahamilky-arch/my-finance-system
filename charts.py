@@ -18,7 +18,7 @@ def draw_integrated_chart(
     sell_price=None,
     supply_dates=None,
 ):
-    """개별 종목 기술적 차트 + 거래량 + 모멘텀 순위 추이 + 최하단 지수 차트 통합 차트"""
+    """개별 종목 기술적 차트 + 거래량 + 모멘텀 순위 추이 + 최하단 지수 차트 한 화면 컴팩트 통합 차트"""
     stock_name = ticker_name_map.get(ticker, ticker)
     index_symbol = "^KS11" if market_type == "KR" else "^GSPC"
     index_name = "코스피 (^KS11)" if market_type == "KR" else "S&P 500 (^GSPC)"
@@ -91,18 +91,18 @@ def draw_integrated_chart(
         else:
             df_merged = pd.DataFrame()
 
-        # 📌 4개 서브플롯 생성 (주가, 거래량, 모멘텀 순위, 지수)
+        # 📌 한 화면 핏 4개 서브플롯 생성 (컴팩트 간격 적용)
         fig = make_subplots(
             rows=4,
             cols=1,
             shared_xaxes=True,
-            vertical_spacing=0.04,
-            row_heights=[0.42, 0.15, 0.20, 0.23],
+            vertical_spacing=0.035,
+            row_heights=[0.45, 0.15, 0.18, 0.22],
             subplot_titles=(
-                f"[{ticker}] {stock_name} 주가 추이 (최신 순위: {latest_rank_str})",
+                f"[{ticker}] {stock_name} (순위: {latest_rank_str})",
                 "거래량",
-                "모멘텀 순위 추이 (상단이 1위 - 위로 갈수록 높은 순위)",
-                f"{index_name} 지수 추이 (20/50/200일선)",
+                "모멘텀 순위 추이 (상단 1위)",
+                f"{index_name} (20/50/200일선)",
             ),
         )
 
@@ -125,19 +125,19 @@ def draw_integrated_chart(
 
         if "ma20" in df_stock.columns and df_stock["ma20"].notna().any():
             fig.add_trace(
-                go.Scatter(x=df_stock["date_str"], y=df_stock["ma20"], mode="lines", name="MA20 (20일선)", line=dict(color="#f57c00", width=1.8)),
+                go.Scatter(x=df_stock["date_str"], y=df_stock["ma20"], mode="lines", name="MA20", line=dict(color="#f57c00", width=1.5)),
                 row=1, col=1
             )
 
         if "ma50" in df_stock.columns and df_stock["ma50"].notna().any():
             fig.add_trace(
-                go.Scatter(x=df_stock["date_str"], y=df_stock["ma50"], mode="lines", name="MA50 (50일선)", line=dict(color="#388e3c", width=1.4, dash="dash")),
+                go.Scatter(x=df_stock["date_str"], y=df_stock["ma50"], mode="lines", name="MA50", line=dict(color="#388e3c", width=1.2, dash="dash")),
                 row=1, col=1
             )
 
         if "ma200" in df_stock.columns and df_stock["ma200"].notna().any():
             fig.add_trace(
-                go.Scatter(x=df_stock["date_str"], y=df_stock["ma200"], mode="lines", name="MA200 (200일선)", line=dict(color="#8e24aa", width=1.4, dash="dashdot")),
+                go.Scatter(x=df_stock["date_str"], y=df_stock["ma200"], mode="lines", name="MA200", line=dict(color="#8e24aa", width=1.2, dash="dashdot")),
                 row=1, col=1
             )
 
@@ -156,8 +156,8 @@ def draw_integrated_chart(
                     y=df_stock["momentum_rank"],
                     mode="lines+markers",
                     name="모멘텀 순위",
-                    line=dict(color="#d32f2f", width=2),
-                    marker=dict(size=4, color="#d32f2f"),
+                    line=dict(color="#d32f2f", width=1.5),
+                    marker=dict(size=3, color="#d32f2f"),
                     hovertemplate="<b>%{x}</b><br>모멘텀 순위: %{y}위<extra></extra>",
                     showlegend=False,
                 ),
@@ -167,17 +167,17 @@ def draw_integrated_chart(
         # Row 4: 지수
         if not df_merged.empty:
             fig.add_trace(
-                go.Scatter(x=df_merged["date_str"], y=df_merged["close_price"], mode="lines", name="지수 종가", line=dict(color="#5e35b1", width=1.8), connectgaps=True),
+                go.Scatter(x=df_merged["date_str"], y=df_merged["close_price"], mode="lines", name="지수종가", line=dict(color="#5e35b1", width=1.5), connectgaps=True),
                 row=4, col=1
             )
             if "ma20" in df_merged.columns and df_merged["ma20"].notna().any():
-                fig.add_trace(go.Scatter(x=df_merged["date_str"], y=df_merged["ma20"], mode="lines", name="지수 MA20", line=dict(color="#f57c00", width=1.2, dash="dash"), showlegend=False, connectgaps=True), row=4, col=1)
+                fig.add_trace(go.Scatter(x=df_merged["date_str"], y=df_merged["ma20"], mode="lines", name="지수 MA20", line=dict(color="#f57c00", width=1.0, dash="dash"), showlegend=False, connectgaps=True), row=4, col=1)
             if "ma50" in df_merged.columns and df_merged["ma50"].notna().any():
-                fig.add_trace(go.Scatter(x=df_merged["date_str"], y=df_merged["ma50"], mode="lines", name="지수 MA50", line=dict(color="#388e3c", width=1.2, dash="dot"), showlegend=False, connectgaps=True), row=4, col=1)
+                fig.add_trace(go.Scatter(x=df_merged["date_str"], y=df_merged["ma50"], mode="lines", name="지수 MA50", line=dict(color="#388e3c", width=1.0, dash="dot"), showlegend=False, connectgaps=True), row=4, col=1)
             if "ma200" in df_merged.columns and df_merged["ma200"].notna().any():
-                fig.add_trace(go.Scatter(x=df_merged["date_str"], y=df_merged["ma200"], mode="lines", name="지수 MA200", line=dict(color="#8e24aa", width=1.2, dash="dashdot"), showlegend=False, connectgaps=True), row=4, col=1)
+                fig.add_trace(go.Scatter(x=df_merged["date_str"], y=df_merged["ma200"], mode="lines", name="지수 MA200", line=dict(color="#8e24aa", width=1.0, dash="dashdot"), showlegend=False, connectgaps=True), row=4, col=1)
 
-        # 📌 세로 점선 (shapes) - YYYY-MM-DD 매칭 보장
+        # 📌 세로 점선 (shapes)
         v_shapes = []
 
         if supply_dates:
@@ -223,21 +223,24 @@ def draw_integrated_chart(
             except Exception:
                 pass
 
-        # 레이아웃 설정
+        # 📌 한 화면에 들어오는 컴팩트 레이아웃 설정 (height=700)
         fig.update_layout(
-            height=950,
-            margin=dict(l=10, r=10, t=60, b=20),
+            height=700,
+            margin=dict(l=10, r=10, t=50, b=10),
             xaxis_rangeslider_visible=False,
             shapes=v_shapes,
-            legend=dict(orientation="h", yanchor="bottom", y=1.05, xanchor="center", x=0.5, font=dict(size=11)),
+            legend=dict(orientation="h", yanchor="bottom", y=1.04, xanchor="center", x=0.5, font=dict(size=10)),
             plot_bgcolor="#ffffff",
         )
 
-        fig.update_xaxes(type="category", tickangle=-45, gridcolor="#f0f0f0")
-        fig.update_yaxes(autorange=True, fixedrange=False, gridcolor="#f0f0f0", row=1, col=1)
-        fig.update_yaxes(autorange=True, fixedrange=False, gridcolor="#f0f0f0", row=2, col=1)
-        fig.update_yaxes(autorange="reversed", fixedrange=False, gridcolor="#f0f0f0", row=3, col=1) # 1위가 맨 위로 위치
-        fig.update_yaxes(autorange=True, fixedrange=False, gridcolor="#f0f0f0", row=4, col=1)
+        # 서브플롯 타이틀 폰트 크기 조정
+        fig.for_each_annotation(lambda a: a.update(font=dict(size=11)))
+
+        fig.update_xaxes(type="category", tickangle=-45, gridcolor="#f0f0f0", tickfont=dict(size=9))
+        fig.update_yaxes(autorange=True, fixedrange=False, gridcolor="#f0f0f0", tickfont=dict(size=9), row=1, col=1)
+        fig.update_yaxes(autorange=True, fixedrange=False, gridcolor="#f0f0f0", tickfont=dict(size=9), row=2, col=1)
+        fig.update_yaxes(autorange="reversed", fixedrange=False, gridcolor="#f0f0f0", tickfont=dict(size=9), row=3, col=1)
+        fig.update_yaxes(autorange=True, fixedrange=False, gridcolor="#f0f0f0", tickfont=dict(size=9), row=4, col=1)
 
         st.plotly_chart(fig, use_container_width=True)
 
@@ -277,7 +280,7 @@ def draw_attribution_charts(df_hist, market_type):
         )
         fig_bar.update_layout(
             title="종목별 누적 실현 손익 기여도",
-            height=360,
+            height=340,
             margin=dict(l=20, r=20, t=40, b=20),
             xaxis=dict(tickangle=-45),
             plot_bgcolor="#ffffff",
@@ -312,7 +315,7 @@ def draw_attribution_charts(df_hist, market_type):
             title="보유기간 대비 수익률 분포도",
             xaxis_title="보유일수 (일)",
             yaxis_title="수익률 (%)",
-            height=360,
+            height=340,
             margin=dict(l=20, r=20, t=40, b=20),
             plot_bgcolor="#ffffff",
         )
