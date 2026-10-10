@@ -1225,7 +1225,7 @@ if df_display is not None:
                 st.success("수급 분석 완료")
                 st.markdown(analysis_res)
 
-        # 📌 [최하단 지수 차트 영역 - ma50, ma200 데이터 연동]
+        # 📌 [최하단 지수 차트 영역]
         st.divider()
         index_name_str = "코스피 (^KS11)" if market_type == "KR" else "S&P 500 (^GSPC)"
         st.markdown(f"###### {index_name_str} 시장 지수 추이 (최근 120영업일)")
@@ -1255,7 +1255,6 @@ if df_display is not None:
 
                     fig_market_idx = gg.Figure()
                     
-                    # 1. 지수 종가
                     fig_market_idx.add_trace(gg.Scatter(
                         x=df_idx_c["date_str"],
                         y=df_idx_c["close_val"],
@@ -1264,7 +1263,6 @@ if df_display is not None:
                         line=dict(color="#9467bd", width=2.5)
                     ))
                     
-                    # 2. MA20 (20일선)
                     if df_idx_c["ma20_val"].notna().any():
                         fig_market_idx.add_trace(gg.Scatter(
                             x=df_idx_c["date_str"],
@@ -1274,7 +1272,6 @@ if df_display is not None:
                             line=dict(color="#ff7f0e", width=1.5, dash="dash")
                         ))
 
-                    # 3. MA50 (50일선)
                     if df_idx_c["ma50_val"].notna().any():
                         fig_market_idx.add_trace(gg.Scatter(
                             x=df_idx_c["date_str"],
@@ -1284,7 +1281,6 @@ if df_display is not None:
                             line=dict(color="#2ca02c", width=1.5, dash="dot")
                         ))
 
-                    # 4. MA200 (200일선)
                     if df_idx_c["ma200_val"].notna().any():
                         fig_market_idx.add_trace(gg.Scatter(
                             x=df_idx_c["date_str"],
@@ -1429,9 +1425,28 @@ if df_display is not None:
             )
 
             if sel_chart_ticker:
+                # 📌 선택된 종목의 수급 포착 날짜 자동 조회 (daily_top_liquidity 테이블 연동)
+                supply_dates = []
+                try:
+                    res_supp = (
+                        supabase.table("daily_top_liquidity")
+                        .select("trade_date")
+                        .eq("ticker", sel_chart_ticker)
+                        .or_("foreign_net.gt.0,inst_net.gt.0")
+                        .execute()
+                    )
+                    if res_supp.data:
+                        supply_dates = [r["trade_date"] for r in res_supp.data]
+                except Exception:
+                    pass
+
                 st.markdown("###### 개별 종목 기술적 차트")
+                # ✅ supply_dates 전달하여 차트 그리기
                 draw_integrated_chart(
-                    sel_chart_ticker, market_type, ticker_name_map
+                    sel_chart_ticker,
+                    market_type,
+                    ticker_name_map,
+                    supply_dates=supply_dates
                 )
 
                 st.write("")
