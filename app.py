@@ -42,7 +42,7 @@ components.html(
 
 st.markdown("<div id='top-section'></div>", unsafe_allow_html=True)
 
-# 1. 커스텀 CSS (상단 스팀릿 메뉴 보정 + 반응형 메트릭/수급 카드)
+# 1. 커스텀 CSS (상단 스팀릿 메뉴 보정 + 반응형 메트릭/수급 카드/헤더)
 st.markdown(
     """
     <style>
@@ -70,6 +70,18 @@ st.markdown(
         padding-bottom: 4px !important;
         border-bottom: 2px solid #e0e0e0 !important;
         box-shadow: 0px 2px 6px rgba(0,0,0,0.05);
+    }
+
+    /* 🎨 상단 프로필/인증 바 스타일링 */
+    .header-container {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        background: #f8f9fa;
+        padding: 6px 12px;
+        border-radius: 8px;
+        border: 1px solid #e9ecef;
+        margin-bottom: 6px;
     }
 
     /* 🎨 커스텀 상단 메트릭 카드 4개 Grid */
@@ -716,10 +728,10 @@ with st.sidebar:
     col_side_kr.metric("KR추천", f"{kr_buy_count}개")
     col_side_us.metric("US추천", f"{us_buy_count}개")
 
-# 📌 헤더 및 8:2 모바일 수평 밀착 비밀번호 해제
+# 📌 반응형 상단 헤더 & 인증 영역 개선 (가독성 향상 및 기능 유지)
 col_title, col_auth_status = st.columns([1.5, 2.5])
 with col_title:
-    st.markdown("<h5 style='margin:0; padding:0; line-height:1.8;'>Quant Alpha</h5>", unsafe_allow_html=True)
+    st.markdown("<h5 style='margin:0; padding:4px 0; line-height:1.4;'>Quant Alpha</h5>", unsafe_allow_html=True)
 
 with col_auth_status:
     if is_authenticated:
@@ -727,9 +739,9 @@ with col_auth_status:
         remaining_sec = max(0, int(LOGIN_TIMEOUT_SECONDS - elapsed))
         rem_min, rem_sec = remaining_sec // 60, remaining_sec % 60
 
-        c_time, c_ext, c_lock = st.columns([1.4, 1, 1])
+        c_time, c_ext, c_lock = st.columns([1.4, 1.0, 1.0])
         c_time.markdown(
-            f"<div style='font-size:0.78em; color:#2e7d32; font-weight:bold; padding-top:4px;'>인증({rem_min}:{rem_sec:02d})</div>",
+            f"<div style='font-size:0.82em; color:#2e7d32; font-weight:bold; padding-top:6px; text-align:right;'>인증({rem_min}:{rem_sec:02d})</div>",
             unsafe_allow_html=True,
         )
         with c_ext:
@@ -749,7 +761,7 @@ with col_auth_status:
                 type="password",
                 key="global_pwd_input",
                 label_visibility="collapsed",
-                placeholder="비밀번호",
+                placeholder="비밀번호 입력",
             )
         with c_p2:
             if st.button(
@@ -1903,7 +1915,7 @@ if df_display is not None:
                 )
                 account_total_input = new_capital_input
 
-    # TAB 4: 성과 분석 및 매매 타점 복기
+    # TAB 4: 성과 분석 및 매매 타점 복기 (표-셀렉트박스 선택 완벽 동기화)
     with tab4:
         st.markdown(f"##### {market_type} 시장 성과 분석 리포트")
 
@@ -2082,7 +2094,12 @@ if df_display is not None:
                     df_hist_disp = df_hist_sorted.rename(columns={"holding_days": "보유일수"}).copy()
                     disp_cols[-1] = "보유일수"
 
-                    # 선택 가능한 매매 내역 표
+                    # 📌 복기 선택지 옵션 생성
+                    trade_options = df_hist_disp.apply(
+                        lambda r: f"[{r['sell_date']}] [{r['ticker']}] {r['종목명']} - 손익: {profit_fmt(r['profit_amount'])} ({r['profit_rate']:+.2f}%)", axis=1
+                    ).tolist()
+
+                    # 📌 이벤트 감지형 데이터프레임
                     event_perf = st.dataframe(
                         df_hist_disp[disp_cols].style.format({
                             "buy_price": price_fmt,
@@ -2099,36 +2116,23 @@ if df_display is not None:
                         key="perf_table_selection",
                     )
 
-                    # 복기 대상 선택 옵션 리스트
-                    trade_options = df_hist_disp.apply(
-                        lambda r: f"[{r['sell_date']}] {r['종목명']} ({r['ticker']}) - 손익: {profit_fmt(r['profit_amount'])} ({r['profit_rate']:+.2f}%)", axis=1
-                    ).tolist()
-
-                    # 📌 표(st.dataframe)에서 행을 선택했을 때 인덱스를 session_state에 동기화
+                    # 📌 표 클릭시 session_state 및 셀렉트박스 값 동기화
                     if event_perf and event_perf.get("selection", {}).get("rows"):
-                        table_sel_idx = event_perf["selection"]["rows"][0]
-                        if st.session_state.get("perf_review_idx") != table_sel_idx:
-                            st.session_state["perf_review_idx"] = table_sel_idx
+                        selected_row_from_table = event_perf["selection"]["rows"][0]
+                        matched_option = trade_options[selected_row_from_table]
+                        if st.session_state.get("sb_perf_review_trade") != matched_option:
+                            st.session_state["sb_perf_review_trade"] = matched_option
                             st.rerun()
-
-                    # 현재 선택된 인덱스 가져오기 (기본값: 0)
-                    current_perf_idx = st.session_state.get("perf_review_idx", 0)
-                    if current_perf_idx >= len(trade_options):
-                        current_perf_idx = 0
 
                     selected_trade_option = st.selectbox(
                         "🔍 복기할 매매 건 선택",
                         options=trade_options,
-                        index=current_perf_idx,
                         key="sb_perf_review_trade"
                     )
 
-                    # 셀렉트박스를 직접 변경했을 경우 인덱스 업데이트
-                    selected_idx_from_sb = trade_options.index(selected_trade_option)
-                    st.session_state["perf_review_idx"] = selected_idx_from_sb
-
                     # 선택한 매매 데이터 로드
-                    review_row = df_hist_disp.iloc[selected_idx_from_sb]
+                    selected_idx = trade_options.index(selected_trade_option)
+                    review_row = df_hist_disp.iloc[selected_idx]
                     rev_ticker = str(review_row["ticker"]).strip().upper()
                     rev_b_date = str(review_row["buy_date"])
                     rev_s_date = str(review_row["sell_date"])
@@ -2153,7 +2157,7 @@ if df_display is not None:
 
                     st.markdown(f"###### 📈 [{review_row['종목명']}] 매수/매도 타점 및 수급 복기 차트")
 
-                    # 📌 buy_date, sell_date, supply_dates 전달
+                    # 📌 buy_date, sell_date, supply_dates 파라미터 전달
                     ticker_map = {rev_ticker: review_row["종목명"]}
                     draw_integrated_chart(
                         rev_ticker,
