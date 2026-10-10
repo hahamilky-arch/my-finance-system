@@ -42,17 +42,23 @@ components.html(
 
 st.markdown("<div id='top-section'></div>", unsafe_allow_html=True)
 
-# 1. 상단 탭 Sticky 설정 및 정돈된 스타일
+# 1. 상단 탭 Sticky 설정 및 모바일 반응형 수평 핏(Fit) CSS
 st.markdown(
     """
     <style>
     [data-testid="stMainBlockContainer"], .main, .main .block-container {
         overflow: visible !important;
     }
-    .block-container { padding-top: 1rem !important; padding-bottom: 2rem !important; }
-    html, body, [class*="st-"] { font-size: 14px !important; }
-    h5 { font-size: 1.2rem !important; margin-bottom: 0.5rem !important; }
+    .block-container { 
+        padding-top: 0.5rem !important; 
+        padding-bottom: 1rem !important; 
+        padding-left: 0.5rem !important;
+        padding-right: 0.5rem !important;
+    }
+    html, body, [class*="st-"] { font-size: 13px !important; }
+    h5 { font-size: 1.05rem !important; margin-bottom: 0.3rem !important; }
     
+    /* Sticky 탭 반응형 최적화 */
     div[data-testid="stTabs"] > div:first-child,
     div[data-baseweb="tab-list"],
     .stTabs [role="tablist"] {
@@ -60,20 +66,47 @@ st.markdown(
         top: 0px !important;
         background-color: #ffffff !important;
         z-index: 99999 !important;
-        padding-top: 8px !important;
-        padding-bottom: 4px !important;
+        padding-top: 4px !important;
+        padding-bottom: 2px !important;
         border-bottom: 2px solid #e0e0e0 !important;
-        box-shadow: 0px 4px 10px rgba(0,0,0,0.05);
+        box-shadow: 0px 2px 6px rgba(0,0,0,0.05);
+    }
+
+    /* 📌 모바일 전용 반응형 레이아웃 (폭이 좁은 폰 화면 강제 수평 컴팩트화) */
+    @media (max-width: 640px) {
+        /* st.columns가 세로로 무너지는 현상 방지 (강제 수평 유지) */
+        div[data-testid="column"] {
+            min-width: 0 !important;
+            flex: 1 1 0% !important;
+        }
+        
+        /* 메트릭 박스 글자 및 여백 줄이기 */
+        [data-testid="stMetricValue"] {
+            font-size: 0.95rem !important;
+        }
+        [data-testid="stMetricLabel"] {
+            font-size: 0.75rem !important;
+        }
+        [data-testid="stMetricDelta"] {
+            font-size: 0.7rem !important;
+        }
+        
+        /* 상단 버튼 높이 및 글자 축소 */
+        .stButton button {
+            padding: 2px 6px !important;
+            font-size: 0.75rem !important;
+            height: 32px !important;
+        }
     }
     
     .backup-tag {
-        background-color: #fff3cd; color: #856404; font-size: 0.85em; font-weight: bold;
-        padding: 2px 8px; border-radius: 6px; border: 1px solid #ffeeba; margin-left: 6px;
+        background-color: #fff3cd; color: #856404; font-size: 0.8em; font-weight: bold;
+        padding: 1px 6px; border-radius: 4px; border: 1px solid #ffeeba; margin-left: 4px;
         display: inline-block;
     }
     .primary-tag {
-        background-color: #e3f2fd; color: #0d47a1; font-size: 0.85em; font-weight: bold;
-        padding: 2px 8px; border-radius: 6px; border: 1px solid #bbdefb; margin-left: 6px;
+        background-color: #e3f2fd; color: #0d47a1; font-size: 0.8em; font-weight: bold;
+        padding: 1px 6px; border-radius: 4px; border: 1px solid #bbdefb; margin-left: 4px;
         display: inline-block;
     }
     </style>
@@ -734,7 +767,6 @@ if df_display is not None:
     with tab1:
         st.markdown("###### 시장 방향성 & 수급 종합")
 
-        # NameError 방지 기본값 변수 초기화
         p_zscore = 0.0
         z_tag = "데이터 미수집/초기 상태"
         k_f_5d = 0
@@ -1225,7 +1257,6 @@ if df_display is not None:
                 st.success("수급 분석 완료")
                 st.markdown(analysis_res)
 
-        # 📌 [최하단 지수 차트 영역]
         st.divider()
         index_name_str = "코스피 (^KS11)" if market_type == "KR" else "S&P 500 (^GSPC)"
         st.markdown(f"###### {index_name_str} 시장 지수 추이 (최근 120영업일)")
@@ -1425,7 +1456,6 @@ if df_display is not None:
             )
 
             if sel_chart_ticker:
-                # 📌 선택된 종목의 수급 포착 날짜 자동 조회 (daily_top_liquidity 테이블 연동)
                 supply_dates = []
                 try:
                     res_supp = (
@@ -1441,7 +1471,6 @@ if df_display is not None:
                     pass
 
                 st.markdown("###### 개별 종목 기술적 차트")
-                # ✅ supply_dates 전달하여 차트 그리기
                 draw_integrated_chart(
                     sel_chart_ticker,
                     market_type,
@@ -1772,12 +1801,10 @@ if df_display is not None:
                 current_engine_key,
             )
 
-            # 수동 매수/매도 입력 센터
             st.write("")
             with st.expander("보유 종목 수동 매수/매도 입력 센터", expanded=False):
                 col_m_left, col_m_right = st.columns(2)
                 
-                # 1. 수동 매수 구역
                 with col_m_left:
                     st.markdown("###### 수동 매수")
                     with st.container(border=True):
@@ -1820,7 +1847,6 @@ if df_display is not None:
                                 )
                                 st.success(f"[{m_ticker}] 수동 매수 등록 완료")
 
-                # 2. 수동 매도 구역
                 with col_m_right:
                     st.markdown("###### 수동 매도")
                     with st.container(border=True):
