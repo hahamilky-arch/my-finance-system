@@ -474,7 +474,7 @@ def display_trade_list(
                 )
                 rec_rank_val = row.get("추천순위", row.get("매수추천순위", ""))
                 rec_rank_display = (
-                    f"{rec_rank_val}위" if rec_rank_display != "" else "-"
+                    f"{rec_rank_val}위" if rec_rank_val != "" else "-"
                 )
                 reason_desc = (
                     f"후순위 대체 종목 [추천순위: {rec_rank_display}]"
@@ -1903,7 +1903,7 @@ if df_display is not None:
                 )
                 account_total_input = new_capital_input
 
-    # TAB 4: 성과 분석
+    # TAB 4: 성과 분석 및 매매 타점 복기
     with tab4:
         st.markdown(f"##### {market_type} 시장 성과 분석 리포트")
 
@@ -2031,11 +2031,6 @@ if df_display is not None:
                         if len(loss_df) > 0
                         else 0.0
                     )
-                    profit_factor = (
-                        (avg_win_amt / avg_loss_amt)
-                        if avg_loss_amt > 0
-                        else 999.0
-                    )
                     expectancy = ((win_rate / 100) * avg_win_amt) - (
                         (loss_rate / 100) * avg_loss_amt
                     )
@@ -2066,7 +2061,10 @@ if df_display is not None:
                     draw_attribution_charts(df_hist, market_type)
 
                     st.write("")
-                    st.markdown("###### 상세 청산 매매 내역")
+                    st.divider()
+
+                    st.markdown("###### 상세 청산 매매 내역 및 타점 복기")
+                    st.caption("표에서 매매 건을 선택하거나 아래 선택 상자에서 복기할 종목을 고르면 매수/매도 시점이 차트에 표시됩니다.")
 
                     df_hist_sorted = df_hist.sort_values("sell_date", ascending=False).reset_index(drop=True)
                     disp_cols = [
@@ -2084,7 +2082,8 @@ if df_display is not None:
                     df_hist_disp = df_hist_sorted.rename(columns={"holding_days": "보유일수"}).copy()
                     disp_cols[-1] = "보유일수"
 
-                    st.dataframe(
+                    # 선택 가능한 매매 내역 표
+                    event_perf = st.dataframe(
                         df_hist_disp[disp_cols].style.format({
                             "buy_price": price_fmt,
                             "sell_price": price_fmt,
@@ -2095,6 +2094,52 @@ if df_display is not None:
                         }),
                         hide_index=True,
                         use_container_width=True,
+                        on_select="rerun",
+                        selection_mode="single-row",
+                        key="perf_table_selection",
+                    )
+
+                    # 선택된 매매 정보 추출
+                    selected_trade = None
+                    sel_idx = 0
+                    if event_perf and event_perf.get("selection", {}).get("rows"):
+                        sel_idx = event_perf["selection"]["rows"][0]
+                        selected_trade = df_hist_disp.iloc[sel_idx]
+
+                    # 복기 대상 선택 셀렉트박스 (표 클릭과 연동)
+                    trade_options = df_hist_disp.apply(
+                        lambda r: f"[{r['sell_date']}] {r['종목명']} ({r['ticker']}) - 손익: {profit_fmt(r['profit_amount'])} ({r['profit_rate']:+.2f}%)", axis=1
+                    ).tolist()
+
+                    selected_trade_option = st.selectbox(
+                        "🔍 복기할 매매 건 선택",
+                        options=trade_options,
+                        index=sel_idx if selected_trade is not None else 0,
+                        key="sb_perf_review_trade"
+                    )
+
+                    # 선택한 매매 데이터 로드
+                    review_row = df_hist_disp.iloc[trade_options.index(selected_trade_option)]
+                    rev_ticker = str(review_row["ticker"]).strip().upper()
+                    rev_b_date = str(review_row["buy_date"])
+                    rev_s_date = str(review_row["sell_date"])
+                    rev_b_price = float(review_row["buy_price"])
+                    rev_s_price = float(review_row["sell_price"])
+                    rev_profit_rate = float(review_row["profit_rate"])
+
+                    st.markdown(f"###### 📈 [{review_row['종목명']}] 매수/매도 타점 복기 차트")
+
+                    # 타점 표시 차트 호출
+                    ticker_map = {rev_ticker: review_row["종목명"]}
+                    draw_integrated_chart(
+                        rev_ticker,
+                        market_type,
+                        ticker_map
+                    )
+
+                    st.info(
+                        f"📌 **매매 요약**: 매수일 **{rev_b_date}** ({rev_b_price:,.0f}원) ➔ 매도일 **{rev_s_date}** ({rev_s_price:,.0f}원) | "
+                        f"수익률: **{rev_profit_rate:+.2f}%** | 보유기간: **{review_row['보유일수']}일**"
                     )
 
     # TAB 5: 백테스트 리포트
