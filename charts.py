@@ -18,16 +18,16 @@ def draw_integrated_chart(
     sell_price=None,
     supply_dates=None,
 ):
-    """개별 종목 기술적 차트 + 거래량 + 최하단 지수 차트 통합 차트"""
+    """개별 종목 기술적 차트 + 거래량 + 최하단 지수 차트 통합 차트 (모멘텀 순위 표기 추가)"""
     stock_name = ticker_name_map.get(ticker, ticker)
     index_symbol = "^KS11" if market_type == "KR" else "^GSPC"
     index_name = "코스피 (^KS11)" if market_type == "KR" else "S&P 500 (^GSPC)"
 
     try:
-        # 1. 개별 종목 시계열 데이터 조회 (최근 120영업일)
+        # 1. 개별 종목 시계열 데이터 조회 (momentum_rank 컬럼 추가 조회)
         res_stock = (
             supabase.table("daily_analysis")
-            .select("price_date, close_price, open_price, high_price, low_price, volume, ma20, ma50, ma200")
+            .select("price_date, close_price, open_price, high_price, low_price, volume, ma20, ma50, ma200, momentum_rank")
             .eq("ticker", ticker)
             .order("price_date", desc=True)
             .limit(120)
@@ -53,7 +53,7 @@ def draw_integrated_chart(
         df_stock["price_date_dt"] = pd.to_datetime(df_stock["price_date"])
         df_stock = df_stock.sort_values("price_date_dt").reset_index(drop=True)
 
-        for col in ["close_price", "open_price", "high_price", "low_price", "volume", "ma20", "ma50", "ma200"]:
+        for col in ["close_price", "open_price", "high_price", "low_price", "volume", "ma20", "ma50", "ma200", "momentum_rank"]:
             if col in df_stock.columns:
                 df_stock[col] = pd.to_numeric(df_stock[col], errors="coerce")
 
@@ -65,6 +65,13 @@ def draw_integrated_chart(
         ].reset_index(drop=True)
 
         df_stock["date_str"] = df_stock["price_date_dt"].dt.strftime("%Y-%m-%d")
+
+        # 최신 모멘텀 순위 정보 추출
+        latest_rank = "-"
+        if "momentum_rank" in df_stock.columns and df_stock["momentum_rank"].notna().any():
+            latest_rank_val = df_stock["momentum_rank"].iloc[-1]
+            if pd.notna(latest_rank_val) and latest_rank_val > 0:
+                latest_rank = f"{int(latest_rank_val)}위"
 
         # --- 지수 데이터 전처리 ---
         df_index = pd.DataFrame(res_index.data) if res_index.data else pd.DataFrame()
@@ -84,7 +91,7 @@ def draw_integrated_chart(
         else:
             df_merged = pd.DataFrame()
 
-        # 📌 3개 행 서브플롯 생성
+        # 📌 3개 행 서브플롯 생성 (서브타이틀에 모멘텀 순위 표기 추가)
         fig = make_subplots(
             rows=3,
             cols=1,
@@ -92,13 +99,13 @@ def draw_integrated_chart(
             vertical_spacing=0.05,
             row_heights=[0.52, 0.18, 0.30],
             subplot_titles=(
-                f"[{ticker}] {stock_name} 주가 및 이동평균선",
+                f"[{ticker}] {stock_name} 주가 추이 (모멘텀 순위: {latest_rank})",
                 "거래량",
                 f"{index_name} 지수 추이 (20/50/200일선)",
             ),
         )
 
-        # --- Row 1: 개별 종목 캔들스틱 (테두리 제거로 깔끔한 표현) 및 이동평균선 ---
+        # --- Row 1: 개별 종목 캔들스틱 및 이동평균선 ---
         fig.add_trace(
             go.Candlestick(
                 x=df_stock["date_str"],
@@ -116,7 +123,6 @@ def draw_integrated_chart(
             col=1,
         )
 
-        # 이동평균선
         if "ma20" in df_stock.columns and df_stock["ma20"].notna().any():
             fig.add_trace(
                 go.Scatter(
