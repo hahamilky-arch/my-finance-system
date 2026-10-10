@@ -24,7 +24,7 @@ def draw_integrated_chart(
     index_name = "코스피 (^KS11)" if market_type == "KR" else "S&P 500 (^GSPC)"
 
     try:
-        # 1. 개별 종목 시계열 데이터 조회 (momentum_rank 포함)
+        # 1. 개별 종목 시계열 데이터 조회
         res_stock = (
             supabase.table("daily_analysis")
             .select("price_date, close_price, open_price, high_price, low_price, volume, ma20, ma50, ma200, momentum_rank")
@@ -66,7 +66,7 @@ def draw_integrated_chart(
 
         df_stock["date_str"] = df_stock["price_date_dt"].dt.strftime("%Y-%m-%d")
 
-        # 최신 모멘텀 순위 추출
+        # 최신 모멘텀 순위
         latest_rank_str = "-"
         if "momentum_rank" in df_stock.columns and df_stock["momentum_rank"].notna().any():
             l_val = df_stock["momentum_rank"].iloc[-1]
@@ -91,7 +91,7 @@ def draw_integrated_chart(
         else:
             df_merged = pd.DataFrame()
 
-        # 📌 4개 행 서브플롯 생성 (Row 1: 주가, Row 2: 거래량, Row 3: 모멘텀 순위 추이, Row 4: 지수)
+        # 📌 4개 서브플롯 생성 (주가, 거래량, 모멘텀 순위, 지수)
         fig = make_subplots(
             rows=4,
             cols=1,
@@ -101,12 +101,12 @@ def draw_integrated_chart(
             subplot_titles=(
                 f"[{ticker}] {stock_name} 주가 추이 (최신 순위: {latest_rank_str})",
                 "거래량",
-                "모멘텀 순위 추이 (상단이 1위 - 높을수록 상승)",
+                "모멘텀 순위 추이 (상단이 1위 - 위로 갈수록 높은 순위)",
                 f"{index_name} 지수 추이 (20/50/200일선)",
             ),
         )
 
-        # --- Row 1: 개별 종목 캔들스틱 및 이동평균선 ---
+        # Row 1: 주가 & MA
         fig.add_trace(
             go.Candlestick(
                 x=df_stock["date_str"],
@@ -120,67 +120,35 @@ def draw_integrated_chart(
                 decreasing_line_color="#1e88e5" if market_type == "KR" else "#e53935",
                 decreasing_fillcolor="#1e88e5" if market_type == "KR" else "#e53935",
             ),
-            row=1,
-            col=1,
+            row=1, col=1
         )
 
         if "ma20" in df_stock.columns and df_stock["ma20"].notna().any():
             fig.add_trace(
-                go.Scatter(
-                    x=df_stock["date_str"],
-                    y=df_stock["ma20"],
-                    mode="lines",
-                    name="MA20 (20일선)",
-                    line=dict(color="#f57c00", width=1.8),
-                ),
-                row=1,
-                col=1,
+                go.Scatter(x=df_stock["date_str"], y=df_stock["ma20"], mode="lines", name="MA20 (20일선)", line=dict(color="#f57c00", width=1.8)),
+                row=1, col=1
             )
 
         if "ma50" in df_stock.columns and df_stock["ma50"].notna().any():
             fig.add_trace(
-                go.Scatter(
-                    x=df_stock["date_str"],
-                    y=df_stock["ma50"],
-                    mode="lines",
-                    name="MA50 (50일선)",
-                    line=dict(color="#388e3c", width=1.4, dash="dash"),
-                ),
-                row=1,
-                col=1,
+                go.Scatter(x=df_stock["date_str"], y=df_stock["ma50"], mode="lines", name="MA50 (50일선)", line=dict(color="#388e3c", width=1.4, dash="dash")),
+                row=1, col=1
             )
 
         if "ma200" in df_stock.columns and df_stock["ma200"].notna().any():
             fig.add_trace(
-                go.Scatter(
-                    x=df_stock["date_str"],
-                    y=df_stock["ma200"],
-                    mode="lines",
-                    name="MA200 (200일선)",
-                    line=dict(color="#8e24aa", width=1.4, dash="dashdot"),
-                ),
-                row=1,
-                col=1,
+                go.Scatter(x=df_stock["date_str"], y=df_stock["ma200"], mode="lines", name="MA200 (200일선)", line=dict(color="#8e24aa", width=1.4, dash="dashdot")),
+                row=1, col=1
             )
 
-        # --- Row 2: 거래량 ---
-        colors = [
-            "#e53935" if c >= o else "#1e88e5"
-            for c, o in zip(df_stock["close_price"], df_stock["open_price"])
-        ]
+        # Row 2: 거래량
+        colors = ["#e53935" if c >= o else "#1e88e5" for c, o in zip(df_stock["close_price"], df_stock["open_price"])]
         fig.add_trace(
-            go.Bar(
-                x=df_stock["date_str"],
-                y=df_stock["volume"],
-                name="거래량",
-                marker_color=colors,
-                showlegend=False,
-            ),
-            row=2,
-            col=1,
+            go.Bar(x=df_stock["date_str"], y=df_stock["volume"], name="거래량", marker_color=colors, showlegend=False),
+            row=2, col=1
         )
 
-        # --- 📌 Row 3: 모멘텀 순위 추이 (새로 추가된 서브플롯) ---
+        # Row 3: 모멘텀 순위 추이
         if "momentum_rank" in df_stock.columns and df_stock["momentum_rank"].notna().any():
             fig.add_trace(
                 go.Scatter(
@@ -193,76 +161,34 @@ def draw_integrated_chart(
                     hovertemplate="<b>%{x}</b><br>모멘텀 순위: %{y}위<extra></extra>",
                     showlegend=False,
                 ),
-                row=3,
-                col=1,
+                row=3, col=1
             )
 
-        # --- Row 4: 최하단 지수 차트 ---
+        # Row 4: 지수
         if not df_merged.empty:
             fig.add_trace(
-                go.Scatter(
-                    x=df_merged["date_str"],
-                    y=df_merged["close_price"],
-                    mode="lines",
-                    name="지수 종가",
-                    line=dict(color="#5e35b1", width=1.8),
-                    connectgaps=True,
-                ),
-                row=4,
-                col=1,
+                go.Scatter(x=df_merged["date_str"], y=df_merged["close_price"], mode="lines", name="지수 종가", line=dict(color="#5e35b1", width=1.8), connectgaps=True),
+                row=4, col=1
             )
-
             if "ma20" in df_merged.columns and df_merged["ma20"].notna().any():
-                fig.add_trace(
-                    go.Scatter(
-                        x=df_merged["date_str"],
-                        y=df_merged["ma20"],
-                        mode="lines",
-                        name="지수 MA20",
-                        line=dict(color="#f57c00", width=1.2, dash="dash"),
-                        showlegend=False,
-                        connectgaps=True,
-                    ),
-                    row=4,
-                    col=1,
-                )
-
+                fig.add_trace(go.Scatter(x=df_merged["date_str"], y=df_merged["ma20"], mode="lines", name="지수 MA20", line=dict(color="#f57c00", width=1.2, dash="dash"), showlegend=False, connectgaps=True), row=4, col=1)
             if "ma50" in df_merged.columns and df_merged["ma50"].notna().any():
-                fig.add_trace(
-                    go.Scatter(
-                        x=df_merged["date_str"],
-                        y=df_merged["ma50"],
-                        mode="lines",
-                        name="지수 MA50",
-                        line=dict(color="#388e3c", width=1.2, dash="dot"),
-                        showlegend=False,
-                        connectgaps=True,
-                    ),
-                    row=4,
-                    col=1,
-                )
-
+                fig.add_trace(go.Scatter(x=df_merged["date_str"], y=df_merged["ma50"], mode="lines", name="지수 MA50", line=dict(color="#388e3c", width=1.2, dash="dot"), showlegend=False, connectgaps=True), row=4, col=1)
             if "ma200" in df_merged.columns and df_merged["ma200"].notna().any():
-                fig.add_trace(
-                    go.Scatter(
-                        x=df_merged["date_str"],
-                        y=df_merged["ma200"],
-                        mode="lines",
-                        name="지수 MA200",
-                        line=dict(color="#8e24aa", width=1.2, dash="dashdot"),
-                        showlegend=False,
-                        connectgaps=True,
-                    ),
-                    row=4,
-                    col=1,
-                )
+                fig.add_trace(go.Scatter(x=df_merged["date_str"], y=df_merged["ma200"], mode="lines", name="지수 MA200", line=dict(color="#8e24aa", width=1.2, dash="dashdot"), showlegend=False, connectgaps=True), row=4, col=1)
 
-        # 📌 전체 차트를 관통하는 세로 점선 설정 (shapes)
+        # 📌 세로 점선 (shapes) - YYYY-MM-DD 매칭 보장
         v_shapes = []
 
         if supply_dates:
-            clean_supp_dates = [pd.to_datetime(d).strftime("%Y-%m-%d") for d in supply_dates if pd.notna(d)]
-            supp_df = df_stock[df_stock["date_str"].isin(clean_supp_dates)]
+            formatted_supp_dates = set()
+            for d in supply_dates:
+                try:
+                    formatted_supp_dates.add(pd.to_datetime(d).strftime("%Y-%m-%d"))
+                except Exception:
+                    pass
+
+            supp_df = df_stock[df_stock["date_str"].isin(formatted_supp_dates)]
             for _, s_row in supp_df.iterrows():
                 v_shapes.append(
                     dict(
@@ -278,61 +204,39 @@ def draw_integrated_chart(
                 )
 
         if buy_date:
-            clean_buy_date = pd.to_datetime(buy_date).strftime("%Y-%m-%d")
-            if clean_buy_date in df_stock["date_str"].values:
-                v_shapes.append(
-                    dict(
-                        type="line",
-                        xref="x",
-                        yref="paper",
-                        x0=clean_buy_date,
-                        x1=clean_buy_date,
-                        y0=0,
-                        y1=1,
-                        line=dict(color="#e53935", width=1.8, dash="dash"),
+            try:
+                clean_buy = pd.to_datetime(buy_date).strftime("%Y-%m-%d")
+                if clean_buy in df_stock["date_str"].values:
+                    v_shapes.append(
+                        dict(type="line", xref="x", yref="paper", x0=clean_buy, x1=clean_buy, y0=0, y1=1, line=dict(color="#e53935", width=1.8, dash="dash"))
                     )
-                )
+            except Exception:
+                pass
 
         if sell_date:
-            clean_sell_date = pd.to_datetime(sell_date).strftime("%Y-%m-%d")
-            if clean_sell_date in df_stock["date_str"].values:
-                v_shapes.append(
-                    dict(
-                        type="line",
-                        xref="x",
-                        yref="paper",
-                        x0=clean_sell_date,
-                        x1=clean_sell_date,
-                        y0=0,
-                        y1=1,
-                        line=dict(color="#1e88e5", width=1.8, dash="dash"),
+            try:
+                clean_sell = pd.to_datetime(sell_date).strftime("%Y-%m-%d")
+                if clean_sell in df_stock["date_str"].values:
+                    v_shapes.append(
+                        dict(type="line", xref="x", yref="paper", x0=clean_sell, x1=clean_sell, y0=0, y1=1, line=dict(color="#1e88e5", width=1.8, dash="dash"))
                     )
-                )
+            except Exception:
+                pass
 
-        # 레이아웃 스타일 설정 (높이 확대)
+        # 레이아웃 설정
         fig.update_layout(
             height=950,
             margin=dict(l=10, r=10, t=60, b=20),
             xaxis_rangeslider_visible=False,
             shapes=v_shapes,
-            legend=dict(
-                orientation="h",
-                yanchor="bottom",
-                y=1.05,
-                xanchor="center",
-                x=0.5,
-                font=dict(size=11),
-            ),
+            legend=dict(orientation="h", yanchor="bottom", y=1.05, xanchor="center", x=0.5, font=dict(size=11)),
             plot_bgcolor="#ffffff",
         )
 
         fig.update_xaxes(type="category", tickangle=-45, gridcolor="#f0f0f0")
         fig.update_yaxes(autorange=True, fixedrange=False, gridcolor="#f0f0f0", row=1, col=1)
         fig.update_yaxes(autorange=True, fixedrange=False, gridcolor="#f0f0f0", row=2, col=1)
-        
-        # 📌 Row 3 Y축: 순위 차트 Y축 반전 (1위가 맨 위로 위치하게 설정)
-        fig.update_yaxes(autorange="reversed", fixedrange=False, gridcolor="#f0f0f0", row=3, col=1)
-        
+        fig.update_yaxes(autorange="reversed", fixedrange=False, gridcolor="#f0f0f0", row=3, col=1) # 1위가 맨 위로 위치
         fig.update_yaxes(autorange=True, fixedrange=False, gridcolor="#f0f0f0", row=4, col=1)
 
         st.plotly_chart(fig, use_container_width=True)
