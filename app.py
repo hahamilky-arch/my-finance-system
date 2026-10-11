@@ -1287,14 +1287,19 @@ if df_display is not None:
                             line=dict(color="#d62728", width=1.5, dash="dashdot")
                         ))
 
+                    # 📌 스크롤 멈춤 방지: fixedrange=True 적용
+                    fig_market_idx.update_xaxes(fixedrange=True)
+                    fig_market_idx.update_yaxes(fixedrange=True)
+
                     fig_market_idx.update_layout(
                         height=280,
                         margin=dict(l=10, r=10, t=20, b=20),
                         xaxis=dict(type="category", tickangle=-45),
-                        yaxis=dict(autorange=True, fixedrange=False),
+                        yaxis=dict(autorange=True, fixedrange=True),
                         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
                     )
-                    st.plotly_chart(fig_market_idx, use_container_width=True)
+                    # 📌 스크롤 멈춤 방지: config={'scrollZoom': False} 적용
+                    st.plotly_chart(fig_market_idx, use_container_width=True, config={'scrollZoom': False})
                 else:
                     st.info(f"[{target_index_symbol}] 지수 시계열 데이터가 존재하지 않습니다.")
             else:
@@ -1500,11 +1505,17 @@ if df_display is not None:
                                     line=dict(color="#2ca02c", width=2),
                                 )
                             )
+                            
+                            # 📌 축 스크롤 고정
+                            fig_supply.update_xaxes(fixedrange=True)
+                            fig_supply.update_yaxes(fixedrange=True)
+
                             fig_supply.update_layout(
                                 title=f"[{sel_chart_ticker}] 외국인 vs 기관 누적 수급 (백만원)",
                                 height=260,
                                 margin=dict(l=10, r=10, t=30, b=10),
-                                xaxis=dict(type="category"),
+                                xaxis=dict(type="category", fixedrange=True),
+                                yaxis=dict(fixedrange=True),
                                 legend=dict(
                                     orientation="h",
                                     yanchor="bottom",
@@ -1513,8 +1524,9 @@ if df_display is not None:
                                     x=1,
                                 ),
                             )
+                            # 📌 스크롤 줌 끄기
                             st.plotly_chart(
-                                fig_supply, use_container_width=True
+                                fig_supply, use_container_width=True, config={'scrollZoom': False}
                             )
 
                         with col_s_table:
