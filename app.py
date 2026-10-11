@@ -50,7 +50,7 @@ st.markdown(
         overflow: visible !important;
     }
     .block-container { 
-        padding-top: 0.3rem !important; 
+        padding-top: 0.5rem !important; 
         padding-bottom: 0.5rem !important; 
         padding-left: 0.4rem !important;
         padding-right: 0.4rem !important;
@@ -58,30 +58,25 @@ st.markdown(
     html, body, [class*="st-"] { font-size: 13px !important; }
     h5 { font-size: 1.0rem !important; margin-bottom: 0.2rem !important; }
     
-    /* 📌 Sticky 탭 위치 보정 */
+    /* 📌 Sticky 탭 위치 및 상단 짤림 보정 */
     div[data-testid="stTabs"] > div:first-child,
     div[data-baseweb="tab-list"],
     .stTabs [role="tablist"] {
         position: sticky !important;
-        top: 2.8rem !important;
+        top: 3.6rem !important;
         background-color: #ffffff !important;
         z-index: 99999 !important;
-        padding-top: 4px !important;
-        padding-bottom: 4px !important;
+        padding-top: 6px !important;
+        padding-bottom: 6px !important;
+        margin-top: 6px !important;
         border-bottom: 2px solid #e0e0e0 !important;
         box-shadow: 0px 2px 6px rgba(0,0,0,0.05);
     }
 
-    /* 🎨 상단 프로필/인증 바 스타일링 */
-    .header-container {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        background: #f8f9fa;
-        padding: 6px 12px;
-        border-radius: 8px;
-        border: 1px solid #e9ecef;
-        margin-bottom: 6px;
+    /* 🎨 상단 헤더 컨테이너 여백 */
+    .top-header-area {
+        margin-bottom: 4px;
+        padding-bottom: 4px;
     }
 
     /* 🎨 커스텀 상단 메트릭 카드 4개 Grid */
@@ -137,6 +132,12 @@ st.markdown(
 
     /* 📌 모바일 화면 전용 미디어 쿼리 */
     @media (max-width: 640px) {
+        div[data-testid="stTabs"] > div:first-child,
+        div[data-baseweb="tab-list"],
+        .stTabs [role="tablist"] {
+            top: 3.2rem !important;
+        }
+
         .metric-card-container {
             grid-template-columns: repeat(2, 1fr) !important;
             gap: 6px !important;
@@ -728,10 +729,10 @@ with st.sidebar:
     col_side_kr.metric("KR추천", f"{kr_buy_count}개")
     col_side_us.metric("US추천", f"{us_buy_count}개")
 
-# 📌 반응형 상단 헤더 & 인증 영역 개선 (가독성 향상 및 기능 유지)
+# 📌 상단 타이틀 & 비밀번호 인증 영역 (수직 여백 보정)
 col_title, col_auth_status = st.columns([1.5, 2.5])
 with col_title:
-    st.markdown("<h5 style='margin:0; padding:4px 0; line-height:1.4;'>Quant Alpha</h5>", unsafe_allow_html=True)
+    st.markdown("<h5 style='margin:0; padding:6px 0; line-height:1.4;'>Quant Alpha</h5>", unsafe_allow_html=True)
 
 with col_auth_status:
     if is_authenticated:
@@ -1915,7 +1916,7 @@ if df_display is not None:
                 )
                 account_total_input = new_capital_input
 
-    # TAB 4: 성과 분석 및 매매 타점 복기 (표-셀렉트박스 선택 완벽 동기화)
+    # TAB 4: 성과 분석 및 매매 타점 복기
     with tab4:
         st.markdown(f"##### {market_type} 시장 성과 분석 리포트")
 
@@ -2057,16 +2058,33 @@ if df_display is not None:
                     )
 
                     st.markdown("###### 핵심 성과 지표 (KPI)")
-                    m1, m2, m3, m4 = st.columns(4)
-                    m1.metric("총 실현 손익", profit_fmt(total_profit))
-                    m2.metric(
-                        "누적 수익률",
-                        f"{(total_profit / account_total_input * 100):+.2f}%",
-                    )
-                    m3.metric(
-                        "승률 / 패율", f"{win_rate:.1f}% / {loss_rate:.1f}%"
-                    )
-                    m4.metric("기대 수익", profit_fmt(expectancy))
+                    
+                    # 📌 상단 4개 커스텀 반응형 카드 디자인 적용
+                    cum_return_val = (total_profit / account_total_input * 100) if account_total_input > 0 else 0.0
+                    return_badge_cls = "badge-bull" if cum_return_val >= 0 else "badge-bear"
+                    expect_badge_cls = "badge-bull" if expectancy >= 0 else "badge-bear"
+
+                    perf_cards_html = f"""
+                    <div class="metric-card-container">
+                        <div class="metric-card">
+                            <div class="metric-card-title">총 실현 손익</div>
+                            <div class="metric-card-value">{profit_fmt(total_profit)}</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-card-title">누적 수익률</div>
+                            <div class="metric-card-value">{cum_return_val:+.2f}% <span class="metric-badge {return_badge_cls}">Target</span></div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-card-title">승률 / 패율</div>
+                            <div class="metric-card-value">{win_rate:.1f}% <span class="metric-badge badge-info">패 {loss_rate:.1f}%</span></div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-card-title">기대 수익</div>
+                            <div class="metric-card-value">{profit_fmt(expectancy)} <span class="metric-badge {expect_badge_cls}">건당</span></div>
+                        </div>
+                    </div>
+                    """
+                    st.markdown(perf_cards_html, unsafe_allow_html=True)
 
                     st.write("")
                     st.markdown("###### 수익 기여도 시각화 차트")
