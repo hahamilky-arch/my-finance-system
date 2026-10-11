@@ -1,4 +1,4 @@
-import time
+ㅣimport time
 import numpy as np
 import pandas as pd
 import plotly.express as px
@@ -1377,12 +1377,14 @@ if df_display is not None:
                 key="overview_table_selection",
             )
 
+            # 📌 표 클릭시에만 session_state 및 하단 선택 종목 동기화 (새로운 행 클릭 시 1회 반영)
             if event and event.get("selection", {}).get("rows"):
                 selected_row_idx = event["selection"]["rows"][0]
                 selected_row = df_target.iloc[selected_row_idx]
                 clicked_ticker = str(selected_row["ticker"]).strip().upper()
 
-                if st.session_state.get("tab2_integrated_chart_selector") != clicked_ticker:
+                if st.session_state.get("last_selected_row_idx") != selected_row_idx:
+                    st.session_state["last_selected_row_idx"] = selected_row_idx
                     st.session_state["tab2_integrated_chart_selector"] = clicked_ticker
                     st.rerun()
 
@@ -1417,12 +1419,14 @@ if df_display is not None:
         )
 
         with st.expander("통합 분석 센터 열기 / 접기", expanded=True):
+            # 📌 label_visibility="collapsed" 적용하여 선택 박스 라벨 텍스트 삭제
             sel_chart_ticker = st.selectbox(
                 "분석 대상 종목 선택",
                 options=top200_tickers,
                 index=default_idx,
                 format_func=lambda x: f"[{x}] {ticker_name_map.get(x, x)}",
                 key="tab2_integrated_chart_selector",
+                label_visibility="collapsed"
             )
 
             if sel_chart_ticker:
