@@ -842,7 +842,27 @@ if df_display is not None:
 
     # TAB 1: 시장 & 수급 종합
     with tab1:
-        st.markdown("###### 시장 방향성 & 수급 종합")
+        # 📌 1. 사이드바 날짜 변경 감지 및 TAB 1 전용 날짜 동기화 세션 제어
+        if st.session_state.get("last_sidebar_selected_date") != selected_date:
+            st.session_state["last_sidebar_selected_date"] = selected_date
+            st.session_state["tab1_selected_date"] = selected_date
+
+        col_t1_head, col_t1_picker = st.columns([2.5, 1.5])
+        with col_t1_head:
+            st.markdown("###### 시장 방향성 & 수급 종합")
+        with col_t1_picker:
+            tab1_date_input = st.date_input(
+                "수급 조회 일자",
+                value=st.session_state.get("tab1_selected_date", selected_date),
+                key="tab1_date_picker_element",
+            )
+            st.session_state["tab1_selected_date"] = tab1_date_input
+
+        tab1_target_date_str = (
+            pd.to_datetime(tab1_date_input).strftime("%Y-%m-%d")
+            if tab1_date_input
+            else target_date_str
+        )
 
         p_zscore = 0.0
         z_tag = "초기상태"
@@ -900,7 +920,7 @@ if df_display is not None:
                     res_inv_all = (
                         supabase.table("market_investor_trends")
                         .select("*")
-                        .lte("trade_date", target_date_str)
+                        .lte("trade_date", tab1_target_date_str)
                         .order("trade_date", desc=True)
                         .limit(60)
                         .execute()
@@ -917,7 +937,7 @@ if df_display is not None:
                     res_prog_all = (
                         supabase.table("market_program_trends")
                         .select("*")
-                        .lte("trade_date", target_date_str)
+                        .lte("trade_date", tab1_target_date_str)
                         .order("trade_date", desc=True)
                         .limit(60)
                         .execute()
@@ -932,14 +952,14 @@ if df_display is not None:
 
                 df_inv = (
                     df_inv_all[
-                        df_inv_all["trade_date"] == target_date_str
+                        df_inv_all["trade_date"] == tab1_target_date_str
                     ]
                     if not df_inv_all.empty
                     else pd.DataFrame()
                 )
                 df_prog = (
                     df_prog_all[
-                        df_prog_all["trade_date"] == target_date_str
+                        df_prog_all["trade_date"] == tab1_target_date_str
                     ]
                     if not df_prog_all.empty
                     else pd.DataFrame()
@@ -1075,7 +1095,7 @@ if df_display is not None:
                 if divergence_msg:
                     st.warning(divergence_msg)
 
-                st.markdown("###### 수급 강도 & 연속성 지표 (백만원)")
+                st.markdown(f"###### 수급 강도 & 연속성 지표 ({tab1_target_date_str} 기준 / 백만원)")
                 
                 # 📌 중간 수급 지표 6개 반응형 Grid 카드
                 supply_cards_html = f"""
@@ -1110,7 +1130,7 @@ if df_display is not None:
 
                 st.divider()
 
-                st.markdown(f"###### 주체별 매매 동향 ({target_date_str} 기준 / 백만원)")
+                st.markdown(f"###### 주체별 매매 동향 ({tab1_target_date_str} 기준 / 백만원)")
                 disp_inv_summary = pd.DataFrame([
                     {
                         "시장": "KOSPI",
@@ -1148,19 +1168,19 @@ if df_display is not None:
                     res_liq_10d = (
                         supabase.table("daily_top_liquidity")
                         .select("*")
-                        .lte("trade_date", target_date_str)
+                        .lte("trade_date", tab1_target_date_str)
                         .order("trade_date", desc=True)
-                        .limit(200)
+                        .limit(300)
                         .execute()
                     )
                     df_liq_10d = pd.DataFrame(res_liq_10d.data) if res_liq_10d.data else pd.DataFrame()
                 except Exception:
                     df_liq_10d = pd.DataFrame()
 
-                df_stock_liq = df_liq_10d[df_liq_10d["trade_date"] == target_date_str] if not df_liq_10d.empty else pd.DataFrame()
+                df_stock_liq = df_liq_10d[df_liq_10d["trade_date"] == tab1_target_date_str] if not df_liq_10d.empty else pd.DataFrame()
 
                 tab_f_day, tab_i_day, tab_f_10d, tab_i_10d = st.tabs(
-                    ["외인 당일", "기관 당일", "외인 10일", "기관 10일"]
+                    ["외인 당일 TOP5", "기관 당일 TOP5", "외인 10일 빈도", "기관 10일 빈도"]
                 )
 
                 with tab_f_day:
@@ -1223,6 +1243,38 @@ if df_display is not None:
                     else:
                         st.caption("최근 10일 수급 데이터가 없습니다.")
 
+                # 📌 [신규 추가] 당일 수급 포착 전체 종목 리스트 출력 영역
+                st.divider()
+                st.markdown(f"###### 당일 수급 포착 전체 종목 목록 ({tab1_target_date_str} 기준)")
+                if not df_stock_liq.empty:
+                    disp_all_supply = df_stock_liq[
+                        ["rank", "ticker", "name", "close_price", "change_rate", "foreign_net", "inst_net"]
+                    ].sort_values("rank").rename(columns={
+                        "rank": "순위",
+                        "ticker": "티커",
+                        "name": "종목명",
+                        "close_price": "종가",
+                        "change_rate": "등락률",
+                        "foreign_net": "외국인순매수(백만)",
+                        "inst_net": "기관순매수(백만)"
+                    })
+
+                    st.dataframe(
+                        disp_all_supply.style.format({
+                            "종가": "{:,.0f}원",
+                            "등락률": "{:+.2f}%",
+                            "외국인순매수(백만)": "{:+,.0f}",
+                            "기관순매수(백만)": "{:+,.0f}",
+                        }).map(
+                            lambda v: "color: red;" if float(v) > 0 else ("color: blue;" if float(v) < 0 else ""),
+                            subset=["등락률", "외국인순매수(백만)", "기관순매수(백만)"]
+                        ),
+                        hide_index=True,
+                        use_container_width=True,
+                    )
+                else:
+                    st.info(f"{tab1_target_date_str} 날짜의 수급 포착 종목 내역이 존재하지 않습니다.")
+
         st.divider()
         index_name_str = "코스피 (^KS11)" if market_type == "KR" else "S&P 500 (^GSPC)"
         st.markdown(f"###### {index_name_str} 지수 추이 (최근 120영업일)")
@@ -1233,6 +1285,7 @@ if df_display is not None:
                 supabase.table("daily_analysis")
                 .select("price_date, close_price, ma20, ma50, ma200")
                 .eq("ticker", target_index_symbol)
+                .lte("price_date", tab1_target_date_str)
                 .order("price_date", desc=True)
                 .limit(120)
                 .execute()
@@ -1243,7 +1296,6 @@ if df_display is not None:
                 if not df_idx_c.empty:
                     df_idx_c["price_date_dt"] = pd.to_datetime(df_idx_c["price_date"])
                     df_idx_c = df_idx_c.sort_values("price_date_dt").reset_index(drop=True)
-                    df_idx_c["date_str"] = df_idx_c["price_date_dt"].dt.strftime("%Y-%m-%d")
                     
                     df_idx_c["close_val"] = pd.to_numeric(df_idx_c["close_price"], errors="coerce")
                     df_idx_c["ma20_val"] = pd.to_numeric(df_idx_c.get("ma20"), errors="coerce")
@@ -1253,7 +1305,7 @@ if df_display is not None:
                     fig_market_idx = gg.Figure()
                     
                     fig_market_idx.add_trace(gg.Scatter(
-                        x=df_idx_c["date_str"],
+                        x=df_idx_c["price_date_dt"],
                         y=df_idx_c["close_val"],
                         mode="lines",
                         name=f"{index_name_str} 종가",
@@ -1262,7 +1314,7 @@ if df_display is not None:
                     
                     if df_idx_c["ma20_val"].notna().any():
                         fig_market_idx.add_trace(gg.Scatter(
-                            x=df_idx_c["date_str"],
+                            x=df_idx_c["price_date_dt"],
                             y=df_idx_c["ma20_val"],
                             mode="lines",
                             name="MA20 (20일선)",
@@ -1271,7 +1323,7 @@ if df_display is not None:
 
                     if df_idx_c["ma50_val"].notna().any():
                         fig_market_idx.add_trace(gg.Scatter(
-                            x=df_idx_c["date_str"],
+                            x=df_idx_c["price_date_dt"],
                             y=df_idx_c["ma50_val"],
                             mode="lines",
                             name="MA50 (50일선)",
@@ -1280,25 +1332,22 @@ if df_display is not None:
 
                     if df_idx_c["ma200_val"].notna().any():
                         fig_market_idx.add_trace(gg.Scatter(
-                            x=df_idx_c["date_str"],
+                            x=df_idx_c["price_date_dt"],
                             y=df_idx_c["ma200_val"],
                             mode="lines",
                             name="MA200 (200일선)",
                             line=dict(color="#d62728", width=1.5, dash="dashdot")
                         ))
 
-                    # 📌 스크롤 멈춤 방지: fixedrange=True 적용
-                    fig_market_idx.update_xaxes(fixedrange=True)
+                    fig_market_idx.update_xaxes(tickformat="%m-%d", nticks=8, fixedrange=True, tickangle=0)
                     fig_market_idx.update_yaxes(fixedrange=True)
 
                     fig_market_idx.update_layout(
                         height=280,
                         margin=dict(l=10, r=10, t=20, b=20),
-                        xaxis=dict(type="category", tickangle=-45),
                         yaxis=dict(autorange=True, fixedrange=True),
                         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
                     )
-                    # 📌 스크롤 멈춤 방지: config={'scrollZoom': False} 적용
                     st.plotly_chart(fig_market_idx, use_container_width=True, config={'scrollZoom': False})
                 else:
                     st.info(f"[{target_index_symbol}] 지수 시계열 데이터가 존재하지 않습니다.")
@@ -1377,7 +1426,6 @@ if df_display is not None:
                 key="overview_table_selection",
             )
 
-            # 📌 표 클릭시에만 session_state 및 하단 선택 종목 동기화 (새로운 행 클릭 시 1회 반영)
             if event and event.get("selection", {}).get("rows"):
                 selected_row_idx = event["selection"]["rows"][0]
                 selected_row = df_target.iloc[selected_row_idx]
@@ -1419,7 +1467,6 @@ if df_display is not None:
         )
 
         with st.expander("통합 분석 센터 열기 / 접기", expanded=True):
-            # 📌 label_visibility="collapsed" 적용하여 선택 박스 라벨 텍스트 삭제
             sel_chart_ticker = st.selectbox(
                 "분석 대상 종목 선택",
                 options=top200_tickers,
@@ -1485,7 +1532,7 @@ if df_display is not None:
                             df_supply["foreign_net"].cumsum()
                         )
                         df_supply["inst_cum"] = df_supply["inst_net"].cumsum()
-                        df_supply["date_fmt"] = pd.to_datetime(df_supply["trade_date"]).dt.strftime("%Y%m%d")
+                        df_supply["trade_date_dt"] = pd.to_datetime(df_supply["trade_date"])
 
                         col_s_chart, col_s_table = st.columns([1.2, 1])
 
@@ -1493,7 +1540,7 @@ if df_display is not None:
                             fig_supply = gg.Figure()
                             fig_supply.add_trace(
                                 gg.Scatter(
-                                    x=df_supply["date_fmt"],
+                                    x=df_supply["trade_date_dt"],
                                     y=df_supply["foreign_cum"],
                                     mode="lines+markers",
                                     name="외국인 누적",
@@ -1502,7 +1549,7 @@ if df_display is not None:
                             )
                             fig_supply.add_trace(
                                 gg.Scatter(
-                                    x=df_supply["date_fmt"],
+                                    x=df_supply["trade_date_dt"],
                                     y=df_supply["inst_cum"],
                                     mode="lines+markers",
                                     name="기관 누적",
@@ -1510,16 +1557,13 @@ if df_display is not None:
                                 )
                             )
                             
-                            # 📌 축 스크롤 고정
-                            fig_supply.update_xaxes(fixedrange=True)
+                            fig_supply.update_xaxes(tickformat="%m-%d", nticks=6, fixedrange=True, tickangle=0)
                             fig_supply.update_yaxes(fixedrange=True)
 
                             fig_supply.update_layout(
                                 title=f"[{sel_chart_ticker}] 외국인 vs 기관 누적 수급 (백만원)",
                                 height=260,
                                 margin=dict(l=10, r=10, t=30, b=10),
-                                xaxis=dict(type="category", fixedrange=True),
-                                yaxis=dict(fixedrange=True),
                                 legend=dict(
                                     orientation="h",
                                     yanchor="bottom",
@@ -1528,7 +1572,6 @@ if df_display is not None:
                                     x=1,
                                 ),
                             )
-                            # 📌 스크롤 줌 끄기
                             st.plotly_chart(
                                 fig_supply, use_container_width=True, config={'scrollZoom': False}
                             )
@@ -2075,7 +2118,6 @@ if df_display is not None:
 
                     st.markdown("###### 핵심 성과 지표 (KPI)")
                     
-                    # 📌 상단 4개 커스텀 반응형 카드 디자인 적용
                     cum_return_val = (total_profit / account_total_input * 100) if account_total_input > 0 else 0.0
                     return_badge_cls = "badge-bull" if cum_return_val >= 0 else "badge-bear"
                     expect_badge_cls = "badge-bull" if expectancy >= 0 else "badge-bear"
@@ -2128,12 +2170,10 @@ if df_display is not None:
                     df_hist_disp = df_hist_sorted.rename(columns={"holding_days": "보유일수"}).copy()
                     disp_cols[-1] = "보유일수"
 
-                    # 📌 복기 선택지 옵션 생성
                     trade_options = df_hist_disp.apply(
                         lambda r: f"[{r['sell_date']}] [{r['ticker']}] {r['종목명']} - 손익: {profit_fmt(r['profit_amount'])} ({r['profit_rate']:+.2f}%)", axis=1
                     ).tolist()
 
-                    # 📌 이벤트 감지형 데이터프레임
                     event_perf = st.dataframe(
                         df_hist_disp[disp_cols].style.format({
                             "buy_price": price_fmt,
@@ -2150,7 +2190,6 @@ if df_display is not None:
                         key="perf_table_selection",
                     )
 
-                    # 📌 표 클릭시 session_state 및 셀렉트박스 값 동기화
                     if event_perf and event_perf.get("selection", {}).get("rows"):
                         selected_row_from_table = event_perf["selection"]["rows"][0]
                         matched_option = trade_options[selected_row_from_table]
@@ -2164,7 +2203,6 @@ if df_display is not None:
                         key="sb_perf_review_trade"
                     )
 
-                    # 선택한 매매 데이터 로드
                     selected_idx = trade_options.index(selected_trade_option)
                     review_row = df_hist_disp.iloc[selected_idx]
                     rev_ticker = str(review_row["ticker"]).strip().upper()
@@ -2174,7 +2212,6 @@ if df_display is not None:
                     rev_s_price = float(review_row["sell_price"])
                     rev_profit_rate = float(review_row["profit_rate"])
 
-                    # 📌 해당 종목의 수급 포착일 조회
                     rev_supply_dates = []
                     try:
                         res_supp_rev = (
@@ -2191,7 +2228,6 @@ if df_display is not None:
 
                     st.markdown(f"###### 📈 [{review_row['종목명']}] 매수/매도 타점 및 수급 복기 차트")
 
-                    # 📌 buy_date, sell_date, supply_dates 파라미터 전달
                     ticker_map = {rev_ticker: review_row["종목명"]}
                     draw_integrated_chart(
                         rev_ticker,
