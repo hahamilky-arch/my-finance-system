@@ -117,7 +117,6 @@ st.markdown(
         font-weight: 700;
         border-radius: 4px;
         margin-left: 4px;
-        cursor: help;
     }
 
     .badge-bull { background-color: #e8f5e9; color: #2e7d32; }
@@ -821,7 +820,6 @@ if df_display is not None:
 
     # TAB 1: 시장 & 수급 종합
     with tab1:
-        # 📌 사이드바 날짜 변경 감지 및 TAB 1 수급 전용 날짜 자동 동기화 세션 처리
         if st.session_state.get("last_sidebar_selected_date") != selected_date:
             st.session_state["last_sidebar_selected_date"] = selected_date
             st.session_state["tab1_selected_date"] = selected_date
@@ -851,20 +849,46 @@ if df_display is not None:
         k_inst_days = 0
         divergence_msg = ""
 
-        # 📌 [수정사항 2] Regime 툴팁 문구 정의 및 반영
+        # 📌 지수 추세 직접 검증으로 정확한 Regime 상태 판정
+        target_symbol = "^KS11" if market_type == "KR" else "^GSPC"
+        try:
+            chk_res = (
+                supabase.table("daily_analysis")
+                .select("close_price, ma20")
+                .eq("ticker", target_symbol)
+                .lte("price_date", tab1_target_date_str)
+                .order("price_date", desc=True)
+                .limit(3)
+                .execute()
+            )
+            if chk_res.data and len(chk_res.data) > 0:
+                c_p = float(chk_res.data[0].get("close_price", 0))
+                m_20 = float(chk_res.data[0].get("ma20", 0))
+                if c_p < m_20:
+                    reduce_holdings = True
+                    # 3일 연속 하회 시 중지
+                    if len(chk_res.data) >= 3:
+                        below_cnt = sum(1 for r in chk_res.data if float(r.get("close_price", 0)) < float(r.get("ma20", 0)))
+                        if below_cnt >= 3:
+                            stop_new_buy = True
+        except Exception:
+            pass
+
         engine_str = "Top 7" if current_engine_key == "strat3_top7" else ("단기타점" if current_engine_key == "short_term" else "듀얼")
         regime_str = "상승 (Bull)" if is_bull else "하락 (Bear)"
-        regime_badge_cls = "badge-bull" if is_bull else "badge-bear"
         
         if stop_new_buy:
             regime_delta = "중지"
-            regime_tooltip = "지수 20일선 3일 연속 하회 감지: 신규 매수가 완전 중지된 상태입니다."
+            regime_badge_cls = "badge-bear"
+            regime_tooltip = "지수가 MA20을 3일 연속 하회하고 있어 신규 매수가 전면 중지된 고위험 상태입니다."
         elif reduce_holdings:
             regime_delta = "축소"
-            regime_tooltip = "지수 20일선 하회 감지: 신규 매수 자제 및 기존 보유 종목 비중 축소를 권장합니다."
+            regime_badge_cls = "badge-warn"
+            regime_tooltip = "지수가 MA20 아래에 위치하여 매수 자제 및 기존 비중 축소가 필요한 주주의 상태입니다."
         else:
             regime_delta = "허용"
-            regime_tooltip = "지수 20일선 상회 유지: 전략 엔진에 따른 신규 매수 및 기존 비중 보유가 정상 허용된 상태입니다."
+            regime_badge_cls = "badge-bull"
+            regime_tooltip = "지수가 MA20 위에 위치하여 전략 엔진에 따라 매수 및 보유가 정상 허용된 상태입니다."
 
         buy_cnt = len(df_display[df_display["매매상태"] == "추천"])
         buy_cnt_display = min(buy_cnt, needed_slots)
@@ -878,7 +902,7 @@ if df_display is not None:
             </div>
             <div class="metric-card">
                 <div class="metric-card-title">Regime</div>
-                <div class="metric-card-value">{regime_str} <span class="metric-badge {regime_badge_cls}" title="{regime_tooltip}">{regime_delta}</span></div>
+                <div class="metric-card-value">{regime_str} <span class="metric-badge {regime_badge_cls}">{regime_delta}</span></div>
             </div>
             <div class="metric-card">
                 <div class="metric-card-title">추천 종목</div>
@@ -891,6 +915,14 @@ if df_display is not None:
         </div>
         """
         st.markdown(top_cards_html, unsafe_allow_html=True)
+
+        # 📌 클릭해서 언제든지 볼 수 있는 직관적인 팝오버 방식 툴팁 제공
+        with st.popover("ⓘ 지수 Regime 및 수급 지표 도움말"):
+            st.markdown(f"**📌 Regime 상태 ({regime_delta})**")
+            st.caption(regime_tooltip)
+            st.markdown("---")
+            st.markdown("**📌 비차익 Z-Score**")
+            st.caption("최근 20영업일 비차익 순매수 유입 강도를 의미합니다. (+1.5 이상: 강한 스마트머니 유입 / -1.5 이하: 강한 이탈)")
 
         st.divider()
 
@@ -1084,15 +1116,12 @@ if df_display is not None:
                     st.warning(divergence_msg)
 
                 st.markdown(f"###### 수급 강도 & 연속성 지표 ({tab1_target_date_str} 기준 / 백만원)")
-                
-                # 📌 [수정사항 3] 비차익 Z (z-index) 툴팁 설명 적용
-                z_tooltip = "비차익 Z-Score: 최근 20영업일 비차익 순매수 유입 강도를 나타냅니다. (+1.5 이상: 강한 스마트머니 유입 / -1.5 이하: 강한 이탈)"
 
                 supply_cards_html = f"""
                 <div class="supply-card-container">
                     <div class="metric-card">
                         <div class="metric-card-title">비차익 Z</div>
-                        <div class="metric-card-value">{p_zscore:+.2f} <span class="metric-badge badge-info" title="{z_tooltip}">{z_tag}</span></div>
+                        <div class="metric-card-value">{p_zscore:+.2f} <span class="metric-badge badge-info">{z_tag}</span></div>
                     </div>
                     <div class="metric-card">
                         <div class="metric-card-title">비차익 5일</div>
@@ -1154,7 +1183,6 @@ if df_display is not None:
 
                 st.markdown("###### 당일 TOP 5 & 최근 10일 수급 빈도 상위")
                 
-                # 📌 [수정사항 1] DB 수급 데이터 예외 보완 및 한도 증대 (500건)
                 try:
                     res_liq_10d = (
                         supabase.table("daily_top_liquidity")
@@ -1235,18 +1263,16 @@ if df_display is not None:
                     else:
                         st.caption("최근 10일 수급 데이터가 없습니다.")
 
-                # 📌 [수정사항 1] 당일 수급 전체 종목 목록 표 생성 및 보완
+                # 📌 당일 수급 포착 전체 종목 목록 표 출력 (안전 파싱)
                 st.divider()
                 st.markdown(f"###### 당일 수급 포착 전체 종목 목록 ({tab1_target_date_str} 기준)")
                 
                 if not df_stock_liq.empty:
-                    # 컬럼 존재 여부 체크 및 안전하게 추출
                     req_cols = ["rank", "ticker", "name", "close_price", "change_rate", "foreign_net", "inst_net"]
                     available_cols = [c for c in req_cols if c in df_stock_liq.columns]
                     
                     disp_all_supply = df_stock_liq[available_cols].copy()
                     
-                    # 순위 기반 정렬
                     if "rank" in disp_all_supply.columns:
                         disp_all_supply["rank"] = pd.to_numeric(disp_all_supply["rank"], errors="coerce").fillna(999)
                         disp_all_supply = disp_all_supply.sort_values("rank")
