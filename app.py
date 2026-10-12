@@ -58,7 +58,7 @@ st.markdown(
     html, body, [class*="st-"] { font-size: 13px !important; }
     h5 { font-size: 1.0rem !important; margin-bottom: 0.2rem !important; }
     
-    /* 📌 Sticky 탭 위치 및 상단 짤림 보정 */
+    /* Sticky 탭 위치 및 상단 짤림 보정 */
     div[data-testid="stTabs"] > div:first-child,
     div[data-baseweb="tab-list"],
     .stTabs [role="tablist"] {
@@ -73,13 +73,7 @@ st.markdown(
         box-shadow: 0px 2px 6px rgba(0,0,0,0.05);
     }
 
-    /* 🎨 상단 헤더 컨테이너 여백 */
-    .top-header-area {
-        margin-bottom: 4px;
-        padding-bottom: 4px;
-    }
-
-    /* 🎨 커스텀 상단 메트릭 카드 4개 Grid */
+    /* 상단 메트릭 카드 4개 Grid */
     .metric-card-container {
         display: grid;
         grid-template-columns: repeat(4, 1fr);
@@ -87,7 +81,7 @@ st.markdown(
         margin-bottom: 12px;
     }
 
-    /* 🎨 커스텀 수급 강도 지표 6개 Grid */
+    /* 수급 강도 지표 6개 Grid */
     .supply-card-container {
         display: grid;
         grid-template-columns: repeat(3, 1fr);
@@ -123,6 +117,7 @@ st.markdown(
         font-weight: 700;
         border-radius: 4px;
         margin-left: 4px;
+        cursor: help;
     }
 
     .badge-bull { background-color: #e8f5e9; color: #2e7d32; }
@@ -130,7 +125,6 @@ st.markdown(
     .badge-info { background-color: #e3f2fd; color: #1565c0; }
     .badge-warn { background-color: #fff3cd; color: #856404; }
 
-    /* 📌 모바일 화면 전용 미디어 쿼리 */
     @media (max-width: 640px) {
         div[data-testid="stTabs"] > div:first-child,
         div[data-baseweb="tab-list"],
@@ -188,7 +182,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# 2. 30분 인증 타이머 세션
+# 2. 30분 자동 세션 인증 타이머
 LOGIN_TIMEOUT_SECONDS = 1800
 
 if st.query_params.get("extend_auth") == "true":
@@ -231,28 +225,19 @@ if is_authenticated:
 
 
 def apply_styles(df):
+    """표 스타일링 적용 함수: 변동/상승률 색상 및 순위별 배경색 처리"""
     df_s = pd.DataFrame("", index=df.index, columns=df.columns)
     for col in ["변동", "상승금액", "상승률"]:
         if col in df.columns:
             df_s.loc[df[col] > 0, col] += "color: red;"
             df_s.loc[df[col] < 0, col] += "color: blue;"
     if "상태" in df.columns:
-        df_s.loc[df["상태"] == "추천", "상태"] += (
-            "color: #d62728; font-weight: bold;"
-        )
-        df_s.loc[df["상태"] == "매도", "상태"] += (
-            "color: #1f77b4; font-weight: bold;"
-        )
-        df_s.loc[df["상태"] == "보유", "상태"] += (
-            "color: #2ca02c; font-weight: bold;"
-        )
+        df_s.loc[df["상태"] == "추천", "상태"] += "color: #d62728; font-weight: bold;"
+        df_s.loc[df["상태"] == "매도", "상태"] += "color: #1f77b4; font-weight: bold;"
+        df_s.loc[df["상태"] == "보유", "상태"] += "color: #2ca02c; font-weight: bold;"
     if "제외사유" in df.columns:
-        df_s.loc[df["제외사유"] != "", "제외사유"] += (
-            "color: #888888; font-size: 0.9em;"
-        )
-        df_s.loc[df["제외사유"] == "조건충족", "제외사유"] += (
-            "color: #d62728; font-weight: bold;"
-        )
+        df_s.loc[df["제외사유"] != "", "제외사유"] += "color: #888888; font-size: 0.9em;"
+        df_s.loc[df["제외사유"] == "조건충족", "제외사유"] += "color: #d62728; font-weight: bold;"
     for col in ["RS(90)", "RS(10)"]:
         if col in df.columns:
             df_s.loc[df[col] > 0, col] += "color: #d62728; font-weight: bold;"
@@ -262,23 +247,15 @@ def apply_styles(df):
         for idx, rank in df["순위"].items():
             if pd.notna(rank):
                 if rank <= 10:
-                    df_s.loc[idx, :] += (
-                        "background-color: rgba(255, 235, 156, 0.4);"
-                    )
+                    df_s.loc[idx, :] += "background-color: rgba(255, 235, 156, 0.4);"
                 elif rank <= 20:
-                    df_s.loc[idx, :] += (
-                        "background-color: rgba(198, 239, 206, 0.4);"
-                    )
+                    df_s.loc[idx, :] += "background-color: rgba(198, 239, 206, 0.4);"
                 elif rank <= 30:
-                    df_s.loc[idx, :] += (
-                        "background-color: rgba(189, 215, 238, 0.4);"
-                    )
+                    df_s.loc[idx, :] += "background-color: rgba(189, 215, 238, 0.4);"
 
     if "수급" in df.columns:
         matched_mask = df["수급"] == "포착"
-        df_s.loc[matched_mask, :] += (
-            "background-color: rgba(200, 230, 201, 0.7); font-weight: bold;"
-        )
+        df_s.loc[matched_mask, :] += "background-color: rgba(200, 230, 201, 0.7); font-weight: bold;"
         df_s.loc[matched_mask, "수급"] += "color: #2e7d32; font-weight: bold;"
 
     return df_s
@@ -297,6 +274,7 @@ def display_trade_list(
     account_total=0.0,
     strategy_engine_mode="strat3_top7",
 ):
+    """시스템 매수/매도 리스트 렌더링 함수"""
     current_holdings_count = len(holdings_df) if not holdings_df.empty else 0
     needed_slots = max(0, top_n_cfg - current_holdings_count)
 
@@ -330,7 +308,7 @@ def display_trade_list(
             primary_data = data
             backup_data = pd.DataFrame()
 
-        # 1) 주 종목 출력 루프
+        # 1) 주 종목 출력
         for p_idx, (_, row) in enumerate(primary_data.iterrows(), 1):
             ticker = row["ticker"]
             c1, c2 = st.columns([4, 1])
@@ -474,7 +452,7 @@ def display_trade_list(
                     unsafe_allow_html=True,
                 )
 
-        # 2) 예비 종목 출력 루프
+        # 2) 예비 종목 출력
         if not backup_data.empty:
             st.markdown("---")
             st.markdown("###### 예비 목록 (대기/교체용)")
@@ -565,6 +543,7 @@ def display_trade_list(
                     )
 
 
+# DB 설정 로드
 if "db_settings_loaded" not in st.session_state:
     try:
         res = (
@@ -729,7 +708,7 @@ with st.sidebar:
     col_side_kr.metric("KR추천", f"{kr_buy_count}개")
     col_side_us.metric("US추천", f"{us_buy_count}개")
 
-# 📌 상단 타이틀 & 비밀번호 인증 영역 (수직 여백 보정)
+# 상단 타이틀 & 비밀번호 인증 영역
 col_title, col_auth_status = st.columns([1.5, 2.5])
 with col_title:
     st.markdown("<h5 style='margin:0; padding:6px 0; line-height:1.4;'>Quant Alpha</h5>", unsafe_allow_html=True)
@@ -842,7 +821,7 @@ if df_display is not None:
 
     # TAB 1: 시장 & 수급 종합
     with tab1:
-        # 📌 1. 사이드바 날짜 변경 감지 및 TAB 1 전용 날짜 동기화 세션 제어
+        # 📌 사이드바 날짜 변경 감지 및 TAB 1 수급 전용 날짜 자동 동기화 세션 처리
         if st.session_state.get("last_sidebar_selected_date") != selected_date:
             st.session_state["last_sidebar_selected_date"] = selected_date
             st.session_state["tab1_selected_date"] = selected_date
@@ -872,11 +851,20 @@ if df_display is not None:
         k_inst_days = 0
         divergence_msg = ""
 
-        # 📌 상단 4개 반응형 카드
+        # 📌 [수정사항 2] Regime 툴팁 문구 정의 및 반영
         engine_str = "Top 7" if current_engine_key == "strat3_top7" else ("단기타점" if current_engine_key == "short_term" else "듀얼")
         regime_str = "상승 (Bull)" if is_bull else "하락 (Bear)"
         regime_badge_cls = "badge-bull" if is_bull else "badge-bear"
-        regime_delta = "중지" if stop_new_buy else ("축소" if reduce_holdings else "허용")
+        
+        if stop_new_buy:
+            regime_delta = "중지"
+            regime_tooltip = "지수 20일선 3일 연속 하회 감지: 신규 매수가 완전 중지된 상태입니다."
+        elif reduce_holdings:
+            regime_delta = "축소"
+            regime_tooltip = "지수 20일선 하회 감지: 신규 매수 자제 및 기존 보유 종목 비중 축소를 권장합니다."
+        else:
+            regime_delta = "허용"
+            regime_tooltip = "지수 20일선 상회 유지: 전략 엔진에 따른 신규 매수 및 기존 비중 보유가 정상 허용된 상태입니다."
 
         buy_cnt = len(df_display[df_display["매매상태"] == "추천"])
         buy_cnt_display = min(buy_cnt, needed_slots)
@@ -890,7 +878,7 @@ if df_display is not None:
             </div>
             <div class="metric-card">
                 <div class="metric-card-title">Regime</div>
-                <div class="metric-card-value">{regime_str} <span class="metric-badge {regime_badge_cls}">{regime_delta}</span></div>
+                <div class="metric-card-value">{regime_str} <span class="metric-badge {regime_badge_cls}" title="{regime_tooltip}">{regime_delta}</span></div>
             </div>
             <div class="metric-card">
                 <div class="metric-card-title">추천 종목</div>
@@ -1097,12 +1085,14 @@ if df_display is not None:
 
                 st.markdown(f"###### 수급 강도 & 연속성 지표 ({tab1_target_date_str} 기준 / 백만원)")
                 
-                # 📌 중간 수급 지표 6개 반응형 Grid 카드
+                # 📌 [수정사항 3] 비차익 Z (z-index) 툴팁 설명 적용
+                z_tooltip = "비차익 Z-Score: 최근 20영업일 비차익 순매수 유입 강도를 나타냅니다. (+1.5 이상: 강한 스마트머니 유입 / -1.5 이하: 강한 이탈)"
+
                 supply_cards_html = f"""
                 <div class="supply-card-container">
                     <div class="metric-card">
                         <div class="metric-card-title">비차익 Z</div>
-                        <div class="metric-card-value">{p_zscore:+.2f} <span class="metric-badge badge-info">{z_tag}</span></div>
+                        <div class="metric-card-value">{p_zscore:+.2f} <span class="metric-badge badge-info" title="{z_tooltip}">{z_tag}</span></div>
                     </div>
                     <div class="metric-card">
                         <div class="metric-card-title">비차익 5일</div>
@@ -1164,17 +1154,19 @@ if df_display is not None:
 
                 st.markdown("###### 당일 TOP 5 & 최근 10일 수급 빈도 상위")
                 
+                # 📌 [수정사항 1] DB 수급 데이터 예외 보완 및 한도 증대 (500건)
                 try:
                     res_liq_10d = (
                         supabase.table("daily_top_liquidity")
                         .select("*")
                         .lte("trade_date", tab1_target_date_str)
                         .order("trade_date", desc=True)
-                        .limit(300)
+                        .limit(500)
                         .execute()
                     )
                     df_liq_10d = pd.DataFrame(res_liq_10d.data) if res_liq_10d.data else pd.DataFrame()
-                except Exception:
+                except Exception as e:
+                    st.error(f"수급 데이터를 불러오는 중 오류가 발생했습니다: {e}")
                     df_liq_10d = pd.DataFrame()
 
                 df_stock_liq = df_liq_10d[df_liq_10d["trade_date"] == tab1_target_date_str] if not df_liq_10d.empty else pd.DataFrame()
@@ -1243,13 +1235,23 @@ if df_display is not None:
                     else:
                         st.caption("최근 10일 수급 데이터가 없습니다.")
 
-                # 📌 [신규 추가] 당일 수급 포착 전체 종목 리스트 출력 영역
+                # 📌 [수정사항 1] 당일 수급 전체 종목 목록 표 생성 및 보완
                 st.divider()
                 st.markdown(f"###### 당일 수급 포착 전체 종목 목록 ({tab1_target_date_str} 기준)")
+                
                 if not df_stock_liq.empty:
-                    disp_all_supply = df_stock_liq[
-                        ["rank", "ticker", "name", "close_price", "change_rate", "foreign_net", "inst_net"]
-                    ].sort_values("rank").rename(columns={
+                    # 컬럼 존재 여부 체크 및 안전하게 추출
+                    req_cols = ["rank", "ticker", "name", "close_price", "change_rate", "foreign_net", "inst_net"]
+                    available_cols = [c for c in req_cols if c in df_stock_liq.columns]
+                    
+                    disp_all_supply = df_stock_liq[available_cols].copy()
+                    
+                    # 순위 기반 정렬
+                    if "rank" in disp_all_supply.columns:
+                        disp_all_supply["rank"] = pd.to_numeric(disp_all_supply["rank"], errors="coerce").fillna(999)
+                        disp_all_supply = disp_all_supply.sort_values("rank")
+
+                    disp_all_supply = disp_all_supply.rename(columns={
                         "rank": "순위",
                         "ticker": "티커",
                         "name": "종목명",
@@ -1261,19 +1263,20 @@ if df_display is not None:
 
                     st.dataframe(
                         disp_all_supply.style.format({
+                            "순위": "{:.0f}",
                             "종가": "{:,.0f}원",
                             "등락률": "{:+.2f}%",
                             "외국인순매수(백만)": "{:+,.0f}",
                             "기관순매수(백만)": "{:+,.0f}",
                         }).map(
                             lambda v: "color: red;" if float(v) > 0 else ("color: blue;" if float(v) < 0 else ""),
-                            subset=["등락률", "외국인순매수(백만)", "기관순매수(백만)"]
+                            subset=[c for c in ["등락률", "외국인순매수(백만)", "기관순매수(백만)"] if c in disp_all_supply.columns]
                         ),
                         hide_index=True,
                         use_container_width=True,
                     )
                 else:
-                    st.info(f"{tab1_target_date_str} 날짜의 수급 포착 종목 내역이 존재하지 않습니다.")
+                    st.info(f"[{tab1_target_date_str}] 날짜의 수급 포착 종목 데이터가 존재하지 않거나 집계 대기 중입니다.")
 
         st.divider()
         index_name_str = "코스피 (^KS11)" if market_type == "KR" else "S&P 500 (^GSPC)"
