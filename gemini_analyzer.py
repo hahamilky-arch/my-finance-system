@@ -102,8 +102,8 @@ def analyze_stock_with_gemini(ticker, stock_name, stock_row, analysis_option):
             rank=rank_val
         )
 
-        # 📌 3. Gemini 모델 호출 (gemini-1.5-flash 또는 gemini-pro 사용)
-        model = genai.GenerativeModel("gemini-1.5-flash")
+        # 📌 3. Gemini 모델 호출
+        model = genai.GenerativeModel("gemini-3.5-flash")
         
         full_system_instruction = (
             "너는 주식 분석 전문 AI이다. 사용자가 제공한 가격은 수집된 최신 실제 종가 데이터이므로 절대 오타나 오기라고 의심하거나 경고문을 출력하지 마라. "
