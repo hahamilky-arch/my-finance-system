@@ -42,7 +42,7 @@ components.html(
 
 st.markdown("<div id='top-section'></div>", unsafe_allow_html=True)
 
-# 1. 커스텀 CSS (상단 스팀릿 메뉴 보정 + 반응형 메트릭/수급 카드/헤더)
+# 1. 커스텀 CSS (상단 스팀릿 메뉴 보정 + 반응형 메트릭/수급 카드/헤더 및 버튼 슬림화)
 st.markdown(
     """
     <style>
@@ -58,6 +58,15 @@ st.markdown(
     html, body, [class*="st-"] { font-size: 13px !important; }
     h5 { font-size: 1.0rem !important; margin-bottom: 0.2rem !important; }
     
+    /* 📌 상단 연장/잠금 버튼 컴팩트 스타일링 */
+    div[data-testid="column"] button {
+        padding: 2px 8px !important;
+        font-size: 0.78rem !important;
+        height: 30px !important;
+        min-height: 30px !important;
+        border-radius: 4px !important;
+    }
+
     /* Sticky 탭 위치 및 상단 짤림 보정 */
     div[data-testid="stTabs"] > div:first-child,
     div[data-baseweb="tab-list"],
@@ -156,13 +165,6 @@ st.markdown(
 
         div[data-testid="column"] {
             min-width: 0 !important;
-        }
-
-        .stButton button {
-            padding: 2px 6px !important;
-            font-size: 0.75rem !important;
-            height: 32px !important;
-            min-height: 32px !important;
         }
     }
 
@@ -707,8 +709,8 @@ with st.sidebar:
     col_side_kr.metric("KR추천", f"{kr_buy_count}개")
     col_side_us.metric("US추천", f"{us_buy_count}개")
 
-# 상단 타이틀 & 비밀번호 인증 영역
-col_title, col_auth_status = st.columns([1.5, 2.5])
+# 📌 상단 타이틀 & 비밀번호 인증 영역 (버튼 비율 미세 조정을 통한 수축)
+col_title, col_auth_status = st.columns([2.0, 2.0])
 with col_title:
     st.markdown("<h5 style='margin:0; padding:6px 0; line-height:1.4;'>Quant Alpha</h5>", unsafe_allow_html=True)
 
@@ -718,9 +720,10 @@ with col_auth_status:
         remaining_sec = max(0, int(LOGIN_TIMEOUT_SECONDS - elapsed))
         rem_min, rem_sec = remaining_sec // 60, remaining_sec % 60
 
-        c_time, c_ext, c_lock = st.columns([1.4, 1.0, 1.0])
+        # 버튼 컬럼 폭을 줄여 작게 표시
+        c_time, c_ext, c_lock = st.columns([2.2, 0.7, 0.7], vertical_alignment="center")
         c_time.markdown(
-            f"<div style='font-size:0.82em; color:#2e7d32; font-weight:bold; padding-top:6px; text-align:right;'>인증({rem_min}:{rem_sec:02d})</div>",
+            f"<div style='font-size:0.82em; color:#2e7d32; font-weight:bold; text-align:right;'>인증({rem_min}:{rem_sec:02d})</div>",
             unsafe_allow_html=True,
         )
         with c_ext:
@@ -733,7 +736,7 @@ with col_auth_status:
                 st.session_state["last_auth_time"] = 0
                 st.rerun()
     else:
-        c_p1, c_p2 = st.columns([3.2, 1.0])
+        c_p1, c_p2 = st.columns([3.2, 1.0], vertical_alignment="center")
         with c_p1:
             input_pwd_global = st.text_input(
                 "PW",
@@ -824,14 +827,16 @@ if df_display is not None:
             st.session_state["last_sidebar_selected_date"] = selected_date
             st.session_state["tab1_selected_date"] = selected_date
 
-        col_t1_head, col_t1_picker = st.columns([2.5, 1.5])
+        # 📌 [개선 1] 수급 내부의 조회일자 영역을 가로 한 줄로 배치
+        col_t1_head, col_t1_picker = st.columns([3.0, 1.2], vertical_alignment="center")
         with col_t1_head:
-            st.markdown("###### 시장 방향성 & 수급 종합")
+            st.markdown("<h6 style='margin:0; padding:0;'>시장 방향성 & 수급 종합</h6>", unsafe_allow_html=True)
         with col_t1_picker:
             tab1_date_input = st.date_input(
                 "수급 조회 일자",
                 value=st.session_state.get("tab1_selected_date", selected_date),
                 key="tab1_date_picker_element",
+                label_visibility="collapsed",
             )
             st.session_state["tab1_selected_date"] = tab1_date_input
 
@@ -849,7 +854,7 @@ if df_display is not None:
         k_inst_days = 0
         divergence_msg = ""
 
-        # 📌 지수 추세 직접 검증으로 정확한 Regime 상태 판정
+        # 지수 추세 직접 검증으로 정확한 Regime 상태 판정
         target_symbol = "^KS11" if market_type == "KR" else "^GSPC"
         try:
             chk_res = (
@@ -866,7 +871,6 @@ if df_display is not None:
                 m_20 = float(chk_res.data[0].get("ma20", 0))
                 if c_p < m_20:
                     reduce_holdings = True
-                    # 3일 연속 하회 시 중지
                     if len(chk_res.data) >= 3:
                         below_cnt = sum(1 for r in chk_res.data if float(r.get("close_price", 0)) < float(r.get("ma20", 0)))
                         if below_cnt >= 3:
@@ -884,7 +888,7 @@ if df_display is not None:
         elif reduce_holdings:
             regime_delta = "축소"
             regime_badge_cls = "badge-warn"
-            regime_tooltip = "지수가 MA20 아래에 위치하여 매수 자제 및 기존 비중 축소가 필요한 주주의 상태입니다."
+            regime_tooltip = "지수가 MA20 아래에 위치하여 매수 자제 및 기존 보유 종목 비중 축소가 필요한 상태입니다."
         else:
             regime_delta = "허용"
             regime_badge_cls = "badge-bull"
@@ -916,7 +920,6 @@ if df_display is not None:
         """
         st.markdown(top_cards_html, unsafe_allow_html=True)
 
-        # 📌 클릭해서 언제든지 볼 수 있는 직관적인 팝오버 방식 툴팁 제공
         with st.popover("ⓘ 지수 Regime 및 수급 지표 도움말"):
             st.markdown(f"**📌 Regime 상태 ({regime_delta})**")
             st.caption(regime_tooltip)
@@ -1263,7 +1266,7 @@ if df_display is not None:
                     else:
                         st.caption("최근 10일 수급 데이터가 없습니다.")
 
-                # 📌 당일 수급 포착 전체 종목 목록 표 출력 (안전 파싱)
+                # 당일 수급 포착 전체 종목 목록 표 출력 (안전 파싱)
                 st.divider()
                 st.markdown(f"###### 당일 수급 포착 전체 종목 목록 ({tab1_target_date_str} 기준)")
                 
