@@ -8,7 +8,7 @@ from db import supabase
 
 def draw_market_supply_chart(target_date_str):
     """
-    1번 탭(시장 & 수급 종합) 전용: KOSPI 및 KOSDAQ 주체별(외인/기관/개인) 및 프로그램 매매동향 추이 (2열 반반 배치)
+    1번 탭(시장 & 수급 종합) 전용: KOSPI 및 KOSDAQ 주체별/프로그램 매매동향 추이 (글자 겹침 완벽 수정)
     """
     try:
         # 최근 시계열 데이터 조회
@@ -69,7 +69,7 @@ def draw_market_supply_chart(target_date_str):
                     df_prog[col] = 0.0
             df_prog["non_arb_cum"] = df_prog["non_arbitrage_net"].cumsum()
 
-        # 반반(2열) 배치
+        # 좌우 2열 반반 배치
         col_m1, col_m2 = st.columns(2)
 
         with col_m1:
@@ -78,7 +78,7 @@ def draw_market_supply_chart(target_date_str):
                 rows=2,
                 cols=1,
                 shared_xaxes=True,
-                vertical_spacing=0.08,
+                vertical_spacing=0.12,
                 subplot_titles=(
                     "KOSPI 주체별 누적 동향 (백만원)",
                     "프로그램 비차익 누적 동향 (백만원)",
@@ -107,9 +107,9 @@ def draw_market_supply_chart(target_date_str):
             fig_kospi.update_xaxes(tickformat="%m-%d", nticks=6, fixedrange=True)
             fig_kospi.update_yaxes(fixedrange=True)
             fig_kospi.update_layout(
-                height=380,
-                margin=dict(l=10, r=10, t=30, b=10),
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                height=420,
+                margin=dict(l=10, r=10, t=40, b=40),
+                legend=dict(orientation="h", yanchor="bottom", y=-0.18, xanchor="center", x=0.5),
             )
             st.plotly_chart(fig_kospi, use_container_width=True, config={"scrollZoom": False})
 
@@ -119,7 +119,7 @@ def draw_market_supply_chart(target_date_str):
                 rows=2,
                 cols=1,
                 shared_xaxes=True,
-                vertical_spacing=0.08,
+                vertical_spacing=0.12,
                 subplot_titles=(
                     "KOSDAQ 주체별 누적 동향 (백만원)",
                     "KOSDAQ 외인+기관 합산 누적 (백만원)",
@@ -147,9 +147,9 @@ def draw_market_supply_chart(target_date_str):
             fig_kosdaq.update_xaxes(tickformat="%m-%d", nticks=6, fixedrange=True)
             fig_kosdaq.update_yaxes(fixedrange=True)
             fig_kosdaq.update_layout(
-                height=380,
-                margin=dict(l=10, r=10, t=30, b=10),
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                height=420,
+                margin=dict(l=10, r=10, t=40, b=40),
+                legend=dict(orientation="h", yanchor="bottom", y=-0.18, xanchor="center", x=0.5),
             )
             st.plotly_chart(fig_kosdaq, use_container_width=True, config={"scrollZoom": False})
 
@@ -166,7 +166,7 @@ def draw_integrated_chart(
     supply_dates=None,
 ):
     """
-    알파 시그널(2번 탭) 개별 종목 기술적 캔들/이평선 차트
+    알파 시그널(2번 탭) 개별 종목 기술적 캔들/이평선/타점/수급시점 복원 차트
     """
     ticker_clean = str(ticker).strip().upper()
     stock_name = (
@@ -176,6 +176,7 @@ def draw_integrated_chart(
     )
 
     try:
+        # 최근 180영업일 일봉 데이터 조회
         res = (
             supabase.table("daily_analysis")
             .select("price_date, open_price, high_price, low_price, close_price, volume, ma20, ma50, ma200")
@@ -199,14 +200,15 @@ def draw_integrated_chart(
             rows=2,
             cols=1,
             shared_xaxes=True,
-            vertical_spacing=0.03,
-            row_heights=[0.70, 0.30],
+            vertical_spacing=0.08,
+            row_heights=[0.72, 0.28],
             subplot_titles=(
                 f"[{stock_name} ({ticker_clean})] 주가 추이",
                 "거래량",
             ),
         )
 
+        # 1행: 캔들스틱 차트
         fig.add_trace(
             gg.Candlestick(
                 x=df["price_date_dt"],
@@ -221,6 +223,7 @@ def draw_integrated_chart(
             row=1, col=1,
         )
 
+        # 1행: 이동평균선 (MA20, MA50, MA200)
         if df["ma20"].notna().any():
             fig.add_trace(
                 gg.Scatter(x=df["price_date_dt"], y=df["ma20"], mode="lines", name="MA20", line=dict(color="#ff7f0e", width=1.5)),
@@ -237,6 +240,23 @@ def draw_integrated_chart(
                 row=1, col=1
             )
 
+        # 수급 포착 시점 표기 (★)
+        if supply_dates:
+            s_dts = pd.to_datetime(supply_dates)
+            s_rows = df[df["price_date_dt"].isin(s_dts)]
+            if not s_rows.empty:
+                fig.add_trace(
+                    gg.Scatter(
+                        x=s_rows["price_date_dt"],
+                        y=s_rows["low_price"] * 0.99,
+                        mode="markers",
+                        name="수급포착",
+                        marker=dict(symbol="star", size=9, color="#f57c00"),
+                    ),
+                    row=1, col=1
+                )
+
+        # 매수/매도 타점 표기
         if buy_date:
             b_dt = pd.to_datetime(buy_date)
             b_row = df[df["price_date_dt"] == b_dt]
@@ -244,7 +264,7 @@ def draw_integrated_chart(
                 fig.add_trace(
                     gg.Scatter(
                         x=[b_dt],
-                        y=[b_row["low_price"].values[0] * 0.98],
+                        y=[b_row["low_price"].values[0] * 0.97],
                         mode="markers+text",
                         name="매수타점",
                         marker=dict(symbol="triangle-up", size=14, color="#2e7d32"),
@@ -261,7 +281,7 @@ def draw_integrated_chart(
                 fig.add_trace(
                     gg.Scatter(
                         x=[s_dt],
-                        y=[s_row["high_price"].values[0] * 1.02],
+                        y=[s_row["high_price"].values[0] * 1.03],
                         mode="markers+text",
                         name="매도타점",
                         marker=dict(symbol="triangle-down", size=14, color="#c62828"),
@@ -271,6 +291,7 @@ def draw_integrated_chart(
                     row=1, col=1
                 )
 
+        # 2행: 거래량
         colors = ["#d62728" if c >= o else "#1f77b4" for c, o in zip(df["close_price"], df["open_price"])]
         fig.add_trace(
             gg.Bar(x=df["price_date_dt"], y=df["volume"], name="거래량", marker_color=colors, opacity=0.7),
@@ -280,8 +301,8 @@ def draw_integrated_chart(
         fig.update_xaxes(tickformat="%m-%d", nticks=10, fixedrange=True, rangeslider_visible=False)
         fig.update_yaxes(fixedrange=True)
         fig.update_layout(
-            height=460,
-            margin=dict(l=10, r=10, t=30, b=20),
+            height=480,
+            margin=dict(l=10, r=10, t=50, b=20),
             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
         )
 
