@@ -62,21 +62,42 @@ def get_market_regime(market_type, target_date_str):
     except Exception:
         return True, False, False
 
+def get_recently_sold_info(market_type, days_limit=5):
+    """
+    최근 N일 이내에 청산(매도) 완료된 종목들의 티커 및 매도 정보 반환
+    strategy.py 모듈에서 참조하는 함수입니다.
+    """
+    table_name = get_holdings_table(market_type)
+    try:
+        res = (
+            supabase.table(table_name)
+            .select("*")
+            .not_.is_("sell_date", "null")
+            .order("sell_date", desc=True)
+            .limit(100)
+            .execute()
+        )
+        if res.data:
+            df_sold = pd.DataFrame(res.data)
+            return df_sold
+        return pd.DataFrame()
+    except Exception as e:
+        return pd.DataFrame()
+
 def update_holdings(ticker, trade_type, price, trade_date, quantity, market_type, exit_reason=None):
     """
     매수/매도 주문 실행 시 포트폴리오(holdings) DB 업데이트 및 실현 손익 기록
-    - 수량(quantity) 타입 변환 보완으로 'invalid input syntax for type integer: "10.0"' 에러 방지
+    - 수량(quantity) 정수 변환을 통해 'invalid input syntax for type integer' 에러 방지
     """
     table_name = get_holdings_table(market_type)
     ticker_clean = str(ticker).strip().upper()
     trade_date_str = str(trade_date)
 
-    # 📌 수량 데이터 타입 안전하게 캐스팅 (한국장의 경우 정수형 int 변환)
+    # 📌 수량 데이터 타입 안전 변환 (한국장 정수 int 캐스팅)
     try:
         if market_type == "KR":
             qty_val = int(float(quantity))
         else:
-            # 미국장의 경우 소수점 지원 여부에 따라 int/float 처리
             qty_val = float(quantity) if float(quantity) % 1 != 0 else int(float(quantity))
     except Exception:
         qty_val = int(float(quantity))
