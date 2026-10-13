@@ -7,7 +7,7 @@ from plotly.subplots import make_subplots
 import streamlit as st
 import streamlit.components.v1 as components
 
-# 내부 모듈 연동 (draw_market_supply_chart 추가)
+# 내부 모듈 연동
 from charts import (
     draw_attribution_charts,
     draw_integrated_chart,
@@ -1184,7 +1184,7 @@ if df_display is not None:
                     use_container_width=True,
                 )
 
-                # 📌 [신규 추가] 1번 수급 탭 내 매매 동향 추이 차트 시각화
+                # 1번 수급 탭 내 매매 동향 추이 차트 시각화 (KOSPI & KOSDAQ 2열 반반 시각화)
                 st.markdown("###### 주체별 & 프로그램 매매 동향 추이")
                 draw_market_supply_chart(tab1_target_date_str)
 
