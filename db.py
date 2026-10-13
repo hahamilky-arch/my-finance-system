@@ -1,160 +1,132 @@
 import os
 import pandas as pd
-import streamlit as st
 from supabase import create_client, Client
+import streamlit as st
 
-# Supabase 클라이언트 초기화
-SUPABASE_URL = st.secrets.get("SUPABASE_URL", os.environ.get("SUPABASE_URL", ""))
-SUPABASE_KEY = st.secrets.get("SUPABASE_KEY", os.environ.get("SUPABASE_KEY", ""))
+# 1. Supabase 접속 정보 및 클라이언트 초기화
+SUPABASE_URL = st.secrets.get("SUPABASE_URL", os.getenv("SUPABASE_URL", ""))
+SUPABASE_KEY = st.secrets.get("SUPABASE_KEY", os.getenv("SUPABASE_KEY", ""))
 
 if not SUPABASE_URL or not SUPABASE_KEY:
-    st.error("Supabase URL 또는 KEY 설정이 올바르지 않습니다.")
+    st.error("Supabase 접속 정보(URL / Key)가 설정되지 않았습니다.")
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-
-def get_holdings_table(market_type="KR"):
-    """
-    Supabase DB 스펙 기준 보유 테이블 매핑
-    - KR: current_holdings
-    - US: current_holdings_us
-    """
-    if market_type == "US":
-        return "current_holdings_us"
-    return "current_holdings"
-
-
 def get_available_dates():
     """
-    daily_analysis 테이블에서 데이터가 존재하는 날짜 목록 조회
+    daily_analysis 테이블에서 데이터 조회가 가능한 고유 거래일 목록 반환 (내림차순)
     """
     try:
         res = (
             supabase.table("daily_analysis")
             .select("price_date")
             .order("price_date", desc=True)
-            .limit(300)
             .execute()
         )
         if res.data:
-            df = pd.DataFrame(res.data)
-            df["price_date"] = pd.to_datetime(df["price_date"]).dt.strftime("%Y-%m-%d")
-            return sorted(df["price_date"].unique().tolist(), reverse=True)
+            df_dates = pd.DataFrame(res.data)
+            return sorted(df_dates["price_date"].unique().tolist(), reverse=True)
         return []
     except Exception as e:
-        print(f"날짜 목록 조회 실패: {e}")
+        st.error(f"거래일 목록 조회 실패: {e}")
         return []
 
+def get_holdings_table(market_type):
+    """
+    마켓 구분(KR/US)에 따른 데이터베이스 보유 종목 테이블명 반환
+    """
+    return "us_holdings" if market_type == "US" else "kr_holdings"
 
-def get_market_regime(market_type="KR", target_date_str=None):
+def get_market_regime(market_type, target_date_str):
     """
-    daily_analysis 테이블의 지수 심볼(^KS11 / ^GSPC) 데이터로 Market Regime 판정
+    시장 국면(Regime) 상태 판정
+    반환값: (market_safe, stop_new_buy, reduce_holdings)
     """
-    target_symbol = "^KS11" if market_type == "KR" else "^GSPC"
     try:
-        query = supabase.table("daily_analysis").select("close_price, ma20").eq("ticker", target_symbol)
-        if target_date_str:
-            query = query.lte("price_date", target_date_str)
-            
-        res = query.order("price_date", desc=True).limit(5).execute()
-        if res.data:
-            df = pd.DataFrame(res.data)
-            if not df.empty:
-                latest = df.iloc[0]
-                close_p = float(latest.get("close_price", 0.0) or 0.0)
-                ma20_p = float(latest.get("ma20", 0.0) or 0.0)
-                
-                market_safe = close_p >= ma20_p if ma20_p > 0 else True
-                return market_safe, False, False
-        return True, False, False
-    except Exception as e:
-        print(f"Market Regime 조회 실패: {e}")
-        return True, False, False
-
-
-def get_recently_sold_info(market_type="KR", target_date_str=None, cooldown_days=3):
-    """
-    최근 N일 이내 매도 완료된 종목 및 매도가 조회 (재진입 쿨다운 필터용)
-    """
-    table_name = get_holdings_table(market_type)
-    if not target_date_str:
-        return {}
-
-    try:
-        target_dt = pd.to_datetime(target_date_str)
-        min_sell_dt = (target_dt - pd.Timedelta(days=cooldown_days)).strftime("%Y-%m-%d")
-
         res = (
-            supabase.table(table_name)
-            .select("ticker, sell_date, sell_price")
-            .not_.is_("sell_date", "null")
-            .gte("sell_date", min_sell_dt)
-            .lte("sell_date", target_date_str)
+            supabase.table("market_regimes")
+            .select("*")
+            .eq("market_type", market_type)
+            .lte("regime_date", target_date_str)
+            .order("regime_date", desc=True)
+            .limit(1)
             .execute()
         )
-        
-        sold_dict = {}
         if res.data:
-            for row in res.data:
-                tk = str(row["ticker"]).strip().upper()
-                s_price = float(row.get("sell_price", 0.0) or 0.0)
-                sold_dict[tk] = s_price
-        return sold_dict
-    except Exception as e:
-        print(f"최근 매도 내역 조회 실패: {e}")
-        return {}
+            r_data = res.data[0]
+            market_safe = r_data.get("is_bull", True)
+            stop_new_buy = r_data.get("stop_new_buy", False)
+            reduce_holdings = r_data.get("reduce_holdings", False)
+            return market_safe, stop_new_buy, reduce_holdings
+        return True, False, False
+    except Exception:
+        return True, False, False
 
-
-def update_holdings(ticker, trade_type, price, trade_date, quantity, market_type="KR", exit_reason=None):
+def update_holdings(ticker, trade_type, price, trade_date, quantity, market_type, exit_reason=None):
     """
-    매수/매도 실행 시 holdings 테이블 기록
+    매수/매도 주문 실행 시 포트폴리오(holdings) DB 업데이트 및 실현 손익 기록
+    - 수량(quantity) 타입 변환 보완으로 'invalid input syntax for type integer: "10.0"' 에러 방지
     """
     table_name = get_holdings_table(market_type)
-    ticker_code = str(ticker).strip().upper()
+    ticker_clean = str(ticker).strip().upper()
     trade_date_str = str(trade_date)
+
+    # 📌 수량 데이터 타입 안전하게 캐스팅 (한국장의 경우 정수형 int 변환)
+    try:
+        if market_type == "KR":
+            qty_val = int(float(quantity))
+        else:
+            # 미국장의 경우 소수점 지원 여부에 따라 int/float 처리
+            qty_val = float(quantity) if float(quantity) % 1 != 0 else int(float(quantity))
+    except Exception:
+        qty_val = int(float(quantity))
 
     try:
         if trade_type == "BUY":
+            # 신규 보유 종목 레코드 추가
             data = {
-                "ticker": ticker_code,
+                "ticker": ticker_clean,
                 "buy_date": trade_date_str,
                 "buy_price": float(price),
-                "quantity": float(quantity),
-                "sell_date": None,
-                "sell_price": None,
-                "profit_amount": None,
-                "profit_rate": None,
-                "exit_reason": None,
+                "quantity": qty_val,
+                "created_at": "now()",
             }
             supabase.table(table_name).insert(data).execute()
-            st.success(f"[{ticker_code}] 매수 기록이 등록되었습니다.")
+            st.success(f"[{ticker_clean}] 매수 등록 완료 (가격: {price:,.2f}, 수량: {qty_val})")
+
         elif trade_type == "SELL":
+            # 기존 미청산 보유 종목 조회
             res = (
                 supabase.table(table_name)
                 .select("*")
-                .eq("ticker", ticker_code)
+                .eq("ticker", ticker_clean)
                 .is_("sell_date", "null")
                 .execute()
             )
             if res.data:
-                target_id = res.data[0]["id"]
-                b_price = float(res.data[0]["buy_price"])
+                holding_row = res.data[0]
+                row_id = holding_row["id"]
+                b_price = float(holding_row["buy_price"])
                 s_price = float(price)
-                
-                profit_amt = (s_price - b_price) * float(quantity)
-                profit_rate = ((s_price / b_price) - 1.0) * 100.0 if b_price > 0 else 0.0
+
+                # 손익금액 및 수익률 산출
+                profit_amt = (s_price - b_price) * float(qty_val)
+                profit_rate = ((s_price - b_price) / b_price) * 100.0 if b_price > 0 else 0.0
 
                 update_data = {
                     "sell_date": trade_date_str,
-                    "sell_price": s_price,
-                    "quantity": float(quantity),
-                    "profit_amount": profit_amt,
-                    "profit_rate": profit_rate,
-                    "exit_reason": exit_reason or "사용자 매도 실행",
+                    "sell_price": float(s_price),
+                    "profit_amount": float(profit_amt),
+                    "profit_rate": float(profit_rate),
+                    "exit_reason": exit_reason or "사용자 매도",
                 }
-                supabase.table(table_name).update(update_data).eq("id", target_id).execute()
-                st.success(f"[{ticker_code}] 매도 처리가 완료되었습니다.")
+                
+                # DB 업데이트 실행
+                supabase.table(table_name).update(update_data).eq("id", row_id).execute()
+                st.success(f"[{ticker_clean}] 매도 청산 완료 (손익: {profit_amt:+,.2f}, 수익률: {profit_rate:+.2f}%)")
             else:
-                st.warning(f"[{ticker_code}] 청산할 미결제 보유 내역이 존재하지 않습니다.")
+                st.warning(f"[{ticker_clean}] 매도할 보유 종목 내역을 찾을 수 없습니다.")
+        st.rerun()
+
     except Exception as e:
         st.error(f"매매 내역 업데이트 실패: {e}")
