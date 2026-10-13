@@ -1,14 +1,17 @@
-import plotly.express as px
-import plotly.graph_objects as gg
-from plotly.subplots import make_subplots
+import numpy as np
 import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 import streamlit as st
+
+# db 모듈에서 supabase 객체 불러오기
 from db import supabase
 
 
 def draw_market_supply_chart(target_date_str):
     """
-    1번 탭(시장 & 수급 종합) 전용: KOSPI 및 KOSDAQ 주체별/프로그램 매매동향 추이
+    1번 탭(시장 & 수급 종합) 전용: KOSPI 및 KOSDAQ 주체별/프로그램 매매동향 추이 (좌우 2열 반반 배치)
     """
     try:
         res_inv = (
@@ -72,7 +75,7 @@ def draw_market_supply_chart(target_date_str):
                 rows=2,
                 cols=1,
                 shared_xaxes=True,
-                vertical_spacing=0.14,
+                vertical_spacing=0.12,
                 subplot_titles=(
                     "KOSPI 주체별 누적 동향 (백만원)",
                     "프로그램 비차익 누적 동향 (백만원)",
@@ -80,21 +83,21 @@ def draw_market_supply_chart(target_date_str):
             )
             if not df_k.empty:
                 fig_kospi.add_trace(
-                    gg.Scatter(x=df_k["trade_date_dt"], y=df_k["foreign_cum"], mode="lines", name="외국인", line=dict(color="#d62728", width=2)),
+                    go.Scatter(x=df_k["trade_date_dt"], y=df_k["foreign_cum"], mode="lines", name="외국인", line=dict(color="#d62728", width=2)),
                     row=1, col=1
                 )
                 fig_kospi.add_trace(
-                    gg.Scatter(x=df_k["trade_date_dt"], y=df_k["inst_cum"], mode="lines", name="기관", line=dict(color="#2ca02c", width=2)),
+                    go.Scatter(x=df_k["trade_date_dt"], y=df_k["inst_cum"], mode="lines", name="기관", line=dict(color="#2ca02c", width=2)),
                     row=1, col=1
                 )
                 fig_kospi.add_trace(
-                    gg.Scatter(x=df_k["trade_date_dt"], y=df_k["ind_cum"], mode="lines", name="개인", line=dict(color="#1f77b4", width=1.5, dash="dot")),
+                    go.Scatter(x=df_k["trade_date_dt"], y=df_k["ind_cum"], mode="lines", name="개인", line=dict(color="#1f77b4", width=1.5, dash="dot")),
                     row=1, col=1
                 )
 
             if not df_prog.empty:
                 fig_kospi.add_trace(
-                    gg.Scatter(x=df_prog["trade_date_dt"], y=df_prog["non_arb_cum"], mode="lines", name="비차익 순매수", line=dict(color="#ff7f0e", width=2)),
+                    go.Scatter(x=df_prog["trade_date_dt"], y=df_prog["non_arb_cum"], mode="lines", name="비차익 순매수", line=dict(color="#ff7f0e", width=2)),
                     row=2, col=1
                 )
 
@@ -112,7 +115,7 @@ def draw_market_supply_chart(target_date_str):
                 rows=2,
                 cols=1,
                 shared_xaxes=True,
-                vertical_spacing=0.14,
+                vertical_spacing=0.12,
                 subplot_titles=(
                     "KOSDAQ 주체별 누적 동향 (백만원)",
                     "KOSDAQ 외인+기관 합산 누적 (백만원)",
@@ -120,19 +123,19 @@ def draw_market_supply_chart(target_date_str):
             )
             if not df_kq.empty:
                 fig_kosdaq.add_trace(
-                    gg.Scatter(x=df_kq["trade_date_dt"], y=df_kq["foreign_cum"], mode="lines", name="외국인", line=dict(color="#d62728", width=2)),
+                    go.Scatter(x=df_kq["trade_date_dt"], y=df_kq["foreign_cum"], mode="lines", name="외국인", line=dict(color="#d62728", width=2)),
                     row=1, col=1
                 )
                 fig_kosdaq.add_trace(
-                    gg.Scatter(x=df_kq["trade_date_dt"], y=df_kq["inst_cum"], mode="lines", name="기관", line=dict(color="#2ca02c", width=2)),
+                    go.Scatter(x=df_kq["trade_date_dt"], y=df_kq["inst_cum"], mode="lines", name="기관", line=dict(color="#2ca02c", width=2)),
                     row=1, col=1
                 )
                 fig_kosdaq.add_trace(
-                    gg.Scatter(x=df_kq["trade_date_dt"], y=df_kq["ind_cum"], mode="lines", name="개인", line=dict(color="#1f77b4", width=1.5, dash="dot")),
+                    go.Scatter(x=df_kq["trade_date_dt"], y=df_kq["ind_cum"], mode="lines", name="개인", line=dict(color="#1f77b4", width=1.5, dash="dot")),
                     row=1, col=1
                 )
                 fig_kosdaq.add_trace(
-                    gg.Scatter(x=df_kq["trade_date_dt"], y=df_kq["foreign_cum"] + df_kq["inst_cum"], mode="lines", name="외인+기관 합산", line=dict(color="#9467bd", width=2)),
+                    go.Scatter(x=df_kq["trade_date_dt"], y=df_kq["foreign_cum"] + df_kq["inst_cum"], mode="lines", name="외인+기관 합산", line=dict(color="#9467bd", width=2)),
                     row=2, col=1
                 )
 
@@ -151,234 +154,319 @@ def draw_market_supply_chart(target_date_str):
 
 def draw_integrated_chart(
     ticker,
-    market_type="KR",
-    ticker_name_map=None,
+    market_type,
+    ticker_name_map,
     buy_date=None,
     sell_date=None,
+    buy_price=None,
+    sell_price=None,
     supply_dates=None,
     rank_val=None,
 ):
-    """
-    알파 시그널(2번 탭) 개별 종목 기술적 캔들/이평선/타점/수급포착 복원 차트
-    """
-    ticker_clean = str(ticker).strip().upper()
-    stock_name = (
-        ticker_name_map.get(ticker_clean, ticker_clean)
-        if ticker_name_map
-        else ticker_clean
-    )
-
-    rank_title_str = f" [모멘텀 순위: {rank_val}위]" if rank_val else ""
+    """개별 종목 기술적 차트 + 거래량 + 모멘텀 순위 추이 + 최하단 지수 차트 한 화면 컴팩트 통합 차트"""
+    stock_name = ticker_name_map.get(ticker, ticker) if ticker_name_map else ticker
+    index_symbol = "^KS11" if market_type == "KR" else "^GSPC"
+    index_name = "코스피 (^KS11)" if market_type == "KR" else "S&P 500 (^GSPC)"
 
     try:
-        res = (
+        # 1. 개별 종목 시계열 데이터 조회
+        res_stock = (
             supabase.table("daily_analysis")
-            .select("price_date, open_price, high_price, low_price, close_price, volume, ma20, ma50, ma200")
-            .eq("ticker", ticker_clean)
+            .select("price_date, close_price, open_price, high_price, low_price, volume, ma20, ma50, ma200, momentum_rank")
+            .eq("ticker", ticker)
             .order("price_date", desc=True)
-            .limit(180)
+            .limit(120)
             .execute()
         )
-        if not res.data:
-            st.info(f"[{ticker_clean}] 차트 데이터를 찾을 수 없습니다.")
+
+        # 2. 시장 지수 시계열 데이터 조회
+        res_index = (
+            supabase.table("daily_analysis")
+            .select("price_date, close_price, ma20, ma50, ma200")
+            .eq("ticker", index_symbol)
+            .order("price_date", desc=True)
+            .limit(150)
+            .execute()
+        )
+
+        if not res_stock.data:
+            st.warning(f"[{ticker}] 종목의 차트 데이터가 존재하지 않습니다.")
             return
 
-        df = pd.DataFrame(res.data)
-        df["price_date_dt"] = pd.to_datetime(df["price_date"])
-        df = df.sort_values("price_date_dt").reset_index(drop=True)
+        # --- 종목 데이터 전처리 ---
+        df_stock = pd.DataFrame(res_stock.data)
+        df_stock["price_date_dt"] = pd.to_datetime(df_stock["price_date"])
+        df_stock = df_stock.sort_values("price_date_dt").reset_index(drop=True)
 
-        for col in ["open_price", "high_price", "low_price", "close_price", "volume", "ma20", "ma50", "ma200"]:
-            df[col] = pd.to_numeric(df[col], errors="coerce")
+        for col in ["close_price", "open_price", "high_price", "low_price", "volume", "ma20", "ma50", "ma200", "momentum_rank"]:
+            if col in df_stock.columns:
+                df_stock[col] = pd.to_numeric(df_stock[col], errors="coerce")
 
-        # 📌 [핵심 해결] 0원 이하나 결측치(NaN) 데이터 완전 제거로 캔들 바닥 뻗음 현상 예방
-        df = df[
-            (df["open_price"] > 0)
-            & (df["high_price"] > 0)
-            & (df["low_price"] > 0)
-            & (df["close_price"] > 0)
+        df_stock = df_stock[
+            (df_stock["close_price"] > 0) &
+            (df_stock["open_price"] > 0) &
+            (df_stock["high_price"] > 0) &
+            (df_stock["low_price"] > 0)
         ].reset_index(drop=True)
 
-        if df.empty:
-            st.info(f"[{ticker_clean}] 유효한 주가 데이터가 없습니다.")
+        if df_stock.empty:
+            st.warning(f"[{ticker}] 유효한 주가 데이터가 없습니다.")
             return
 
+        df_stock["date_str"] = df_stock["price_date_dt"].dt.strftime("%Y-%m-%d")
+
+        # 최신 모멘텀 순위
+        latest_rank_str = f"{int(rank_val)}위" if rank_val else "-"
+        if latest_rank_str == "-" and "momentum_rank" in df_stock.columns and df_stock["momentum_rank"].notna().any():
+            l_val = df_stock["momentum_rank"].iloc[-1]
+            if pd.notna(l_val) and l_val > 0:
+                latest_rank_str = f"{int(l_val)}위"
+
+        # --- 지수 데이터 전처리 ---
+        df_index = pd.DataFrame(res_index.data) if res_index.data else pd.DataFrame()
+        if not df_index.empty:
+            df_index["price_date_dt"] = pd.to_datetime(df_index["price_date"])
+            df_index = df_index.sort_values("price_date_dt").reset_index(drop=True)
+            for col in ["close_price", "ma20", "ma50", "ma200"]:
+                if col in df_index.columns:
+                    df_index[col] = pd.to_numeric(df_index[col], errors="coerce")
+            
+            df_merged = pd.merge(
+                df_stock[["price_date", "date_str"]],
+                df_index[["price_date", "close_price", "ma20", "ma50", "ma200"]],
+                on="price_date",
+                how="left"
+            )
+        else:
+            df_merged = pd.DataFrame()
+
+        # 📌 한 화면 핏 4개 서브플롯 생성
         fig = make_subplots(
-            rows=2,
+            rows=4,
             cols=1,
             shared_xaxes=True,
-            vertical_spacing=0.10,
-            row_heights=[0.72, 0.28],
+            vertical_spacing=0.035,
+            row_heights=[0.45, 0.15, 0.18, 0.22],
             subplot_titles=(
-                f"[{stock_name} ({ticker_clean})]{rank_title_str} 주가 추이",
+                f"[{ticker}] {stock_name} (순위: {latest_rank_str})",
                 "거래량",
+                "모멘텀 순위 추이 (상단 1위)",
+                f"{index_name} (20/50/200일선)",
             ),
         )
 
-        # 1행: 캔들스틱 차트
+        # Row 1: 주가 & MA
         fig.add_trace(
-            gg.Candlestick(
-                x=df["price_date_dt"],
-                open=df["open_price"],
-                high=df["high_price"],
-                low=df["low_price"],
-                close=df["close_price"],
+            go.Candlestick(
+                x=df_stock["date_str"],
+                open=df_stock["open_price"],
+                high=df_stock["high_price"],
+                low=df_stock["low_price"],
+                close=df_stock["close_price"],
                 name="주가",
-                increasing_line_color="#d62728",
-                decreasing_line_color="#1f77b4",
+                increasing_line_color="#e53935" if market_type == "KR" else "#2e7d32",
+                increasing_fillcolor="#e53935" if market_type == "KR" else "#2e7d32",
+                decreasing_line_color="#1e88e5" if market_type == "KR" else "#e53935",
+                decreasing_fillcolor="#1e88e5" if market_type == "KR" else "#e53935",
             ),
-            row=1, col=1,
+            row=1, col=1
         )
 
-        # 이동평균선 (MA20, MA50, MA200)
-        if df["ma20"].notna().any():
+        if "ma20" in df_stock.columns and df_stock["ma20"].notna().any():
             fig.add_trace(
-                gg.Scatter(x=df["price_date_dt"], y=df["ma20"], mode="lines", name="MA20", line=dict(color="#ff7f0e", width=1.5)),
-                row=1, col=1
-            )
-        if df["ma50"].notna().any():
-            fig.add_trace(
-                gg.Scatter(x=df["price_date_dt"], y=df["ma50"], mode="lines", name="MA50", line=dict(color="#2ca02c", width=1.5, dash="dot")),
-                row=1, col=1
-            )
-        if df["ma200"].notna().any():
-            fig.add_trace(
-                gg.Scatter(x=df["price_date_dt"], y=df["ma200"], mode="lines", name="MA200", line=dict(color="#d62728", width=1.5, dash="dashdot")),
+                go.Scatter(x=df_stock["date_str"], y=df_stock["ma20"], mode="lines", name="MA20", line=dict(color="#f57c00", width=1.5)),
                 row=1, col=1
             )
 
-        # 수급 포착 시점 표기 (★)
-        if supply_dates:
-            s_dts = pd.to_datetime(supply_dates)
-            s_rows = df[df["price_date_dt"].isin(s_dts)]
-            if not s_rows.empty:
-                fig.add_trace(
-                    gg.Scatter(
-                        x=s_rows["price_date_dt"],
-                        y=s_rows["low_price"] * 0.98,
-                        mode="markers",
-                        name="수급포착",
-                        marker=dict(symbol="star", size=9, color="#f57c00"),
-                    ),
-                    row=1, col=1
-                )
+        if "ma50" in df_stock.columns and df_stock["ma50"].notna().any():
+            fig.add_trace(
+                go.Scatter(x=df_stock["date_str"], y=df_stock["ma50"], mode="lines", name="MA50", line=dict(color="#388e3c", width=1.2, dash="dash")),
+                row=1, col=1
+            )
 
-        # 매수/매도 타점 표기
-        if buy_date:
-            b_dt = pd.to_datetime(buy_date)
-            b_row = df[df["price_date_dt"] == b_dt]
-            if not b_row.empty:
-                fig.add_trace(
-                    gg.Scatter(
-                        x=[b_dt],
-                        y=[b_row["low_price"].values[0] * 0.96],
-                        mode="markers+text",
-                        name="매수타점",
-                        marker=dict(symbol="triangle-up", size=14, color="#2e7d32"),
-                        text=["▲ 매수"],
-                        textposition="bottom center",
-                    ),
-                    row=1, col=1
-                )
+        if "ma200" in df_stock.columns and df_stock["ma200"].notna().any():
+            fig.add_trace(
+                go.Scatter(x=df_stock["date_str"], y=df_stock["ma200"], mode="lines", name="MA200", line=dict(color="#8e24aa", width=1.2, dash="dashdot")),
+                row=1, col=1
+            )
 
-        if sell_date:
-            s_dt = pd.to_datetime(sell_date)
-            s_row = df[df["price_date_dt"] == s_dt]
-            if not s_row.empty:
-                fig.add_trace(
-                    gg.Scatter(
-                        x=[s_dt],
-                        y=[s_row["high_price"].values[0] * 1.04],
-                        mode="markers+text",
-                        name="매도타점",
-                        marker=dict(symbol="triangle-down", size=14, color="#c62828"),
-                        text=["▼ 매도"],
-                        textposition="top center",
-                    ),
-                    row=1, col=1
-                )
-
-        # 2행: 거래량
-        colors = ["#d62728" if c >= o else "#1f77b4" for c, o in zip(df["close_price"], df["open_price"])]
+        # Row 2: 거래량
+        colors = ["#e53935" if c >= o else "#1e88e5" for c, o in zip(df_stock["close_price"], df_stock["open_price"])]
         fig.add_trace(
-            gg.Bar(x=df["price_date_dt"], y=df["volume"], name="거래량", marker_color=colors, opacity=0.7),
+            go.Bar(x=df_stock["date_str"], y=df_stock["volume"], name="거래량", marker_color=colors, showlegend=False),
             row=2, col=1
         )
 
-        # 📌 겹침 제거 레이아웃 조정
-        fig.update_xaxes(tickformat="%m-%d", nticks=10, fixedrange=True, rangeslider_visible=False)
-        fig.update_yaxes(fixedrange=True)
+        # Row 3: 모멘텀 순위 추이
+        if "momentum_rank" in df_stock.columns and df_stock["momentum_rank"].notna().any():
+            fig.add_trace(
+                go.Scatter(
+                    x=df_stock["date_str"],
+                    y=df_stock["momentum_rank"],
+                    mode="lines+markers",
+                    name="모멘텀 순위",
+                    line=dict(color="#d32f2f", width=1.5),
+                    marker=dict(size=3, color="#d32f2f"),
+                    hovertemplate="<b>%{x}</b><br>모멘텀 순위: %{y}위<extra></extra>",
+                    showlegend=False,
+                ),
+                row=3, col=1
+            )
+
+        # Row 4: 지수
+        if not df_merged.empty:
+            fig.add_trace(
+                go.Scatter(x=df_merged["date_str"], y=df_merged["close_price"], mode="lines", name="지수종가", line=dict(color="#5e35b1", width=1.5), connectgaps=True),
+                row=4, col=1
+            )
+            if "ma20" in df_merged.columns and df_merged["ma20"].notna().any():
+                fig.add_trace(go.Scatter(x=df_merged["date_str"], y=df_merged["ma20"], mode="lines", name="지수 MA20", line=dict(color="#f57c00", width=1.0, dash="dash"), showlegend=False, connectgaps=True), row=4, col=1)
+            if "ma50" in df_merged.columns and df_merged["ma50"].notna().any():
+                fig.add_trace(go.Scatter(x=df_merged["date_str"], y=df_merged["ma50"], mode="lines", name="지수 MA50", line=dict(color="#388e3c", width=1.0, dash="dot"), showlegend=False, connectgaps=True), row=4, col=1)
+            if "ma200" in df_merged.columns and df_merged["ma200"].notna().any():
+                fig.add_trace(go.Scatter(x=df_merged["date_str"], y=df_merged["ma200"], mode="lines", name="지수 MA200", line=dict(color="#8e24aa", width=1.0, dash="dashdot"), showlegend=False, connectgaps=True), row=4, col=1)
+
+        # 📌 세로 점선 (shapes)
+        v_shapes = []
+
+        if supply_dates:
+            formatted_supp_dates = set()
+            for d in supply_dates:
+                try:
+                    formatted_supp_dates.add(pd.to_datetime(d).strftime("%Y-%m-%d"))
+                except Exception:
+                    pass
+
+            supp_df = df_stock[df_stock["date_str"].isin(formatted_supp_dates)]
+            for _, s_row in supp_df.iterrows():
+                v_shapes.append(
+                    dict(
+                        type="line",
+                        xref="x",
+                        yref="paper",
+                        x0=s_row["date_str"],
+                        x1=s_row["date_str"],
+                        y0=0,
+                        y1=1,
+                        line=dict(color="#2e7d32", width=1.2, dash="dash"),
+                    )
+                )
+
+        if buy_date:
+            try:
+                clean_buy = pd.to_datetime(buy_date).strftime("%Y-%m-%d")
+                if clean_buy in df_stock["date_str"].values:
+                    v_shapes.append(
+                        dict(type="line", xref="x", yref="paper", x0=clean_buy, x1=clean_buy, y0=0, y1=1, line=dict(color="#e53935", width=1.8, dash="dash"))
+                    )
+            except Exception:
+                pass
+
+        if sell_date:
+            try:
+                clean_sell = pd.to_datetime(sell_date).strftime("%Y-%m-%d")
+                if clean_sell in df_stock["date_str"].values:
+                    v_shapes.append(
+                        dict(type="line", xref="x", yref="paper", x0=clean_sell, x1=clean_sell, y0=0, y1=1, line=dict(color="#1e88e5", width=1.8, dash="dash"))
+                    )
+            except Exception:
+                pass
+
+        # 📌 한 화면에 들어오는 컴팩트 레이아웃 설정
         fig.update_layout(
-            height=480,
-            margin=dict(l=10, r=10, t=40, b=10),
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+            height=700,
+            margin=dict(l=10, r=10, t=50, b=10),
+            xaxis_rangeslider_visible=False,
+            shapes=v_shapes,
+            legend=dict(orientation="h", yanchor="bottom", y=1.04, xanchor="center", x=0.5, font=dict(size=10)),
+            plot_bgcolor="#ffffff",
         )
+
+        fig.for_each_annotation(lambda a: a.update(font=dict(size=11)))
+
+        fig.update_xaxes(type="category", tickangle=-45, gridcolor="#f0f0f0", tickfont=dict(size=9))
+        fig.update_yaxes(autorange=True, fixedrange=False, gridcolor="#f0f0f0", tickfont=dict(size=9), row=1, col=1)
+        fig.update_yaxes(autorange=True, fixedrange=False, gridcolor="#f0f0f0", tickfont=dict(size=9), row=2, col=1)
+        fig.update_yaxes(autorange="reversed", fixedrange=False, gridcolor="#f0f0f0", tickfont=dict(size=9), row=3, col=1)
+        fig.update_yaxes(autorange=True, fixedrange=False, gridcolor="#f0f0f0", tickfont=dict(size=9), row=4, col=1)
 
         st.plotly_chart(fig, use_container_width=True, config={"scrollZoom": False})
 
     except Exception as e:
-        st.error(f"차트 출력 중 오류 발생: {e}")
+        st.error(f"통합 차트 그리기 오류: {e}")
 
 
 def draw_attribution_charts(df_hist, market_type="KR"):
-    """
-    성과 분석(Tab 4) 누적 손익 및 종목별 손익 기여도 차트 시각화
-    """
+    """성과 분석 탭용 수익 기여도 막대 그래프 + 수익률/보유기간 분포도(산점도)"""
     if df_hist.empty:
-        st.info("시각화할 매매 내역이 없습니다.")
         return
 
-    df_h = df_hist.copy()
-    df_h["sell_date_dt"] = pd.to_datetime(df_h["sell_date"])
-    df_h = df_h.sort_values("sell_date_dt").reset_index(drop=True)
-    df_h["cum_profit"] = df_h["profit_amount"].cumsum()
+    fmt_unit = "$" if market_type == "US" else "원"
 
-    col1, col2 = st.columns(2)
+    col_chart1, col_chart2 = st.columns(2)
 
-    with col1:
-        fig_cum = gg.Figure()
-        fig_cum.add_trace(
-            gg.Scatter(
-                x=df_h["sell_date_dt"],
-                y=df_h["cum_profit"],
-                mode="lines+markers",
-                name="누적 손익",
-                line=dict(color="#2e7d32", width=2.5),
-                fill="tozeroy",
-                fillcolor="rgba(46, 125, 50, 0.1)",
-            )
-        )
-        fig_cum.update_xaxes(tickformat="%m-%d", nticks=6, fixedrange=True)
-        fig_cum.update_yaxes(fixedrange=True)
-        fig_cum.update_layout(
-            title="일자별 누적 실현 손익 추이",
-            height=260,
-            margin=dict(l=10, r=10, t=30, b=10),
-        )
-        st.plotly_chart(fig_cum, use_container_width=True, config={"scrollZoom": False})
-
-    with col2:
-        df_by_stock = (
-            df_h.groupby("종목명")["profit_amount"]
+    with col_chart1:
+        profit_by_stock = (
+            df_hist.groupby("종목명")["profit_amount"]
             .sum()
             .reset_index()
-            .sort_values("profit_amount", ascending=True)
+            .sort_values("profit_amount", ascending=False)
         )
-        colors = ["#2e7d32" if v >= 0 else "#c62828" for v in df_by_stock["profit_amount"]]
 
-        fig_bar = gg.Figure()
+        fig_bar = go.Figure()
         fig_bar.add_trace(
-            gg.Bar(
-                x=df_by_stock["profit_amount"],
-                y=df_by_stock["종목명"],
-                orientation="h",
-                marker_color=colors,
+            go.Bar(
+                x=profit_by_stock["종목명"],
+                y=profit_by_stock["profit_amount"],
+                marker_color=[
+                    "#e53935" if v > 0 else "#1e88e5"
+                    for v in profit_by_stock["profit_amount"]
+                ],
+                text=[f"{v:+,.0f}{fmt_unit}" for v in profit_by_stock["profit_amount"]],
+                textposition="auto",
             )
         )
-        fig_bar.update_xaxes(fixedrange=True)
-        fig_bar.update_yaxes(fixedrange=True)
         fig_bar.update_layout(
-            title="종목별 손익 기여도",
-            height=260,
-            margin=dict(l=10, r=10, t=30, b=10),
+            title="종목별 누적 실현 손익 기여도",
+            height=340,
+            margin=dict(l=20, r=20, t=40, b=20),
+            xaxis=dict(tickangle=-45),
+            plot_bgcolor="#ffffff",
         )
+        fig_bar.update_xaxes(gridcolor="#f0f0f0")
+        fig_bar.update_yaxes(gridcolor="#f0f0f0")
         st.plotly_chart(fig_bar, use_container_width=True, config={"scrollZoom": False})
+
+    with col_chart2:
+        fig_scatter = go.Figure()
+
+        df_hist["holding_days_val"] = pd.to_numeric(df_hist.get("holding_days", 0), errors="coerce").fillna(0)
+        df_hist["profit_rate_val"] = pd.to_numeric(df_hist.get("profit_rate", 0), errors="coerce").fillna(0)
+
+        fig_scatter.add_trace(
+            go.Scatter(
+                x=df_hist["holding_days_val"],
+                y=df_hist["profit_rate_val"],
+                mode="markers",
+                marker=dict(
+                    size=10,
+                    color=["#e53935" if r > 0 else "#1e88e5" for r in df_hist["profit_rate_val"]],
+                    line=dict(width=1, color="DarkSlateGrey")
+                ),
+                text=df_hist["종목명"],
+                hovertemplate="<b>%{text}</b><br>보유일수: %{x}일<br>수익률: %{y:+.2f}%<extra></extra>",
+            )
+        )
+        fig_scatter.add_hline(y=0, line_dash="dash", line_color="gray")
+
+        fig_scatter.update_layout(
+            title="보유기간 대비 수익률 분포도",
+            xaxis_title="보유일수 (일)",
+            yaxis_title="수익률 (%)",
+            height=340,
+            margin=dict(l=20, r=20, t=40, b=20),
+            plot_bgcolor="#ffffff",
+        )
+        fig_scatter.update_xaxes(gridcolor="#f0f0f0")
+        fig_scatter.update_yaxes(gridcolor="#f0f0f0")
+        st.plotly_chart(fig_scatter, use_container_width=True, config={"scrollZoom": False})
