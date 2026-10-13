@@ -7,8 +7,12 @@ from plotly.subplots import make_subplots
 import streamlit as st
 import streamlit.components.v1 as components
 
-# 내부 모듈 연동
-from charts import draw_attribution_charts, draw_integrated_chart
+# 내부 모듈 연동 (draw_market_supply_chart 추가)
+from charts import (
+    draw_attribution_charts,
+    draw_integrated_chart,
+    draw_market_supply_chart,
+)
 from db import (
     get_available_dates,
     get_holdings_table,
@@ -58,7 +62,7 @@ st.markdown(
     html, body, [class*="st-"] { font-size: 13px !important; }
     h5 { font-size: 1.0rem !important; margin-bottom: 0.2rem !important; }
     
-    /* 📌 상단 연장/잠금 버튼 컴팩트 스타일링 */
+    /* 상단 연장/잠금 버튼 컴팩트 스타일링 */
     div[data-testid="column"] button {
         padding: 2px 8px !important;
         font-size: 0.78rem !important;
@@ -709,7 +713,7 @@ with st.sidebar:
     col_side_kr.metric("KR추천", f"{kr_buy_count}개")
     col_side_us.metric("US추천", f"{us_buy_count}개")
 
-# 📌 상단 타이틀 & 비밀번호 인증 영역 (버튼 비율 미세 조정을 통한 수축)
+# 상단 타이틀 & 비밀번호 인증 영역
 col_title, col_auth_status = st.columns([2.0, 2.0])
 with col_title:
     st.markdown("<h5 style='margin:0; padding:6px 0; line-height:1.4;'>Quant Alpha</h5>", unsafe_allow_html=True)
@@ -720,7 +724,6 @@ with col_auth_status:
         remaining_sec = max(0, int(LOGIN_TIMEOUT_SECONDS - elapsed))
         rem_min, rem_sec = remaining_sec // 60, remaining_sec % 60
 
-        # 버튼 컬럼 폭을 줄여 작게 표시
         c_time, c_ext, c_lock = st.columns([2.2, 0.7, 0.7], vertical_alignment="center")
         c_time.markdown(
             f"<div style='font-size:0.82em; color:#2e7d32; font-weight:bold; text-align:right;'>인증({rem_min}:{rem_sec:02d})</div>",
@@ -827,7 +830,6 @@ if df_display is not None:
             st.session_state["last_sidebar_selected_date"] = selected_date
             st.session_state["tab1_selected_date"] = selected_date
 
-        # 📌 [개선 1] 수급 내부의 조회일자 영역을 가로 한 줄로 배치
         col_t1_head, col_t1_picker = st.columns([3.0, 1.2], vertical_alignment="center")
         with col_t1_head:
             st.markdown("<h6 style='margin:0; padding:0;'>시장 방향성 & 수급 종합</h6>", unsafe_allow_html=True)
@@ -1181,6 +1183,10 @@ if df_display is not None:
                     hide_index=True,
                     use_container_width=True,
                 )
+
+                # 📌 [신규 추가] 1번 수급 탭 내 매매 동향 추이 차트 시각화
+                st.markdown("###### 주체별 & 프로그램 매매 동향 추이")
+                draw_market_supply_chart(tab1_target_date_str)
 
                 st.divider()
 
