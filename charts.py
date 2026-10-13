@@ -8,10 +8,9 @@ from db import supabase
 
 def draw_market_supply_chart(target_date_str):
     """
-    1번 탭(시장 & 수급 종합) 전용: KOSPI 및 KOSDAQ 주체별/프로그램 매매동향 추이 (글자 겹침 완벽 수정)
+    1번 탭(시장 & 수급 종합) 전용: KOSPI 및 KOSDAQ 주체별/프로그램 매매동향 추이
     """
     try:
-        # 최근 시계열 데이터 조회
         res_inv = (
             supabase.table("market_investor_trends")
             .select("*")
@@ -36,7 +35,6 @@ def draw_market_supply_chart(target_date_str):
             st.info("시장에 대한 수급 추이 데이터가 존재하지 않습니다.")
             return
 
-        # KOSPI 수급 데이터 정리
         df_k = df_inv[df_inv["market_type"] == "KOSPI"].copy() if not df_inv.empty else pd.DataFrame()
         if not df_k.empty:
             df_k["trade_date_dt"] = pd.to_datetime(df_k["trade_date"])
@@ -47,7 +45,6 @@ def draw_market_supply_chart(target_date_str):
             df_k["inst_cum"] = df_k["institution_net"].cumsum()
             df_k["ind_cum"] = df_k["individual_net"].cumsum()
 
-        # KOSDAQ 수급 데이터 정리
         df_kq = df_inv[df_inv["market_type"] == "KOSDAQ"].copy() if not df_inv.empty else pd.DataFrame()
         if not df_kq.empty:
             df_kq["trade_date_dt"] = pd.to_datetime(df_kq["trade_date"])
@@ -58,7 +55,6 @@ def draw_market_supply_chart(target_date_str):
             df_kq["inst_cum"] = df_kq["institution_net"].cumsum()
             df_kq["ind_cum"] = df_kq["individual_net"].cumsum()
 
-        # 프로그램 수급 데이터 정리
         if not df_prog.empty:
             df_prog["trade_date_dt"] = pd.to_datetime(df_prog["trade_date"])
             df_prog = df_prog.sort_values("trade_date_dt").reset_index(drop=True)
@@ -69,16 +65,14 @@ def draw_market_supply_chart(target_date_str):
                     df_prog[col] = 0.0
             df_prog["non_arb_cum"] = df_prog["non_arbitrage_net"].cumsum()
 
-        # 좌우 2열 반반 배치
         col_m1, col_m2 = st.columns(2)
 
         with col_m1:
-            # KOSPI 차트
             fig_kospi = make_subplots(
                 rows=2,
                 cols=1,
                 shared_xaxes=True,
-                vertical_spacing=0.12,
+                vertical_spacing=0.14,
                 subplot_titles=(
                     "KOSPI 주체별 누적 동향 (백만원)",
                     "프로그램 비차익 누적 동향 (백만원)",
@@ -108,18 +102,17 @@ def draw_market_supply_chart(target_date_str):
             fig_kospi.update_yaxes(fixedrange=True)
             fig_kospi.update_layout(
                 height=420,
-                margin=dict(l=10, r=10, t=40, b=40),
-                legend=dict(orientation="h", yanchor="bottom", y=-0.18, xanchor="center", x=0.5),
+                margin=dict(l=10, r=10, t=30, b=50),
+                legend=dict(orientation="h", yanchor="top", y=-0.18, xanchor="center", x=0.5),
             )
             st.plotly_chart(fig_kospi, use_container_width=True, config={"scrollZoom": False})
 
         with col_m2:
-            # KOSDAQ 차트
             fig_kosdaq = make_subplots(
                 rows=2,
                 cols=1,
                 shared_xaxes=True,
-                vertical_spacing=0.12,
+                vertical_spacing=0.14,
                 subplot_titles=(
                     "KOSDAQ 주체별 누적 동향 (백만원)",
                     "KOSDAQ 외인+기관 합산 누적 (백만원)",
@@ -138,7 +131,6 @@ def draw_market_supply_chart(target_date_str):
                     gg.Scatter(x=df_kq["trade_date_dt"], y=df_kq["ind_cum"], mode="lines", name="개인", line=dict(color="#1f77b4", width=1.5, dash="dot")),
                     row=1, col=1
                 )
-
                 fig_kosdaq.add_trace(
                     gg.Scatter(x=df_kq["trade_date_dt"], y=df_kq["foreign_cum"] + df_kq["inst_cum"], mode="lines", name="외인+기관 합산", line=dict(color="#9467bd", width=2)),
                     row=2, col=1
@@ -148,8 +140,8 @@ def draw_market_supply_chart(target_date_str):
             fig_kosdaq.update_yaxes(fixedrange=True)
             fig_kosdaq.update_layout(
                 height=420,
-                margin=dict(l=10, r=10, t=40, b=40),
-                legend=dict(orientation="h", yanchor="bottom", y=-0.18, xanchor="center", x=0.5),
+                margin=dict(l=10, r=10, t=30, b=50),
+                legend=dict(orientation="h", yanchor="top", y=-0.18, xanchor="center", x=0.5),
             )
             st.plotly_chart(fig_kosdaq, use_container_width=True, config={"scrollZoom": False})
 
@@ -164,9 +156,10 @@ def draw_integrated_chart(
     buy_date=None,
     sell_date=None,
     supply_dates=None,
+    rank_val=None,
 ):
     """
-    알파 시그널(2번 탭) 개별 종목 기술적 캔들/이평선/타점/수급시점 복원 차트
+    알파 시그널(2번 탭) 개별 종목 기술적 캔들/이평선/타점/수급포착 복원 차트
     """
     ticker_clean = str(ticker).strip().upper()
     stock_name = (
@@ -175,8 +168,9 @@ def draw_integrated_chart(
         else ticker_clean
     )
 
+    rank_title_str = f" [모멘텀 순위: {rank_val}위]" if rank_val else ""
+
     try:
-        # 최근 180영업일 일봉 데이터 조회
         res = (
             supabase.table("daily_analysis")
             .select("price_date, open_price, high_price, low_price, close_price, volume, ma20, ma50, ma200")
@@ -196,14 +190,26 @@ def draw_integrated_chart(
         for col in ["open_price", "high_price", "low_price", "close_price", "volume", "ma20", "ma50", "ma200"]:
             df[col] = pd.to_numeric(df[col], errors="coerce")
 
+        # 📌 [핵심 해결] 0원 이하나 결측치(NaN) 데이터 완전 제거로 캔들 바닥 뻗음 현상 예방
+        df = df[
+            (df["open_price"] > 0)
+            & (df["high_price"] > 0)
+            & (df["low_price"] > 0)
+            & (df["close_price"] > 0)
+        ].reset_index(drop=True)
+
+        if df.empty:
+            st.info(f"[{ticker_clean}] 유효한 주가 데이터가 없습니다.")
+            return
+
         fig = make_subplots(
             rows=2,
             cols=1,
             shared_xaxes=True,
-            vertical_spacing=0.08,
+            vertical_spacing=0.10,
             row_heights=[0.72, 0.28],
             subplot_titles=(
-                f"[{stock_name} ({ticker_clean})] 주가 추이",
+                f"[{stock_name} ({ticker_clean})]{rank_title_str} 주가 추이",
                 "거래량",
             ),
         )
@@ -223,7 +229,7 @@ def draw_integrated_chart(
             row=1, col=1,
         )
 
-        # 1행: 이동평균선 (MA20, MA50, MA200)
+        # 이동평균선 (MA20, MA50, MA200)
         if df["ma20"].notna().any():
             fig.add_trace(
                 gg.Scatter(x=df["price_date_dt"], y=df["ma20"], mode="lines", name="MA20", line=dict(color="#ff7f0e", width=1.5)),
@@ -248,7 +254,7 @@ def draw_integrated_chart(
                 fig.add_trace(
                     gg.Scatter(
                         x=s_rows["price_date_dt"],
-                        y=s_rows["low_price"] * 0.99,
+                        y=s_rows["low_price"] * 0.98,
                         mode="markers",
                         name="수급포착",
                         marker=dict(symbol="star", size=9, color="#f57c00"),
@@ -264,7 +270,7 @@ def draw_integrated_chart(
                 fig.add_trace(
                     gg.Scatter(
                         x=[b_dt],
-                        y=[b_row["low_price"].values[0] * 0.97],
+                        y=[b_row["low_price"].values[0] * 0.96],
                         mode="markers+text",
                         name="매수타점",
                         marker=dict(symbol="triangle-up", size=14, color="#2e7d32"),
@@ -281,7 +287,7 @@ def draw_integrated_chart(
                 fig.add_trace(
                     gg.Scatter(
                         x=[s_dt],
-                        y=[s_row["high_price"].values[0] * 1.03],
+                        y=[s_row["high_price"].values[0] * 1.04],
                         mode="markers+text",
                         name="매도타점",
                         marker=dict(symbol="triangle-down", size=14, color="#c62828"),
@@ -298,11 +304,12 @@ def draw_integrated_chart(
             row=2, col=1
         )
 
+        # 📌 겹침 제거 레이아웃 조정
         fig.update_xaxes(tickformat="%m-%d", nticks=10, fixedrange=True, rangeslider_visible=False)
         fig.update_yaxes(fixedrange=True)
         fig.update_layout(
             height=480,
-            margin=dict(l=10, r=10, t=50, b=20),
+            margin=dict(l=10, r=10, t=40, b=10),
             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
         )
 
