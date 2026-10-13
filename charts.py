@@ -15,7 +15,7 @@ def draw_integrated_chart(
     supply_dates=None,
 ):
     """
-    개별 종목 기술적 캔들/이평선 차트 + 주체별(외인/기관) 및 프로그램 수급 동향 차트 통합 출력
+    개별 종목 기술적 캔들/이평선 차트 + 주체별(외인/기관) 수급 동향 차트 통합 출력
     """
     ticker_clean = str(ticker).strip().upper()
     stock_name = (
@@ -45,10 +45,10 @@ def draw_integrated_chart(
         for col in ["open_price", "high_price", "low_price", "close_price", "volume", "ma20", "ma50", "ma200"]:
             df[col] = pd.to_numeric(df[col], errors="coerce")
 
-        # 수급 데이터 조회 (외인, 기관, 프로그램 수급)
+        # 수급 데이터 안전 조회 (foreign_net, inst_net 컬럼만 조회하여 program_net 부재로 인한 42703 에러 방지)
         res_supply = (
             supabase.table("daily_top_liquidity")
-            .select("trade_date, foreign_net, inst_net, program_net")
+            .select("trade_date, foreign_net, inst_net")
             .eq("ticker", ticker_clean)
             .order("trade_date", desc=True)
             .limit(180)
@@ -58,28 +58,26 @@ def draw_integrated_chart(
 
         if not df_supply.empty:
             df_supply["price_date_dt"] = pd.to_datetime(df_supply["trade_date"])
-            for col in ["foreign_net", "inst_net", "program_net"]:
+            for col in ["foreign_net", "inst_net"]:
                 if col in df_supply.columns:
                     df_supply[col] = pd.to_numeric(df_supply[col], errors="coerce").fillna(0)
                 else:
                     df_supply[col] = 0.0
 
-            df = pd.merge(df, df_supply[["price_date_dt", "foreign_net", "inst_net", "program_net"]], on="price_date_dt", how="left")
+            df = pd.merge(df, df_supply[["price_date_dt", "foreign_net", "inst_net"]], on="price_date_dt", how="left")
             df["foreign_net"] = df["foreign_net"].fillna(0)
             df["inst_net"] = df["inst_net"].fillna(0)
-            df["program_net"] = df["program_net"].fillna(0)
             df["foreign_cum"] = df["foreign_net"].cumsum()
             df["inst_cum"] = df["inst_net"].cumsum()
-            df["program_cum"] = df["program_net"].cumsum()
+            df["total_cum"] = df["foreign_cum"] + df["inst_cum"]
         else:
             df["foreign_net"] = 0
             df["inst_net"] = 0
-            df["program_net"] = 0
             df["foreign_cum"] = 0
             df["inst_cum"] = 0
-            df["program_cum"] = 0
+            df["total_cum"] = 0
 
-        # 서브플롯 구성: 1행(캔들/이평선), 2행(거래량), 3행(주체별&프로그램 누적/일별 수급)
+        # 서브플롯 구성: 1행(캔들/이평선), 2행(거래량), 3행(주체별 누적 수급)
         fig = make_subplots(
             rows=3,
             cols=1,
@@ -89,7 +87,7 @@ def draw_integrated_chart(
             subplot_titles=(
                 f"[{stock_name} ({ticker_clean})] 주가 추이",
                 "거래량",
-                "주체별 & 프로그램 수급 동향 (백만원)",
+                "주체별 수급 동향 (백만원)",
             ),
         )
 
@@ -168,7 +166,7 @@ def draw_integrated_chart(
             row=2, col=1
         )
 
-        # 3행: 주체별(외국인/기관) 및 프로그램 누적 수급 동향
+        # 3행: 주체별(외국인/기관) 누적 수급 동향
         fig.add_trace(
             gg.Scatter(x=df["price_date_dt"], y=df["foreign_cum"], mode="lines", name="외국인 누적", line=dict(color="#d62728", width=2)),
             row=3, col=1
@@ -178,7 +176,7 @@ def draw_integrated_chart(
             row=3, col=1
         )
         fig.add_trace(
-            gg.Scatter(x=df["price_date_dt"], y=df["program_cum"], mode="lines", name="프로그램 누적", line=dict(color="#17becf", width=1.5, dash="dash")),
+            gg.Scatter(x=df["price_date_dt"], y=df["total_cum"], mode="lines", name="외인+기관 합산", line=dict(color="#17becf", width=1.5, dash="dash")),
             row=3, col=1
         )
 
