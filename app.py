@@ -62,7 +62,7 @@ st.markdown(
     html, body, [class*="st-"] { font-size: 13px !important; }
     h5 { font-size: 1.0rem !important; margin-bottom: 0.2rem !important; }
     
-    /* 상단 연장/잠금 버튼 컴팩트 스타일링 */
+    /* 📌 상단 연장/잠금 버튼 컴팩트 스타일링 */
     div[data-testid="column"] button {
         padding: 2px 8px !important;
         font-size: 0.78rem !important;
@@ -713,7 +713,7 @@ with st.sidebar:
     col_side_kr.metric("KR추천", f"{kr_buy_count}개")
     col_side_us.metric("US추천", f"{us_buy_count}개")
 
-# 상단 타이틀 & 비밀번호 인증 영역
+# 📌 상단 타이틀 & 비밀번호 인증 영역
 col_title, col_auth_status = st.columns([2.0, 2.0])
 with col_title:
     st.markdown("<h5 style='margin:0; padding:6px 0; line-height:1.4;'>Quant Alpha</h5>", unsafe_allow_html=True)
@@ -1184,7 +1184,7 @@ if df_display is not None:
                     use_container_width=True,
                 )
 
-                # 1번 수급 탭 내 매매 동향 추이 차트 시각화 (KOSPI & KOSDAQ 2열 반반 시각화)
+                # 📌 1번 수급 탭 내 KOSPI & KOSDAQ 주체별 매매 동향 2열 반반 차트
                 st.markdown("###### 주체별 & 프로그램 매매 동향 추이")
                 draw_market_supply_chart(tab1_target_date_str)
 
@@ -1529,12 +1529,17 @@ if df_display is not None:
                 except Exception:
                     pass
 
+                # 📌 선택된 종목의 모멘텀 순위 파싱하여 차트에 전달
+                matched_row = df_display[df_display["ticker"] == sel_chart_ticker]
+                sel_rank_val = matched_row["순위"].values[0] if not matched_row.empty and "순위" in matched_row.columns else None
+
                 st.markdown("###### 개별 종목 기술적 차트")
                 draw_integrated_chart(
                     sel_chart_ticker,
                     market_type,
                     ticker_name_map,
-                    supply_dates=supply_dates
+                    supply_dates=supply_dates,
+                    rank_val=sel_rank_val
                 )
 
                 st.write("")
