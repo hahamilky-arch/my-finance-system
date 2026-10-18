@@ -46,23 +46,45 @@ components.html(
 
 st.markdown("<div id='top-section'></div>", unsafe_allow_html=True)
 
-# 1. 커스텀 CSS (상단 스팀릿 메뉴 보정 + 반응형 메트릭/수급 카드/헤더 및 버튼 슬림화)
+# 1. 커스텀 CSS (스크롤바 상시 노출 + 반응형 메트릭/수급 카드/헤더 및 버튼 슬림화)
 st.markdown(
     """
     <style>
-    [data-testid="stMainBlockContainer"], .main, .main .block-container {
-        overflow: visible !important;
+    /* 📌 [요구사항 1] 상하 스크롤바가 항상 노출되도록 설정 */
+    html, body {
+        overflow-y: scroll !important;
+        overflow-x: hidden !important;
     }
+    
+    /* 웹킷 기반 브라우저(Chrome, Safari, Edge) 스크롤바 디자인 상시 노출 설정 */
+    ::-webkit-scrollbar {
+        width: 10px !important;
+        height: 10px !important;
+        display: block !important;
+    }
+    ::-webkit-scrollbar-track {
+        background: #f1f1f1 !important;
+        border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb {
+        background: #888888 !important;
+        border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+        background: #555555 !important;
+    }
+
     .block-container { 
         padding-top: 0.5rem !important; 
         padding-bottom: 0.5rem !important; 
         padding-left: 0.4rem !important;
         padding-right: 0.4rem !important;
+        max-width: 100% !important;
     }
     html, body, [class*="st-"] { font-size: 13px !important; }
     h5 { font-size: 1.0rem !important; margin-bottom: 0.2rem !important; }
     
-    /* 📌 상단 연장/잠금 버튼 컴팩트 스타일링 */
+    /* 상단 연장/잠금 버튼 컴팩트 스타일링 */
     div[data-testid="column"] button {
         padding: 2px 8px !important;
         font-size: 0.78rem !important;
@@ -71,7 +93,7 @@ st.markdown(
         border-radius: 4px !important;
     }
 
-    /* Sticky 탭 위치 및 상단 짤림 보정 */
+    /* Sticky 탭 위치 및 상단 보정 */
     div[data-testid="stTabs"] > div:first-child,
     div[data-baseweb="tab-list"],
     .stTabs [role="tablist"] {
@@ -1120,6 +1142,54 @@ if df_display is not None:
                 if divergence_msg:
                     st.warning(divergence_msg)
 
+                # 📌 [요구사항 2] 최근 20일 및 현재 스마트머니 자금 흐름(주도주, 섹터, 분야) Gemini AI 분석 컨테이너
+                with st.expander("🤖 Gemini 스마트머니 자금 흐름 & 주도 섹터 AI 진단", expanded=False):
+                    used_cnt, remain_cnt = get_remaining_quota()
+                    st.caption(f"Gemini AI 잔여 사용량: **{remain_cnt}/{MAX_DAILY_QUOTA}회**")
+                    
+                    if st.button("스마트머니 흐름 & 주도주 AI 분석 실행", type="primary", key="btn_run_smart_money_ai"):
+                        with st.spinner("최근 20일간 스마트머니(외국인/기관/비차익) 수급 유입 분야, 주도 섹터 및 주요 종목을 Gemini AI로 정밀 분석 중입니다..."):
+                            # 최근 20일간 상위 수급 종목 추출
+                            top_liq_20d_names = []
+                            try:
+                                res_top_liq_20 = (
+                                    supabase.table("daily_top_liquidity")
+                                    .select("name, foreign_net, inst_net")
+                                    .lte("trade_date", tab1_target_date_str)
+                                    .order("trade_date", desc=True)
+                                    .limit(100)
+                                    .execute()
+                                )
+                                if res_top_liq_20.data:
+                                    df_top_20 = pd.DataFrame(res_top_liq_20.data)
+                                    top_stocks_agg = df_top_20.groupby("name").sum(numeric_only=True)
+                                    top_stocks_agg["total_net"] = top_stocks_agg["foreign_net"] + top_stocks_agg["inst_net"]
+                                    top_liq_20d_names = top_stocks_agg.sort_values("total_net", ascending=False).head(10).index.tolist()
+                            except Exception:
+                                pass
+
+                            summary_market_data = {
+                                "조회일자": tab1_target_date_str,
+                                "비차익_ZScore_20일": f"{p_zscore:+.2f} ({z_tag})",
+                                "비차익_5일누적": f"{p_non_5d:+,d} 백만원 (최근10일중 {p_non_10d_cnt}일 순매수)",
+                                "KOSPI_외인_5일누적": f"{k_f_5d:+,d} 백만원 (최근10일중 {k_f_10d_cnt}일 순매수)",
+                                "KOSPI_기관_5일누적": f"{k_inst_5d:+,d} 백만원 (최근10일중 {k_i_10d_cnt}일 순매수)",
+                                "KOSDAQ_외인_5일누적": f"{kq_f_5d:+,d} 백만원 (최근10일중 {kq_f_10d_cnt}일 순매수)",
+                                "KOSDAQ_기관_5일누적": f"{kq_inst_5d:+,d} 백만원 (최근10일중 {kq_i_10d_cnt}일 순매수)",
+                                "최근20일_스마트머니_집중종목": ", ".join(top_liq_20d_names) if top_liq_20d_names else "데이터 수집중",
+                                "다이버전스_신호": divergence_msg if divergence_msg else "특이사항 없음",
+                            }
+                            
+                            ai_prompt_option = "스마트머니 수급 분석"
+                            ai_analysis_res = analyze_stock_with_gemini(
+                                "^KS11",
+                                "시장 수급 및 주도 섹터 종합",
+                                summary_market_data,
+                                ai_prompt_option
+                            )
+                            st.success("스마트머니 & 주도 섹터 AI 진단 완료")
+                            st.markdown(ai_analysis_res)
+
                 st.markdown(f"###### 수급 강도 & 연속성 지표 ({tab1_target_date_str} 기준 / 백만원)")
 
                 supply_cards_html = f"""
@@ -1184,7 +1254,7 @@ if df_display is not None:
                     use_container_width=True,
                 )
 
-                # 📌 1번 수급 탭 내 KOSPI & KOSDAQ 주체별 매매 동향 2열 반반 차트
+                # 1번 수급 탭 내 KOSPI & KOSDAQ 주체별 매매 동향 2열 반반 차트
                 st.markdown("###### 주체별 & 프로그램 매매 동향 추이")
                 draw_market_supply_chart(tab1_target_date_str)
 
@@ -1529,7 +1599,7 @@ if df_display is not None:
                 except Exception:
                     pass
 
-                # 📌 선택된 종목의 모멘텀 순위 파싱하여 차트에 전달
+                # 선택된 종목의 모멘텀 순위 파싱하여 차트에 전달
                 matched_row = df_display[df_display["ticker"] == sel_chart_ticker]
                 sel_rank_val = matched_row["순위"].values[0] if not matched_row.empty and "순위" in matched_row.columns else None
 
@@ -1672,6 +1742,7 @@ if df_display is not None:
                         "분석 항목 선택",
                         [
                             "종합 기본적 분석",
+                            "스마트머니 & 섹터 주도주 분석",
                             "ROE 듀퐁 분석",
                             "사업 구조",
                             "퀀트 밸류에이션",
