@@ -50,13 +50,12 @@ st.markdown("<div id='top-section'></div>", unsafe_allow_html=True)
 st.markdown(
     """
     <style>
-    /* 📌 [요구사항 1] 상하 스크롤바가 항상 노출되도록 설정 */
+    /* 📌 상하 스크롤바 상시 노출 및 웹킷 스크롤바 보정 */
     html, body {
         overflow-y: scroll !important;
         overflow-x: hidden !important;
     }
     
-    /* 웹킷 기반 브라우저(Chrome, Safari, Edge) 스크롤바 디자인 상시 노출 설정 */
     ::-webkit-scrollbar {
         width: 10px !important;
         height: 10px !important;
@@ -492,7 +491,7 @@ def display_trade_list(
                 )
                 rec_rank_val = row.get("추천순위", row.get("매수추천순위", ""))
                 rec_rank_display = (
-                    f"{rec_rank_val}위" if (rec_rank_val != "" and pd.notna(rec_rank_val)) else "-"
+                    f"{rec_rank_val}위" if (rec_rank_val != "" and pd.notna(rec_rank_display)) else "-"
                 )
                 reason_desc = (
                     f"후순위 대체 종목 [추천순위: {rec_rank_display}]"
@@ -846,7 +845,7 @@ if df_display is not None:
         "백테스트 리포트",
     ])
 
-    # TAB 1: 시장 & 수급 종합
+    # TAB 1: 시장 & 수급 종합 (시장 전체 스마트머니 흐름 & 섹터/주도주 집중 진단)
     with tab1:
         if st.session_state.get("last_sidebar_selected_date") != selected_date:
             st.session_state["last_sidebar_selected_date"] = selected_date
@@ -1142,14 +1141,14 @@ if df_display is not None:
                 if divergence_msg:
                     st.warning(divergence_msg)
 
-                # 📌 [요구사항 2] 최근 20일 및 현재 스마트머니 자금 흐름(주도주, 섹터, 분야) Gemini AI 분석 컨테이너
-                with st.expander("🤖 Gemini 스마트머니 자금 흐름 & 주도 섹터 AI 진단", expanded=False):
+                # 📌 시장 전체 스마트머니 흐름 & 섹터/주도주 쏠림 Gemini AI 종합 진단
+                with st.expander("🤖 Gemini 시장 전체 스마트머니 흐름 & 주도 섹터 AI 진단", expanded=False):
                     used_cnt, remain_cnt = get_remaining_quota()
                     st.caption(f"Gemini AI 잔여 사용량: **{remain_cnt}/{MAX_DAILY_QUOTA}회**")
                     
-                    if st.button("스마트머니 흐름 & 주도주 AI 분석 실행", type="primary", key="btn_run_smart_money_ai"):
-                        with st.spinner("최근 20일간 스마트머니(외국인/기관/비차익) 수급 유입 분야, 주도 섹터 및 주요 종목을 Gemini AI로 정밀 분석 중입니다..."):
-                            # 최근 20일간 상위 수급 종목 추출
+                    if st.button("시장 전체 스마트머니 자금 흐름 AI 진단 실행", type="primary", key="btn_run_smart_money_ai"):
+                        with st.spinner("시장 전체 스마트머니(외국인/기관/비차익) 수급 유입 분야, 주도 섹터 및 자금 쏠림을 Gemini AI로 분석 중입니다..."):
+                            # 최근 20일간 상위 수급 종목 추출하여 스마트머니 집결지 파악
                             top_liq_20d_names = []
                             try:
                                 res_top_liq_20 = (
@@ -1176,7 +1175,7 @@ if df_display is not None:
                                 "KOSPI_기관_5일누적": f"{k_inst_5d:+,d} 백만원 (최근10일중 {k_i_10d_cnt}일 순매수)",
                                 "KOSDAQ_외인_5일누적": f"{kq_f_5d:+,d} 백만원 (최근10일중 {kq_f_10d_cnt}일 순매수)",
                                 "KOSDAQ_기관_5일누적": f"{kq_inst_5d:+,d} 백만원 (최근10일중 {kq_i_10d_cnt}일 순매수)",
-                                "최근20일_스마트머니_집중종목": ", ".join(top_liq_20d_names) if top_liq_20d_names else "데이터 수집중",
+                                "시장_스마트머니_집중_상위종목": ", ".join(top_liq_20d_names) if top_liq_20d_names else "데이터 수집중",
                                 "다이버전스_신호": divergence_msg if divergence_msg else "특이사항 없음",
                             }
                             
@@ -1187,7 +1186,7 @@ if df_display is not None:
                                 summary_market_data,
                                 ai_prompt_option
                             )
-                            st.success("스마트머니 & 주도 섹터 AI 진단 완료")
+                            st.success("시장 전체 스마트머니 흐름 진단 완료")
                             st.markdown(ai_analysis_res)
 
                 st.markdown(f"###### 수급 강도 & 연속성 지표 ({tab1_target_date_str} 기준 / 백만원)")
