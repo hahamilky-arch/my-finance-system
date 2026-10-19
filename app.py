@@ -46,14 +46,15 @@ components.html(
 
 st.markdown("<div id='top-section'></div>", unsafe_allow_html=True)
 
-# 1. 커스텀 CSS (스크롤바 상시 노출 + 반응형 메트릭/수급 카드/헤더 및 버튼 슬림화)
+# 1. 커스텀 CSS (스크롤바 상시 노출 + 우측 여백 10px + 반응형 메트릭/수급 카드)
 st.markdown(
     """
     <style>
-    /* 📌 상하 스크롤바 상시 노출 및 웹킷 스크롤바 보정 */
+    /* 📌 상하 스크롤바 상시 노출 및 우측 여백 10px 적용 */
     html, body {
         overflow-y: scroll !important;
         overflow-x: hidden !important;
+        padding-right: 10px !important;
     }
     
     ::-webkit-scrollbar {
@@ -77,7 +78,7 @@ st.markdown(
         padding-top: 0.5rem !important; 
         padding-bottom: 0.5rem !important; 
         padding-left: 0.4rem !important;
-        padding-right: 0.4rem !important;
+        padding-right: 10px !important;
         max-width: 100% !important;
     }
     html, body, [class*="st-"] { font-size: 13px !important; }
@@ -251,7 +252,7 @@ if is_authenticated:
 
 
 def apply_styles(df):
-    """표 스타일링 적용 함수: 변동/상승률 색상 및 순위별 배경색 처리"""
+    """표 스타일링 적용 함수"""
     df_s = pd.DataFrame("", index=df.index, columns=df.columns)
     for col in ["변동", "상승금액", "상승률"]:
         if col in df.columns:
@@ -845,7 +846,7 @@ if df_display is not None:
         "백테스트 리포트",
     ])
 
-    # TAB 1: 시장 & 수급 종합 (시장 전체 스마트머니 흐름 & 섹터/주도주 집중 진단)
+    # TAB 1: 시장 & 수급 종합
     with tab1:
         if st.session_state.get("last_sidebar_selected_date") != selected_date:
             st.session_state["last_sidebar_selected_date"] = selected_date
@@ -1141,14 +1142,13 @@ if df_display is not None:
                 if divergence_msg:
                     st.warning(divergence_msg)
 
-                # 📌 시장 전체 스마트머니 흐름 & 섹터/주도주 쏠림 Gemini AI 종합 진단
+                # 시장 전체 스마트머니 자금 흐름 & 주도 섹터 AI 진단 컨테이너
                 with st.expander("🤖 Gemini 시장 전체 스마트머니 흐름 & 주도 섹터 AI 진단", expanded=False):
                     used_cnt, remain_cnt = get_remaining_quota()
                     st.caption(f"Gemini AI 잔여 사용량: **{remain_cnt}/{MAX_DAILY_QUOTA}회**")
                     
                     if st.button("시장 전체 스마트머니 자금 흐름 AI 진단 실행", type="primary", key="btn_run_smart_money_ai"):
                         with st.spinner("시장 전체 스마트머니(외국인/기관/비차익) 수급 유입 분야, 주도 섹터 및 자금 쏠림을 Gemini AI로 분석 중입니다..."):
-                            # 최근 20일간 상위 수급 종목 추출하여 스마트머니 집결지 파악
                             top_liq_20d_names = []
                             try:
                                 res_top_liq_20 = (
@@ -1253,9 +1253,54 @@ if df_display is not None:
                     use_container_width=True,
                 )
 
-                # 1번 수급 탭 내 KOSPI & KOSDAQ 주체별 매매 동향 2열 반반 차트
+                # 1번 수급 탭 내 주체별 매매 동향 차트 (기존 차트)
                 st.markdown("###### 주체별 & 프로그램 매매 동향 추이")
                 draw_market_supply_chart(tab1_target_date_str)
+
+                # 📌 [추가 요구사항] 코스피 외인+기관 합산 수급 추이 차트 생성 및 렌더링
+                if not df_k_all.empty:
+                    df_k_chart = df_k_all.head(30).sort_values("trade_date").copy()
+                    df_k_chart["trade_date_dt"] = pd.to_datetime(df_k_chart["trade_date"])
+                    df_k_chart["foreign_net_val"] = pd.to_numeric(df_k_chart["foreign_net"], errors="coerce").fillna(0)
+                    df_k_chart["inst_net_val"] = pd.to_numeric(df_k_chart["institution_net"], errors="coerce").fillna(0)
+                    df_k_chart["smart_money_sum"] = df_k_chart["foreign_net_val"] + df_k_chart["inst_net_val"]
+                    df_k_chart["smart_money_cum"] = df_k_chart["smart_money_sum"].cumsum()
+
+                    fig_kospi_smart = gg.Figure()
+                    
+                    # 일별 외인+기관 합산 막대 그래프
+                    fig_kospi_smart.add_trace(
+                        gg.Bar(
+                            x=df_k_chart["trade_date_dt"],
+                            y=df_k_chart["smart_money_sum"],
+                            name="일별 순매수 합산",
+                            marker_color=np.where(df_k_chart["smart_money_sum"] >= 0, "#d62728", "#1f77b4")
+                        )
+                    )
+
+                    # 누적 외인+기관 합산 선 그래프
+                    fig_kospi_smart.add_trace(
+                        gg.Scatter(
+                            x=df_k_chart["trade_date_dt"],
+                            y=df_k_chart["smart_money_cum"],
+                            mode="lines+markers",
+                            name="30일 누적 합산",
+                            line=dict(color="#2ca02c", width=2.5)
+                        )
+                    )
+
+                    fig_kospi_smart.update_xaxes(tickformat="%m-%d", nticks=8, fixedrange=True)
+                    fig_kospi_smart.update_yaxes(fixedrange=True)
+
+                    fig_kospi_smart.update_layout(
+                        title="📊 코스피 외국인 + 기관 합산 수급 추이 (최근 30영업일 / 백만원)",
+                        height=260,
+                        margin=dict(l=10, r=10, t=35, b=15),
+                        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                        hovermode="x unified"
+                    )
+
+                    st.plotly_chart(fig_kospi_smart, use_container_width=True, config={'scrollZoom': False})
 
                 st.divider()
 
@@ -1341,7 +1386,7 @@ if df_display is not None:
                     else:
                         st.caption("최근 10일 수급 데이터가 없습니다.")
 
-                # 당일 수급 포착 전체 종목 목록 표 출력 (안전 파싱)
+                # 당일 수급 포착 전체 종목 목록 표 출력
                 st.divider()
                 st.markdown(f"###### 당일 수급 포착 전체 종목 목록 ({tab1_target_date_str} 기준)")
                 
@@ -1598,7 +1643,6 @@ if df_display is not None:
                 except Exception:
                     pass
 
-                # 선택된 종목의 모멘텀 순위 파싱하여 차트에 전달
                 matched_row = df_display[df_display["ticker"] == sel_chart_ticker]
                 sel_rank_val = matched_row["순위"].values[0] if not matched_row.empty and "순위" in matched_row.columns else None
 
