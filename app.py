@@ -54,7 +54,7 @@ st.markdown(
     html, body {
         overflow-y: scroll !important;
         overflow-x: hidden !important;
-        padding-right: 10px !important;
+        padding-right: 20px !important;
     }
     
     ::-webkit-scrollbar {
