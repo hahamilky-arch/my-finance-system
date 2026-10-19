@@ -36,8 +36,6 @@ def analyze_stock_with_gemini(ticker, stock_name, stock_data, analysis_type="종
     st.session_state["gemini_usage_count"] = used_cnt + 1
 
     try:
-        model = genai.GenerativeModel("gemini-1.5-flash")
-
         # 📌 1. 시장 전체 스마트머니 수급 & 주도 섹터/주도주 분석 프롬프트
         if analysis_type == "스마트머니 수급 분석":
             market_info = stock_data if isinstance(stock_data, dict) else {}
@@ -141,6 +139,8 @@ def analyze_stock_with_gemini(ticker, stock_name, stock_data, analysis_type="종
 위 데이터를 바탕으로 종목의 현재 모멘텀, 기업 가치, 투자 유의점 및 최종 매매 제언을 간결하게 작성해라.
 """
 
+        # 📌 gemini-3.6-flash 모델 단일 고정 호출
+        model = genai.GenerativeModel("gemini-3.6-flash")
         response = model.generate_content(prompt)
         return response.text
 
