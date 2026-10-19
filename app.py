@@ -46,32 +46,62 @@ components.html(
 
 st.markdown("<div id='top-section'></div>", unsafe_allow_html=True)
 
-# 1. 커스텀 CSS (스크롤바 상시 노출 + 우측 여백 10px + 반응형 메트릭/수급 카드)
+# 1. 커스텀 CSS (스크롤 편의성 강화 + 우측 여백 10px + 반응형 메트릭/수급 카드)
 st.markdown(
     """
     <style>
-    /* 📌 상하 스크롤바 상시 노출 및 우측 여백 10px 적용 */
+    /* 📌 부드러운 스크롤 및 상하 스크롤바 클릭 영역 확대 (14px) */
+    html {
+        scroll-behavior: smooth !important;
+    }
+    
     html, body {
         overflow-y: scroll !important;
         overflow-x: hidden !important;
-        padding-right: 20px !important;
+        padding-right: 10px !important;
     }
     
     ::-webkit-scrollbar {
-        width: 10px !important;
-        height: 10px !important;
+        width: 14px !important;
+        height: 14px !important;
         display: block !important;
     }
     ::-webkit-scrollbar-track {
-        background: #f1f1f1 !important;
-        border-radius: 4px;
+        background: #f1f3f5 !important;
+        border-radius: 6px;
     }
     ::-webkit-scrollbar-thumb {
-        background: #888888 !important;
-        border-radius: 4px;
+        background: #a0a0a0 !important;
+        border-radius: 6px;
+        border: 2px solid #f1f3f5 !important;
     }
     ::-webkit-scrollbar-thumb:hover {
-        background: #555555 !important;
+        background: #666666 !important;
+    }
+
+    /* 📌 우측 하단 '최상단 이동' 플로팅 고정 버튼 스타일 */
+    .floating-top-btn {
+        position: fixed;
+        bottom: 25px;
+        right: 25px;
+        z-index: 999999;
+        background-color: #212529;
+        color: #ffffff !important;
+        padding: 10px 14px;
+        border-radius: 50px;
+        font-size: 0.82rem;
+        font-weight: bold;
+        text-decoration: none !important;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+        transition: all 0.2s ease-in-out;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+    }
+    .floating-top-btn:hover {
+        background-color: #d62728;
+        transform: translateY(-3px);
+        color: #ffffff !important;
     }
 
     .block-container { 
@@ -205,6 +235,9 @@ st.markdown(
         display: inline-block;
     }
     </style>
+
+    <!-- 📌 우측 하단 최상단 이동 버튼 태그 -->
+    <a href="#top-section" class="floating-top-btn">▲ 맨위로</a>
     """,
     unsafe_allow_html=True,
 )
@@ -1257,7 +1290,7 @@ if df_display is not None:
                 st.markdown("###### 주체별 & 프로그램 매매 동향 추이")
                 draw_market_supply_chart(tab1_target_date_str)
 
-                # 📌 [추가 요구사항] 코스피 외인+기관 합산 수급 추이 차트 생성 및 렌더링
+                # 코스피 외인+기관 합산 수급 추이 차트
                 if not df_k_all.empty:
                     df_k_chart = df_k_all.head(30).sort_values("trade_date").copy()
                     df_k_chart["trade_date_dt"] = pd.to_datetime(df_k_chart["trade_date"])
