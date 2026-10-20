@@ -47,7 +47,7 @@ components.html(
 
 st.markdown("<div id='top-section'></div>", unsafe_allow_html=True)
 
-# 1. 개편된 UI/UX 커스텀 CSS (텍스트 겹침 완벽 보정)
+# 1. 커스텀 CSS (st.expander keyboard_arrow... 문자 겹침 완벽 보정)
 st.markdown(
     """
     <style>
@@ -63,7 +63,7 @@ st.markdown(
     .block-container { padding-top: 0.8rem !important; padding-bottom: 2rem !important; padding-left: 0.8rem !important; padding-right: 14px !important; max-width: 1000px !important; margin: 0 auto; }
     html, body, [class*="st-"] { font-size: 13px !important; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
 
-    /* 비밀번호 입력창 잔여 텍스트 차단 */
+    /* 1) 비밀번호 입력창 잔여 텍스트 차단 */
     div[data-testid="stTextInput"] label,
     div[data-testid="stTextInput"] [data-testid="stInputHelperText"],
     div[data-testid="stTextInput"] p:not(:has(input)),
@@ -78,27 +78,40 @@ st.markdown(
         font-size: 0.85rem !important;
     }
 
-    /* expander 아이콘/글자 겹침 해결 */
+    /* 2) expander keyboard_arrow_... 글자 겹침 근본 보정 */
     div[data-testid="stExpander"] details summary {
         display: flex !important;
         align-items: center !important;
-        gap: 8px !important;
+        position: relative !important;
     }
-    div[data-testid="stExpander"] details summary span[data-testid="stIconMaterial"],
-    div[data-testid="stExpander"] details summary svg {
+
+    /* Streamlit expander 아이콘 영역 폰트 보정 */
+    div[data-testid="stExpander"] details summary [data-testid="stIconMaterial"],
+    div[data-testid="stExpander"] details summary .st-emotion-cache-16ids93,
+    div[data-testid="stExpander"] details summary span:first-child {
         font-family: 'Material Symbols Outlined', 'Material Icons' !important;
-        display: inline-block !important;
-        width: 1.25rem !important;
-        min-width: 1.25rem !important;
+        font-weight: normal !important;
+        font-style: normal !important;
         font-size: 1.25rem !important;
         line-height: 1 !important;
-        margin-right: 4px !important;
+        text-transform: none !important;
+        letter-spacing: normal !important;
+        word-wrap: normal !important;
+        white-space: nowrap !important;
+        direction: ltr !important;
+        margin-right: 8px !important;
+        display: inline-block !important;
     }
-    div[data-testid="stExpander"] details summary p {
+
+    /* expander 제목 텍스트 위치 정렬 */
+    div[data-testid="stExpander"] details summary p,
+    div[data-testid="stExpander"] details summary span:nth-child(2) {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
         margin: 0 !important;
-        padding: 0 !important;
+        padding-left: 4px !important;
         font-size: 0.9rem !important;
         font-weight: 600 !important;
+        color: #212529 !important;
     }
 
     /* 메인 요약 '오늘의 행동' 카드 */
@@ -1259,7 +1272,7 @@ if df_display is not None:
             display_trade_list(df_rebal[df_rebal["매매상태"] == "매도"], "시스템 매도 필요 종목", "매도", "sys_s", target_date_str, is_latest_date, market_type, holdings_db, top_n_cfg, account_total_input, current_engine_key)
             display_trade_list(df_rebal[df_rebal["매매상태"] == "추천"], "시스템 매수 추천 종목", "매수", "sys_b", target_date_str, is_latest_date, market_type, holdings_db, top_n_cfg, account_total_input, current_engine_key)
 
-    # TAB 4: 성과 (KeyError: '종목명' 획기적 수정)
+    # TAB 4: 성과
     with tab4:
         st.markdown(f"##### {market_type} 시장 성과 분석 리포트")
         if not is_authenticated:
@@ -1284,7 +1297,6 @@ if df_display is not None:
                 df_hist = df_hist_raw[mask_period].copy()
 
                 if not df_hist.empty:
-                    # stocks 테이블과 안전한 병합 처리로 '종목명' 컬럼 확정 보장
                     try:
                         df_stocks = pd.DataFrame(supabase.table("stocks").select("ticker, name").execute().data)
                         if not df_stocks.empty:
