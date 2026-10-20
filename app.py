@@ -976,7 +976,8 @@ if df_display is not None:
 
         st.divider()
 
-        st.markdown("<div style='display:flex; justify-content:space-between; align-items:center;'><strong>수급 상위 종목</strong> <span style='font-size:0.75rem; color:#868e96;'>단위 억원</span></div>", unsafe_allow_html=True)
+        # 📌 단위 보정: 단위 백만원 반영
+        st.markdown("<div style='display:flex; justify-content:space-between; align-items:center;'><strong>수급 상위 종목</strong> <span style='font-size:0.75rem; color:#868e96;'>단위 백만원</span></div>", unsafe_allow_html=True)
         st.write("")
 
         try:
@@ -987,6 +988,7 @@ if df_display is not None:
 
         df_stock_liq = df_liq_10d[df_liq_10d["trade_date"] == target_date_str] if not df_liq_10d.empty else pd.DataFrame()
 
+        # 📌 수급 상위 4개 탭 전면 보정 (단위: 백만원)
         s_tab1, s_tab2, s_tab3, s_tab4 = st.tabs(["외인 TOP5", "기관 TOP5", "외인 빈도", "기관 빈도"])
 
         with s_tab1:
@@ -996,14 +998,13 @@ if df_display is not None:
                 df_f_top["foreign_net_val"] = pd.to_numeric(df_f_top["foreign_net"], errors="coerce").fillna(0).astype(int)
                 df_f_top["inst_net_val"] = pd.to_numeric(df_f_top["inst_net"], errors="coerce").fillna(0).astype(int)
                 
-                df_f_top["외인·기관"] = df_f_top.apply(lambda r: f"{int(r['foreign_net_val']):+,d}\n{int(r['inst_net_val']):+,d}", axis=1)
                 df_f_top["종목"] = df_f_top.apply(lambda r: f"**{r['name']}**\n`{r['ticker']}` · 수급 {r['rank']}위", axis=1)
                 
                 st.dataframe(
-                    df_f_top[["종목", "change_rate", "foreign_net_val"]].rename(columns={"change_rate": "등락률", "foreign_net_val": "외국인순매수(억)"}).style.format({
+                    df_f_top[["종목", "change_rate", "foreign_net_val"]].rename(columns={"change_rate": "등락률", "foreign_net_val": "외국인순매수(백만원)"}).style.format({
                         "등락률": "{:+.2f}%",
-                        "외국인순매수(억)": "{:+,.0f}",
-                    }).map(lambda v: "color: #d62728;" if float(v) > 0 else ("color: #1f77b4;" if float(v) < 0 else ""), subset=["등락률", "외국인순매수(억)"]),
+                        "외국인순매수(백만원)": "{:+,.0f}",
+                    }).map(lambda v: "color: #d62728;" if float(v) > 0 else ("color: #1f77b4;" if float(v) < 0 else ""), subset=["등락률", "외국인순매수(백만원)"]),
                     hide_index=True,
                     use_container_width=True
                 )
@@ -1014,26 +1015,48 @@ if df_display is not None:
             if not df_stock_liq.empty:
                 df_i_top = df_stock_liq.sort_values("inst_net", ascending=False).head(5)[["name", "ticker", "rank", "change_rate", "inst_net"]].copy()
                 df_i_top["inst_net_val"] = pd.to_numeric(df_i_top["inst_net"], errors="coerce").fillna(0).astype(int)
+                df_i_top["종목"] = df_i_top.apply(lambda r: f"**{r['name']}**\n`{r['ticker']}` · 수급 {r['rank']}위", axis=1)
+
                 st.dataframe(
-                    df_i_top.rename(columns={"name": "종목명", "change_rate": "등락률", "inst_net_val": "기관순매수(억)"}).style.format({
+                    df_i_top[["종목", "change_rate", "inst_net_val"]].rename(columns={"change_rate": "등락률", "inst_net_val": "기관순매수(백만원)"}).style.format({
                         "등락률": "{:+.2f}%",
-                        "기관순매수(억)": "{:+,.0f}",
-                    }).map(lambda v: "color: #d62728;" if float(v) > 0 else ("color: #1f77b4;" if float(v) < 0 else ""), subset=["등락률", "기관순매수(억)"]),
+                        "기관순매수(백만원)": "{:+,.0f}",
+                    }).map(lambda v: "color: #d62728;" if float(v) > 0 else ("color: #1f77b4;" if float(v) < 0 else ""), subset=["등락률", "기관순매수(백만원)"]),
                     hide_index=True,
                     use_container_width=True
                 )
+            else:
+                st.info("당일 수급 데이터 집계 중입니다.")
 
         with s_tab3:
             if not df_liq_10d.empty:
                 df_f_pos = df_liq_10d[df_liq_10d["foreign_net"] > 0]
                 freq_f = df_f_pos.groupby(["ticker", "name"]).agg(빈도수=("trade_date", "nunique"), 누적순매수=("foreign_net", "sum")).reset_index().sort_values("빈도수", ascending=False).head(5)
-                st.dataframe(freq_f, hide_index=True, use_container_width=True)
+                freq_f["누적순매수"] = pd.to_numeric(freq_f["누적순매수"], errors="coerce").fillna(0).astype(int)
+                freq_f = freq_f.rename(columns={"ticker": "종목코드", "name": "종목명", "누적순매수": "누적순매수(백만원)"})
+                
+                st.dataframe(
+                    freq_f.style.format({
+                        "누적순매수(백만원)": "{:+,.0f}",
+                    }).map(lambda v: "color: #d62728;" if float(v) > 0 else ("color: #1f77b4;" if float(v) < 0 else ""), subset=["누적순매수(백만원)"]),
+                    hide_index=True,
+                    use_container_width=True
+                )
 
         with s_tab4:
             if not df_liq_10d.empty:
                 df_i_pos = df_liq_10d[df_liq_10d["inst_net"] > 0]
                 freq_i = df_i_pos.groupby(["ticker", "name"]).agg(빈도수=("trade_date", "nunique"), 누적순매수=("inst_net", "sum")).reset_index().sort_values("빈도수", ascending=False).head(5)
-                st.dataframe(freq_i, hide_index=True, use_container_width=True)
+                freq_i["누적순매수"] = pd.to_numeric(freq_i["누적순매수"], errors="coerce").fillna(0).astype(int)
+                freq_i = freq_i.rename(columns={"ticker": "종목코드", "name": "종목명", "누적순매수": "누적순매수(백만원)"})
+
+                st.dataframe(
+                    freq_i.style.format({
+                        "누적순매수(백만원)": "{:+,.0f}",
+                    }).map(lambda v: "color: #d62728;" if float(v) > 0 else ("color: #1f77b4;" if float(v) < 0 else ""), subset=["누적순매수(백만원)"]),
+                    hide_index=True,
+                    use_container_width=True
+                )
 
         with st.expander("전체 종목 보기", expanded=False):
             if not df_stock_liq.empty:
