@@ -62,7 +62,7 @@ st.markdown(
     .block-container { padding-top: 0.5rem !important; padding-bottom: 5rem !important; padding-left: 0.8rem !important; padding-right: 12px !important; max-width: 1000px !important; margin: 0 auto; }
     html, body, [class*="st-"] { font-size: 13px !important; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
 
-    /* 여백 및 구분선 정돈 (약 32px 간격 유지를 위한 타이트한 구조) */
+    /* 여백 및 구분선 정돈 */
     div[data-testid="stVerticalBlock"] > div { margin-bottom: 0.6rem !important; }
     
     /* 비밀번호 및 컴포넌트 내부 잔여 아이콘 대체 텍스트 완전 은폐 */
@@ -140,7 +140,7 @@ st.markdown(
     .tag-container { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
     .tag-badge { background-color: #ffffff; border: 1px solid #e9ecef; color: #495057; font-size: 0.7rem; font-weight: 600; padding: 3px 8px; border-radius: 16px; }
 
-    /* 우측 하단 맨위로 버튼 및 Bottom Spacing (Manage app 가림 해결) */
+    /* 우측 하단 맨위로 버튼 및 Bottom Spacing */
     .floating-top-btn {
         position: fixed; bottom: 25px; right: 20px; z-index: 999999;
         background-color: #3b5bdb; color: #ffffff !important; padding: 6px 12px;
@@ -424,7 +424,7 @@ if "db_settings_loaded" not in st.session_state:
 all_dates = get_available_dates()
 latest_date_default = pd.to_datetime(all_dates[0]) if all_dates else None
 
-# 📌 3.1 상단 바 개선 (한 줄에 인증 타이머/연장/설정 깔끔 배치)
+# 상단 Header UI
 head_col1, head_col2 = st.columns([1.5, 2.5], vertical_alignment="center")
 
 with head_col1:
@@ -436,7 +436,6 @@ with head_col2:
         remaining_sec = max(0, int(LOGIN_TIMEOUT_SECONDS - elapsed))
         rem_min, rem_sec = remaining_sec // 60, remaining_sec % 60
 
-        # 한 줄 배치를 위한 커스텀 flex 라인
         st.markdown(
             f"""
             <div style="display: flex; align-items: center; justify-content: flex-end; gap: 8px;">
@@ -498,7 +497,6 @@ with head_col2:
                 else:
                     st.error("불일치")
 
-# 📌 3.1 컨트롤 한 줄 정렬 (KR/US 세그먼트 + DatePicker 한 줄 배치)
 ctrl_col1, ctrl_col2 = st.columns([1.2, 1.8], vertical_alignment="center")
 with ctrl_col1:
     market_type = st.segmented_control("Market", options=["KR", "US"], default="KR", label_visibility="collapsed")
@@ -632,7 +630,6 @@ if df_display is not None:
         buy_cnt_display = min(buy_cnt, needed_slots)
         sell_cnt = len(df_display[df_display["매매상태"] == "매도"])
 
-        # 📌 4.1 "0개 색 정리": 추천 종목 0개의 빨강 색상을 기본 무채색으로 정돈
         buy_val_color = "#d62728" if buy_cnt_display > 0 else "#212529"
 
         action_card_html = f"""<div class="action-card">
@@ -709,7 +706,6 @@ if df_display is not None:
 
         st.write("")
 
-        # 📌 수급 요약 섹션
         if market_type == "US":
             st.info("💡 **미국 시장(US) 안내**: 미국장은 수급 데이터 대신 S&P 500 지수 추세 및 종목별 모멘텀 지표(Rank, RS)를 바탕으로 전략이 동작합니다.")
         else:
@@ -744,11 +740,9 @@ if df_display is not None:
                 k_f_5d_tr = (df_k_inv.head(10)["foreign_net"] > 0).sum() if not df_k_inv.empty else 0
                 k_i_5d_tr = (df_k_inv.head(10)["institution_net"] > 0).sum() if not df_k_inv.empty else 0
                 
-                # 조원 단위 변환 (DB 백만원 / 1,000,000 = 조원)
                 k_f_val = float(df_k_inv.iloc[0].get("foreign_net", 0)) / 1000000.0 if not df_k_inv.empty else 0.0
                 k_i_val = float(df_k_inv.iloc[0].get("institution_net", 0)) / 1000000.0 if not df_k_inv.empty else 0.0
 
-                # 10일 누적 합산 (조원)
                 k_f_cum_10d = float(df_k_inv.head(10)["foreign_net"].sum()) / 1000000.0 if not df_k_inv.empty else 0.0
                 k_i_cum_10d = float(df_k_inv.head(10)["institution_net"].sum()) / 1000000.0 if not df_k_inv.empty else 0.0
             else:
@@ -765,7 +759,6 @@ if df_display is not None:
                 unsafe_allow_html=True
             )
 
-            # 📌 2.2 & 2.3 기준 혼동 해소 및 막대 색상 통일 (순매수일: 빨강, 아닌날: 회색)
             f_bars = "".join([f'<div class="gauge-segment segment-active"></div>' if i < k_f_5d_tr else '<div class="gauge-segment segment-inactive"></div>' for i in range(10)])
             st.markdown(
                 f"""<div class="gauge-card">
@@ -796,7 +789,6 @@ if df_display is not None:
 
             st.write("")
 
-            # 📌 2.1 "단위를 억원으로 통일": 주체별 매매 동향 (백만원 / 100 = 억원)
             st.markdown(f"<div style='display:flex; justify-content:space-between; align-items:center;'><strong>주체별 매매 동향</strong> <span style='font-size:0.7rem; color:#868e96;'>단위 억원</span></div>", unsafe_allow_html=True)
             st.write("")
 
@@ -844,7 +836,6 @@ if df_display is not None:
 
             df_stock_liq = df_liq_10d[df_liq_10d["trade_date"] == target_date_str] if not df_liq_10d.empty else pd.DataFrame()
 
-            # 📌 2.4 "탭 위계 삼기": st.segmented_control로 서브 탭 변경
             sub_tab_selected = st.segmented_control(
                 "수급 종목 분류",
                 options=["외인 TOP5", "기관 TOP5", "외인 빈도", "기관 빈도"],
@@ -855,8 +846,6 @@ if df_display is not None:
             if sub_tab_selected == "외인 TOP5":
                 if not df_stock_liq.empty:
                     df_f_top = df_stock_liq.sort_values("foreign_net", ascending=False).head(5).copy()
-                    
-                    # 📌 1. 버그 수정: 평문 포맷팅 및 📌 3.3 열 통합 (외인/기관 한열 표시)
                     df_f_top["종목 (티커)"] = df_f_top.apply(lambda r: f"{r['name']} ({r['ticker']})", axis=1)
                     df_f_top["외인/기관 순매수"] = df_f_top.apply(lambda r: f"외: {float(r['foreign_net'])/100:+,.0f}억\n기: {float(r['inst_net'])/100:+,.0f}억", axis=1)
                     df_f_top["등락률_val"] = df_f_top["change_rate"]
@@ -932,7 +921,7 @@ if df_display is not None:
 
         st.write("")
 
-        # 📌 4.2 지수 차트에 MA20 이탈(하회 시작일) 마커 추가
+        # 📌 지수 차트 (MA20 이탈점 마커 버그 수정 완료)
         index_chart_title = f"{target_market_name} 지수 · MA20/50/200"
         with st.expander(index_chart_title, expanded=True):
             try:
@@ -953,7 +942,7 @@ if df_display is not None:
                     if "ma200" in df_idx_c.columns:
                         fig_market_idx.add_trace(gg.Scatter(x=df_idx_c["price_date_dt"], y=df_idx_c["ma200"], mode="lines", name="MA200", line=dict(color="#e03131", width=1.5, dash="dot")))
 
-                    # 이탈 시점 마커 (주황색 X표)
+                    # 📌 [수정] 이탈 시점 마커 (linewidth 속성 오류 해결)
                     breakdown_df = df_idx_c[df_idx_c["ma20_breakdown"]]
                     if not breakdown_df.empty:
                         fig_market_idx.add_trace(gg.Scatter(
@@ -961,7 +950,7 @@ if df_display is not None:
                             y=breakdown_df["close_price"],
                             mode="markers",
                             name="MA20 이탈점",
-                            marker=dict(symbol="x", size=9, color="#f59f00", linewidth=2)
+                            marker=dict(symbol="x", size=9, color="#f59f00", line=dict(width=2, color="#f59f00"))
                         ))
 
                     fig_market_idx.update_layout(height=260, margin=dict(l=10, r=10, t=20, b=20))
@@ -1383,7 +1372,7 @@ if df_display is not None:
             df_bt = pd.DataFrame(bt_data)
             st.dataframe(df_bt, hide_index=True, use_container_width=True)
 
-    # 📌 3.4 하단 Manage app 배지 가림 방지 스페이서 공간
+    # 하단 스페이서 공간
     st.markdown("<div class='bottom-spacer'></div>", unsafe_allow_html=True)
 
 else:
