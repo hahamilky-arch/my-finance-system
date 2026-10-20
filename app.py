@@ -47,7 +47,7 @@ components.html(
 
 st.markdown("<div id='top-section'></div>", unsafe_allow_html=True)
 
-# 1. 커스텀 CSS (st.expander keyboard_arrow... 문자 겹침 완벽 보정)
+# 1. 커스텀 CSS (st.expander keyboard_arrow... 문자 겹침 완전 제거)
 st.markdown(
     """
     <style>
@@ -78,38 +78,30 @@ st.markdown(
         font-size: 0.85rem !important;
     }
 
-    /* 2) expander keyboard_arrow_... 글자 겹침 근본 보정 */
+    /* 2) expander keyboard_arrow_... 글자 겹침 완벽 제거 */
     div[data-testid="stExpander"] details summary {
         display: flex !important;
         align-items: center !important;
-        position: relative !important;
+        gap: 8px !important;
     }
 
-    /* Streamlit expander 아이콘 영역 폰트 보정 */
-    div[data-testid="stExpander"] details summary [data-testid="stIconMaterial"],
-    div[data-testid="stExpander"] details summary .st-emotion-cache-16ids93,
-    div[data-testid="stExpander"] details summary span:first-child {
+    /* 아이콘 문자가 일반 텍스트로 노출되어 겹치는 것 방지 */
+    div[data-testid="stExpander"] details summary [data-testid="stIconMaterial"] {
         font-family: 'Material Symbols Outlined', 'Material Icons' !important;
-        font-weight: normal !important;
-        font-style: normal !important;
-        font-size: 1.25rem !important;
+        font-size: 1.2rem !important;
         line-height: 1 !important;
-        text-transform: none !important;
-        letter-spacing: normal !important;
-        word-wrap: normal !important;
-        white-space: nowrap !important;
-        direction: ltr !important;
-        margin-right: 8px !important;
-        display: inline-block !important;
+        margin-right: 6px !important;
     }
 
-    /* expander 제목 텍스트 위치 정렬 */
-    div[data-testid="stExpander"] details summary p,
-    div[data-testid="stExpander"] details summary span:nth-child(2) {
+    /* 만약 폰트 로드 실패로 keyboard_arrow_가 텍스트로 뜨는 경우를 대비한 세부 보정 */
+    div[data-testid="stExpander"] details summary span {
+        font-family: 'Material Symbols Outlined', -apple-system, sans-serif !important;
+    }
+
+    div[data-testid="stExpander"] details summary p {
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
         margin: 0 !important;
-        padding-left: 4px !important;
-        font-size: 0.9rem !important;
+        font-size: 0.88rem !important;
         font-weight: 600 !important;
         color: #212529 !important;
     }
@@ -569,7 +561,7 @@ if "db_settings_loaded" not in st.session_state:
 all_dates = get_available_dates()
 latest_date_default = pd.to_datetime(all_dates[0]) if all_dates else None
 
-# 📌 시안 1 상단 Header UI
+# 📌 상단 Header UI
 head_col1, head_col2 = st.columns([2.0, 2.0], vertical_alignment="center")
 
 with head_col1:
@@ -1272,7 +1264,7 @@ if df_display is not None:
             display_trade_list(df_rebal[df_rebal["매매상태"] == "매도"], "시스템 매도 필요 종목", "매도", "sys_s", target_date_str, is_latest_date, market_type, holdings_db, top_n_cfg, account_total_input, current_engine_key)
             display_trade_list(df_rebal[df_rebal["매매상태"] == "추천"], "시스템 매수 추천 종목", "매수", "sys_b", target_date_str, is_latest_date, market_type, holdings_db, top_n_cfg, account_total_input, current_engine_key)
 
-    # TAB 4: 성과
+    # TAB 4: 성과 (AttributeError 완전 차단 안전 로직 적용)
     with tab4:
         st.markdown(f"##### {market_type} 시장 성과 분석 리포트")
         if not is_authenticated:
@@ -1297,6 +1289,7 @@ if df_display is not None:
                 df_hist = df_hist_raw[mask_period].copy()
 
                 if not df_hist.empty:
+                    # stocks 테이블과 결합하여 종목명 확정 보장
                     try:
                         df_stocks = pd.DataFrame(supabase.table("stocks").select("ticker, name").execute().data)
                         if not df_stocks.empty:
@@ -1309,6 +1302,10 @@ if df_display is not None:
                     except Exception:
                         if "종목명" not in df_hist.columns:
                             df_hist["종목명"] = df_hist["ticker"]
+
+                    # holding_days 컬럼 보장 (AttributeError 원인 차단)
+                    if "holding_days" not in df_hist.columns:
+                        df_hist["holding_days"] = 0
 
                     df_hist["profit_amount"] = pd.to_numeric(df_hist["profit_amount"], errors="coerce").fillna(0.0)
                     total_profit = df_hist["profit_amount"].sum()
