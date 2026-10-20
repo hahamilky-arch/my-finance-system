@@ -47,7 +47,7 @@ components.html(
 
 st.markdown("<div id='top-section'></div>", unsafe_allow_html=True)
 
-# 1. 개편된 UI/UX 커스텀 CSS (텍스트 겹침 버그 강력 보정 반영)
+# 1. 개편된 UI/UX 커스텀 CSS (텍스트 겹침 완벽 보정)
 st.markdown(
     """
     <style>
@@ -63,7 +63,7 @@ st.markdown(
     .block-container { padding-top: 0.8rem !important; padding-bottom: 2rem !important; padding-left: 0.8rem !important; padding-right: 14px !important; max-width: 1000px !important; margin: 0 auto; }
     html, body, [class*="st-"] { font-size: 13px !important; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
 
-    /* 1) 비밀번호 입력창 잔여 텍스트(visibility...) 노출 완벽 차단 */
+    /* 비밀번호 입력창 잔여 텍스트 차단 */
     div[data-testid="stTextInput"] label,
     div[data-testid="stTextInput"] [data-testid="stInputHelperText"],
     div[data-testid="stTextInput"] p:not(:has(input)),
@@ -74,15 +74,11 @@ st.markdown(
         padding: 0 !important;
         overflow: hidden !important;
     }
-    div[data-testid="stTextInput"] {
-        margin-top: 0 !important;
-        padding-top: 0 !important;
-    }
     div[data-testid="stTextInput"] input {
         font-size: 0.85rem !important;
     }
 
-    /* 2) expander 화살표(arrow_forward/downward) 글자 겹침 완벽 차단 */
+    /* expander 아이콘/글자 겹침 해결 */
     div[data-testid="stExpander"] details summary {
         display: flex !important;
         align-items: center !important;
@@ -90,20 +86,19 @@ st.markdown(
     }
     div[data-testid="stExpander"] details summary span[data-testid="stIconMaterial"],
     div[data-testid="stExpander"] details summary svg {
-        font-family: 'Material Symbols Outlined', 'Material Icons', sans-serif !important;
+        font-family: 'Material Symbols Outlined', 'Material Icons' !important;
         display: inline-block !important;
         width: 1.25rem !important;
         min-width: 1.25rem !important;
-        height: 1.25rem !important;
-        line-height: 1.25rem !important;
-        text-align: center !important;
+        font-size: 1.25rem !important;
+        line-height: 1 !important;
         margin-right: 4px !important;
     }
-    div[data-testid="stExpander"] details summary p,
-    div[data-testid="stExpander"] details summary div {
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+    div[data-testid="stExpander"] details summary p {
         margin: 0 !important;
         padding: 0 !important;
+        font-size: 0.9rem !important;
+        font-weight: 600 !important;
     }
 
     /* 메인 요약 '오늘의 행동' 카드 */
@@ -561,7 +556,7 @@ if "db_settings_loaded" not in st.session_state:
 all_dates = get_available_dates()
 latest_date_default = pd.to_datetime(all_dates[0]) if all_dates else None
 
-# 📌 시안 1 상단 Header UI (인증 상태 / 연장 / ⚙️ 전략 설정 모달)
+# 📌 시안 1 상단 Header UI
 head_col1, head_col2 = st.columns([2.0, 2.0], vertical_alignment="center")
 
 with head_col1:
@@ -583,11 +578,9 @@ with head_col2:
                 st.session_state["last_auth_time"] = time.time()
                 st.rerun()
         with c_setting:
-            # 시안 3: 전략 설정 바텀시트 모달 (Popover)
             with st.popover("⚙️", use_container_width=True):
                 st.markdown("#### 전략 설정")
                 
-                # 1) 전략 엔진 선택
                 st.markdown("**전략 엔진**")
                 sel_engine_display = st.radio(
                     "전략 엔진 선택",
@@ -605,7 +598,6 @@ with head_col2:
                     pop_engine_key = "ultimate_dual"
 
                 st.write("")
-                # 2) 운용 모드 선택
                 st.markdown("**운용 모드**")
                 pop_strategy_mode = st.radio(
                     "운용 모드 선택",
@@ -616,7 +608,6 @@ with head_col2:
                 )
 
                 st.write("")
-                # 3) 리밸런싱 주기
                 st.markdown("**리밸런싱 주기**")
                 pop_rebal_cycle = st.selectbox(
                     "리밸런싱 주기",
@@ -667,7 +658,6 @@ with head_col2:
 
 st.write("")
 
-# 📌 시안 1 상단 컨트롤러 (KR / US 스위처 + 날짜 선택기)
 ctrl_col1, ctrl_col2 = st.columns([1.5, 2.5], vertical_alignment="center")
 with ctrl_col1:
     market_type = st.radio("Market", ["KR", "US"], horizontal=True, label_visibility="collapsed")
@@ -759,7 +749,6 @@ if df_display is not None:
     current_holdings_count = len(holdings_db) if not holdings_db.empty else 0
     needed_slots = max(0, top_n_cfg - current_holdings_count)
 
-    # 📌 시안 1 탭 스타일 렌더링
     tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "오늘",
         "시그널",
@@ -768,9 +757,8 @@ if df_display is not None:
         "백테스트",
     ])
 
-    # TAB 1: 오늘 (시장 & 수급 종합 대시보드)
+    # TAB 1: 오늘
     with tab1:
-        # 지수 추세 직접 검증
         target_symbol = "^KS11" if market_type == "KR" else "^GSPC"
         try:
             chk_res = (
@@ -795,7 +783,6 @@ if df_display is not None:
         except Exception:
             m_200 = 0
 
-        # 행동 상태 및 설명 문구 확정
         if stop_new_buy:
             action_title = "신규 매수 중지"
             action_desc = "코스피가 MA200 아래에 있고, 외인+기관 30일 누적이 순매도입니다." if market_type == "KR" else "지수가 MA20 아래에 3일 연속 머물러 신규 매수를 중단합니다."
@@ -813,7 +800,6 @@ if df_display is not None:
         buy_cnt_display = min(buy_cnt, needed_slots)
         sell_cnt = len(df_display[df_display["매매상태"] == "매도"])
 
-        # 📌 코드 블록 렌더링 방지를 위해 좌측 공백이 없는 콤팩트 HTML 구성
         action_card_html = f"""<div class="action-card">
 <div class="action-card-header">
 <div class="action-card-subtitle">오늘의 행동</div>
@@ -839,7 +825,6 @@ if df_display is not None:
 
         st.markdown(action_card_html, unsafe_allow_html=True)
 
-        # AI 시장 요약 버튼 & 일일 AI 잔여 횟수
         used_cnt, remain_cnt = get_remaining_quota()
         ai_col1, ai_col2 = st.columns([2.0, 1.0], vertical_alignment="center")
         with ai_col1:
@@ -859,7 +844,6 @@ if df_display is not None:
                 st.success("AI 시장 분석 완료")
                 st.markdown(ai_res)
 
-        # 하단 전략 태그 라인 (시안 1)
         st.markdown(
             """<div class="tag-container">
 <span class="tag-badge">전략 3</span>
@@ -873,7 +857,6 @@ if df_display is not None:
 
         st.divider()
 
-        # 시안 1: 수급 요약 게이지 섹션
         st.markdown(f"<div style='display:flex; justify-content:space-between; align-items:center;'><strong>수급 요약</strong> <span style='font-size:0.75rem; color:#868e96;'>{target_date_str} 기준</span></div>", unsafe_allow_html=True)
         st.write("")
 
@@ -911,7 +894,6 @@ if df_display is not None:
             else:
                 k_f_val, k_i_val = 0.0, 0.0
 
-            # 비차익 Z 카드
             st.markdown(
                 f"""<div class="gauge-card">
 <div class="gauge-card-header">
@@ -923,7 +905,6 @@ if df_display is not None:
                 unsafe_allow_html=True
             )
 
-            # 코스피 외국인 게이지 카드 (시안 1 스타일)
             f_bars = "".join([f'<div class="gauge-segment segment-blue"></div>' if i < k_f_5d_tr else '<div class="gauge-segment segment-gray"></div>' for i in range(10)])
             st.markdown(
                 f"""<div class="gauge-card">
@@ -937,7 +918,6 @@ if df_display is not None:
                 unsafe_allow_html=True
             )
 
-            # 코스피 기관 게이지 카드 (시안 1 스타일)
             i_bars = "".join([f'<div class="gauge-segment segment-red"></div>' if i < k_i_5d_tr else '<div class="gauge-segment segment-gray"></div>' for i in range(10)])
             st.markdown(
                 f"""<div class="gauge-card">
@@ -956,7 +936,6 @@ if df_display is not None:
 
             st.divider()
 
-            # 시안 1: 주체별 매매 동향 표
             st.markdown(f"<div style='display:flex; justify-content:space-between; align-items:center;'><strong>주체별 매매 동향</strong> <span style='font-size:0.7rem; color:#868e96;'>조·억원 자동 환산</span></div>", unsafe_allow_html=True)
             st.write("")
 
@@ -998,7 +977,6 @@ if df_display is not None:
 
         st.divider()
 
-        # 시안 2: 수급 상위 종목 섹션
         st.markdown("<div style='display:flex; justify-content:space-between; align-items:center;'><strong>수급 상위 종목</strong> <span style='font-size:0.75rem; color:#868e96;'>단위 억원</span></div>", unsafe_allow_html=True)
         st.write("")
 
@@ -1010,14 +988,12 @@ if df_display is not None:
 
         df_stock_liq = df_liq_10d[df_liq_10d["trade_date"] == target_date_str] if not df_liq_10d.empty else pd.DataFrame()
 
-        # 시안 2 수급 상위 탭 스위처
         s_tab1, s_tab2, s_tab3, s_tab4 = st.tabs(["외인 TOP5", "기관 TOP5", "외인 빈도", "기관 빈도"])
 
         with s_tab1:
             if not df_stock_liq.empty:
                 df_f_top = df_stock_liq.sort_values("foreign_net", ascending=False).head(5)[["name", "ticker", "rank", "change_rate", "foreign_net", "inst_net"]].copy()
                 
-                # 안전한 정수형 타입 변환 후 포맷팅
                 df_f_top["foreign_net_val"] = pd.to_numeric(df_f_top["foreign_net"], errors="coerce").fillna(0).astype(int)
                 df_f_top["inst_net_val"] = pd.to_numeric(df_f_top["inst_net"], errors="coerce").fillna(0).astype(int)
                 
@@ -1066,7 +1042,6 @@ if df_display is not None:
 
         st.divider()
 
-        # 시안 2: 차트 섹션 (코스피 지수 / 수급 추이 / 비차익)
         st.markdown("<div style='display:flex; justify-content:space-between; align-items:center;'><strong>차트</strong> <span style='font-size:0.75rem; color:#868e96;'>조원 단위 통일</span></div>", unsafe_allow_html=True)
         st.write("")
 
@@ -1097,7 +1072,7 @@ if df_display is not None:
         with st.expander("프로그램 비차익 · 누적", expanded=False):
             st.caption("비차익 프로그램 매매 시계열 누적 추이 차트")
 
-    # TAB 2: 시그널 (알파 시그널 스크리닝 & 개별 종목 통합 분석)
+    # TAB 2: 시그널
     with tab2:
         st.markdown("###### 알파 시그널 스크리닝 (모멘텀 순위 상위 200위)")
         filter_opt = st.radio(
@@ -1284,7 +1259,7 @@ if df_display is not None:
             display_trade_list(df_rebal[df_rebal["매매상태"] == "매도"], "시스템 매도 필요 종목", "매도", "sys_s", target_date_str, is_latest_date, market_type, holdings_db, top_n_cfg, account_total_input, current_engine_key)
             display_trade_list(df_rebal[df_rebal["매매상태"] == "추천"], "시스템 매수 추천 종목", "매수", "sys_b", target_date_str, is_latest_date, market_type, holdings_db, top_n_cfg, account_total_input, current_engine_key)
 
-    # TAB 4: 성과
+    # TAB 4: 성과 (KeyError: '종목명' 획기적 수정)
     with tab4:
         st.markdown(f"##### {market_type} 시장 성과 분석 리포트")
         if not is_authenticated:
@@ -1309,6 +1284,20 @@ if df_display is not None:
                 df_hist = df_hist_raw[mask_period].copy()
 
                 if not df_hist.empty:
+                    # stocks 테이블과 안전한 병합 처리로 '종목명' 컬럼 확정 보장
+                    try:
+                        df_stocks = pd.DataFrame(supabase.table("stocks").select("ticker, name").execute().data)
+                        if not df_stocks.empty:
+                            df_stocks["ticker"] = df_stocks["ticker"].astype(str).str.strip()
+                            df_hist["ticker"] = df_hist["ticker"].astype(str).str.strip()
+                            df_hist = pd.merge(df_hist, df_stocks, on="ticker", how="left")
+                            df_hist["종목명"] = df_hist["name"].fillna(df_hist["ticker"])
+                        else:
+                            df_hist["종목명"] = df_hist["ticker"]
+                    except Exception:
+                        if "종목명" not in df_hist.columns:
+                            df_hist["종목명"] = df_hist["ticker"]
+
                     df_hist["profit_amount"] = pd.to_numeric(df_hist["profit_amount"], errors="coerce").fillna(0.0)
                     total_profit = df_hist["profit_amount"].sum()
                     st.metric("총 실현 손익", f"{total_profit:+,.0f}원")
