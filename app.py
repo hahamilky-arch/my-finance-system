@@ -47,7 +47,7 @@ components.html(
 
 st.markdown("<div id='top-section'></div>", unsafe_allow_html=True)
 
-# 1. 커스텀 CSS (st.expander 기호/글자 겹침 완벽 보정 및 반응형 카드 스타일링)
+# 1. 커스텀 CSS (expander 아이콘 대체 텍스트 제거 및 레이아웃 완벽 보정)
 st.markdown(
     """
     <style>
@@ -72,22 +72,30 @@ st.markdown(
     }
     div[data-testid="stTextInput"] input { font-size: 0.85rem !important; }
 
-    /* expander keyboard_arrow_... 기호/글자 겹침 완벽 차단 */
+    /* 📌 st.expander 아이콘 대체 텍스트 글자 겹침 차단 */
     div[data-testid="stExpander"] details summary {
         display: flex !important;
         align-items: center !important;
-        flex-direction: row !important;
         gap: 8px !important;
     }
 
-    div[data-testid="stExpander"] details summary svg,
-    div[data-testid="stExpander"] details summary [data-testid="stIconMaterial"] {
-        order: 1 !important;
+    /* 아이콘 내부의 텍스트 노드(keyboard_arrow_down 등) 감추기 */
+    div[data-testid="stExpander"] details summary [data-testid="stIconMaterial"],
+    div[data-testid="stExpander"] details summary span[class*="material-symbols"] {
+        font-size: 0px !important;
+        color: transparent !important;
+        overflow: hidden !important;
+        width: 20px !important;
+        height: 20px !important;
+    }
+
+    div[data-testid="stExpander"] details summary svg {
+        width: 18px !important;
+        height: 18px !important;
         flex-shrink: 0 !important;
     }
 
     div[data-testid="stExpander"] details summary p {
-        order: 2 !important;
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
         margin: 0 !important;
         font-size: 0.88rem !important;
