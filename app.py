@@ -1,4 +1,5 @@
 import time
+import textwrap
 import numpy as np
 import pandas as pd
 import plotly.express as px
@@ -769,32 +770,30 @@ if df_display is not None:
         buy_cnt_display = min(buy_cnt, needed_slots)
         sell_cnt = len(df_display[df_display["매매상태"] == "매도"])
 
-        # 시안 1: 오늘의 행동 카드 렌더링 (HTML 정상 렌더링)
-        action_card_html = f"""
-        <div class="action-card">
-            <div class="action-card-header">
-                <div class="action-card-subtitle">오늘의 행동</div>
-                <div class="regime-badge">{regime_label}</div>
-            </div>
-            <div class="action-card-title">{action_title}</div>
-            <div class="action-card-desc">{action_desc}</div>
-            
-            <div class="action-stats-grid">
-                <div class="stat-box">
-                    <div class="stat-box-label">잔여 슬롯</div>
-                    <div class="stat-box-value">{current_holdings_count} / {top_n_cfg}</div>
-                </div>
-                <div class="stat-box">
-                    <div class="stat-box-label">추천 종목</div>
-                    <div class="stat-box-value" style="color: #d62728;">{buy_cnt_display}개</div>
-                </div>
-                <div class="stat-box">
-                    <div class="stat-box-label">매도 필요</div>
-                    <div class="stat-box-value" style="color: {'#1f77b4' if sell_cnt > 0 else '#2ca02c'};">{sell_cnt}개 <span style="font-size:0.7rem; font-weight:normal;">{'청산' if sell_cnt > 0 else '정상'}</span></div>
-                </div>
-            </div>
-        </div>
-        """
+        # 📌 코드 블록 렌더링 방지를 위해 좌측 공백이 없는 콤팩트 HTML 구성
+        action_card_html = f"""<div class="action-card">
+<div class="action-card-header">
+<div class="action-card-subtitle">오늘의 행동</div>
+<div class="regime-badge">{regime_label}</div>
+</div>
+<div class="action-card-title">{action_title}</div>
+<div class="action-card-desc">{action_desc}</div>
+<div class="action-stats-grid">
+<div class="stat-box">
+<div class="stat-box-label">잔여 슬롯</div>
+<div class="stat-box-value">{current_holdings_count} / {top_n_cfg}</div>
+</div>
+<div class="stat-box">
+<div class="stat-box-label">추천 종목</div>
+<div class="stat-box-value" style="color: #d62728;">{buy_cnt_display}개</div>
+</div>
+<div class="stat-box">
+<div class="stat-box-label">매도 필요</div>
+<div class="stat-box-value" style="color: {'#1f77b4' if sell_cnt > 0 else '#2ca02c'};">{sell_cnt}개 <span style="font-size:0.7rem; font-weight:normal;">{'청산' if sell_cnt > 0 else '정상'}</span></div>
+</div>
+</div>
+</div>"""
+
         st.markdown(action_card_html, unsafe_allow_html=True)
 
         # AI 시장 요약 버튼 & 일일 AI 잔여 횟수
@@ -819,15 +818,13 @@ if df_display is not None:
 
         # 하단 전략 태그 라인 (시안 1)
         st.markdown(
-            """
-            <div class="tag-container">
-                <span class="tag-badge">전략 3</span>
-                <span class="tag-badge">Top 7</span>
-                <span class="tag-badge">Rank ≤ 15</span>
-                <span class="tag-badge">ATR 2.5x 손절</span>
-                <span class="tag-badge">+8% 본전스탑</span>
-            </div>
-            """,
+            """<div class="tag-container">
+<span class="tag-badge">전략 3</span>
+<span class="tag-badge">Top 7</span>
+<span class="tag-badge">Rank ≤ 15</span>
+<span class="tag-badge">ATR 2.5x 손절</span>
+<span class="tag-badge">+8% 본전스탑</span>
+</div>""",
             unsafe_allow_html=True
         )
 
@@ -873,47 +870,41 @@ if df_display is not None:
 
             # 비차익 Z 카드
             st.markdown(
-                f"""
-                <div class="gauge-card">
-                    <div class="gauge-card-header">
-                        <span class="gauge-title">비차익 Z</span>
-                        <span class="gauge-tag">{z_tag}</span>
-                    </div>
-                    <div class="gauge-value" style="color: {'#d62728' if p_zscore >= 0 else '#1f77b4'};">{p_zscore:+.2f}</div>
-                </div>
-                """,
+                f"""<div class="gauge-card">
+<div class="gauge-card-header">
+<span class="gauge-title">비차익 Z</span>
+<span class="gauge-tag">{z_tag}</span>
+</div>
+<div class="gauge-value" style="color: {'#d62728' if p_zscore >= 0 else '#1f77b4'};">{p_zscore:+.2f}</div>
+</div>""",
                 unsafe_allow_html=True
             )
 
             # 코스피 외국인 게이지 카드 (시안 1 스타일)
             f_bars = "".join([f'<div class="gauge-segment segment-blue"></div>' if i < k_f_5d_tr else '<div class="gauge-segment segment-gray"></div>' for i in range(10)])
             st.markdown(
-                f"""
-                <div class="gauge-card">
-                    <div class="gauge-card-header">
-                        <span class="gauge-title">코스피 외국인</span>
-                        <span class="gauge-tag">10일 중 {k_f_5d_tr}일</span>
-                    </div>
-                    <div class="gauge-value" style="color: {'#d62728' if k_f_val >= 0 else '#1f77b4'};">{k_f_val:+.1f}조원</div>
-                    <div class="gauge-bar-bg">{f_bars}</div>
-                </div>
-                """,
+                f"""<div class="gauge-card">
+<div class="gauge-card-header">
+<span class="gauge-title">코스피 외국인</span>
+<span class="gauge-tag">10일 중 {k_f_5d_tr}일</span>
+</div>
+<div class="gauge-value" style="color: {'#d62728' if k_f_val >= 0 else '#1f77b4'};">{k_f_val:+.1f}조원</div>
+<div class="gauge-bar-bg">{f_bars}</div>
+</div>""",
                 unsafe_allow_html=True
             )
 
             # 코스피 기관 게이지 카드 (시안 1 스타일)
             i_bars = "".join([f'<div class="gauge-segment segment-red"></div>' if i < k_i_5d_tr else '<div class="gauge-segment segment-gray"></div>' for i in range(10)])
             st.markdown(
-                f"""
-                <div class="gauge-card">
-                    <div class="gauge-card-header">
-                        <span class="gauge-title">코스피 기관</span>
-                        <span class="gauge-tag">10일 중 {k_i_5d_tr}일</span>
-                    </div>
-                    <div class="gauge-value" style="color: {'#d62728' if k_i_val >= 0 else '#1f77b4'};">{k_i_val:+.1f}조원</div>
-                    <div class="gauge-bar-bg">{i_bars}</div>
-                </div>
-                """,
+                f"""<div class="gauge-card">
+<div class="gauge-card-header">
+<span class="gauge-title">코스피 기관</span>
+<span class="gauge-tag">10일 중 {k_i_5d_tr}일</span>
+</div>
+<div class="gauge-value" style="color: {'#d62728' if k_i_val >= 0 else '#1f77b4'};">{k_i_val:+.1f}조원</div>
+<div class="gauge-bar-bg">{i_bars}</div>
+</div>""",
                 unsafe_allow_html=True
             )
 
@@ -983,7 +974,7 @@ if df_display is not None:
             if not df_stock_liq.empty:
                 df_f_top = df_stock_liq.sort_values("foreign_net", ascending=False).head(5)[["name", "ticker", "rank", "change_rate", "foreign_net", "inst_net"]].copy()
                 
-                # 안전한 정수형 타입 변환 후 포맷팅 (ValueError 해결)
+                # 안전한 정수형 타입 변환 후 포맷팅
                 df_f_top["foreign_net_val"] = pd.to_numeric(df_f_top["foreign_net"], errors="coerce").fillna(0).astype(int)
                 df_f_top["inst_net_val"] = pd.to_numeric(df_f_top["inst_net"], errors="coerce").fillna(0).astype(int)
                 
