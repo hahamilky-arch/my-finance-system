@@ -769,7 +769,7 @@ if df_display is not None:
         buy_cnt_display = min(buy_cnt, needed_slots)
         sell_cnt = len(df_display[df_display["매매상태"] == "매도"])
 
-        # 시안 1: 오늘의 행동 카드 렌더링
+        # 시안 1: 오늘의 행동 카드 렌더링 (HTML 정상 렌더링)
         action_card_html = f"""
         <div class="action-card">
             <div class="action-card-header">
@@ -918,7 +918,6 @@ if df_display is not None:
             )
 
             with st.expander("더 보기 (3)", expanded=False):
-                # KOSDAQ 및 비차익 추가 수급 세부 지표
                 st.caption("비차익 5일 누적 및 코스닥 외국인/기관 수급 세부 지표")
 
             st.divider()
@@ -983,11 +982,16 @@ if df_display is not None:
         with s_tab1:
             if not df_stock_liq.empty:
                 df_f_top = df_stock_liq.sort_values("foreign_net", ascending=False).head(5)[["name", "ticker", "rank", "change_rate", "foreign_net", "inst_net"]].copy()
-                df_f_top["외인·기관"] = df_f_top.apply(lambda r: f"{r['foreign_net']:+,d}\n{r['inst_net']:+,d}", axis=1)
+                
+                # 안전한 정수형 타입 변환 후 포맷팅 (ValueError 해결)
+                df_f_top["foreign_net_val"] = pd.to_numeric(df_f_top["foreign_net"], errors="coerce").fillna(0).astype(int)
+                df_f_top["inst_net_val"] = pd.to_numeric(df_f_top["inst_net"], errors="coerce").fillna(0).astype(int)
+                
+                df_f_top["외인·기관"] = df_f_top.apply(lambda r: f"{int(r['foreign_net_val']):+,d}\n{int(r['inst_net_val']):+,d}", axis=1)
                 df_f_top["종목"] = df_f_top.apply(lambda r: f"**{r['name']}**\n`{r['ticker']}` · 수급 {r['rank']}위", axis=1)
                 
                 st.dataframe(
-                    df_f_top[["종목", "change_rate", "foreign_net"]].rename(columns={"change_rate": "등락률", "foreign_net": "외국인순매수(억)"}).style.format({
+                    df_f_top[["종목", "change_rate", "foreign_net_val"]].rename(columns={"change_rate": "등락률", "foreign_net_val": "외국인순매수(억)"}).style.format({
                         "등락률": "{:+.2f}%",
                         "외국인순매수(억)": "{:+,.0f}",
                     }).map(lambda v: "color: #d62728;" if float(v) > 0 else ("color: #1f77b4;" if float(v) < 0 else ""), subset=["등락률", "외국인순매수(억)"]),
@@ -1000,8 +1004,9 @@ if df_display is not None:
         with s_tab2:
             if not df_stock_liq.empty:
                 df_i_top = df_stock_liq.sort_values("inst_net", ascending=False).head(5)[["name", "ticker", "rank", "change_rate", "inst_net"]].copy()
+                df_i_top["inst_net_val"] = pd.to_numeric(df_i_top["inst_net"], errors="coerce").fillna(0).astype(int)
                 st.dataframe(
-                    df_i_top.rename(columns={"name": "종목명", "change_rate": "등락률", "inst_net": "기관순매수(억)"}).style.format({
+                    df_i_top.rename(columns={"name": "종목명", "change_rate": "등락률", "inst_net_val": "기관순매수(억)"}).style.format({
                         "등락률": "{:+.2f}%",
                         "기관순매수(억)": "{:+,.0f}",
                     }).map(lambda v: "color: #d62728;" if float(v) > 0 else ("color: #1f77b4;" if float(v) < 0 else ""), subset=["등락률", "기관순매수(억)"]),
