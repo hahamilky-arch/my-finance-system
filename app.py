@@ -47,7 +47,7 @@ components.html(
 
 st.markdown("<div id='top-section'></div>", unsafe_allow_html=True)
 
-# 1. 커스텀 CSS (st.expander keyboard_arrow... 기호/글자 겹침 완벽 보정)
+# 1. 커스텀 CSS (st.expander keyboard_arrow... 기호 및 글자 겹침 근본 해결)
 st.markdown(
     """
     <style>
@@ -78,26 +78,30 @@ st.markdown(
         font-size: 0.85rem !important;
     }
 
-    /* expander keyboard_arrow_... 글자/기호 겹침 완전 방지 */
+    /* expander keyboard_arrow_... 기호/글자 겹침 근본 방지 */
     div[data-testid="stExpander"] details summary {
         display: flex !important;
         align-items: center !important;
+        flex-direction: row !important;
         gap: 8px !important;
     }
 
+    /* 아이콘 크기 및 위치 정돈 */
+    div[data-testid="stExpander"] details summary svg,
     div[data-testid="stExpander"] details summary [data-testid="stIconMaterial"] {
-        font-family: 'Material Symbols Outlined', 'Material Icons' !important;
-        font-size: 1.2rem !important;
-        line-height: 1 !important;
+        order: 1 !important;
+        flex-shrink: 0 !important;
     }
 
-    /* 아이콘 텍스트 노출 문제 대비 강제 분리 */
+    /* Expander 제목 텍스트 위치 정돈 */
     div[data-testid="stExpander"] details summary p {
+        order: 2 !important;
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
         margin: 0 !important;
         font-size: 0.88rem !important;
         font-weight: 600 !important;
         color: #212529 !important;
+        flex-grow: 1 !important;
     }
 
     /* 메인 요약 '오늘의 행동' 카드 */
@@ -935,7 +939,8 @@ if df_display is not None:
 
             st.divider()
 
-            st.markdown(f"<div style='display:flex; justify-content:space-between; align-items:center;'><strong>주체별 매매 동향</strong> <span style='font-size:0.7rem; color:#868e96;'>조·억원 자동 환산</span></div>", unsafe_allow_html=True)
+            # 📌 주체별 매매 동향: 백만원 단위 적용
+            st.markdown(f"<div style='display:flex; justify-content:space-between; align-items:center;'><strong>주체별 매매 동향</strong> <span style='font-size:0.7rem; color:#868e96;'>단위 백만원</span></div>", unsafe_allow_html=True)
             st.write("")
 
             k_row = df_inv_all[df_inv_all["market_type"] == "KOSPI"].iloc[0] if not df_inv_all.empty and not df_inv_all[df_inv_all["market_type"] == "KOSPI"].empty else {}
@@ -944,28 +949,23 @@ if df_display is not None:
             disp_inv_summary = pd.DataFrame([
                 {
                     "시장": "KOSPI",
-                    "외국인": int(k_row.get("foreign_net", 0)),
-                    "개인": int(k_row.get("individual_net", 0)),
-                    "기관": int(k_row.get("institution_net", 0)),
+                    "외국인": int(pd.to_numeric(k_row.get("foreign_net", 0), errors="coerce") or 0),
+                    "개인": int(pd.to_numeric(k_row.get("individual_net", 0), errors="coerce") or 0),
+                    "기관": int(pd.to_numeric(k_row.get("institution_net", 0), errors="coerce") or 0),
                 },
                 {
                     "시장": "KOSDAQ",
-                    "외국인": int(kq_row.get("foreign_net", 0)),
-                    "개인": int(kq_row.get("individual_net", 0)),
-                    "기관": int(kq_row.get("institution_net", 0)),
+                    "외국인": int(pd.to_numeric(kq_row.get("foreign_net", 0), errors="coerce") or 0),
+                    "개인": int(pd.to_numeric(kq_row.get("individual_net", 0), errors="coerce") or 0),
+                    "기관": int(pd.to_numeric(kq_row.get("institution_net", 0), errors="coerce") or 0),
                 },
             ])
 
-            def fmt_money(v):
-                if abs(v) >= 10000:
-                    return f"{v/10000:+.2f}조"
-                return f"{v:+,d}억"
-
             st.dataframe(
                 disp_inv_summary.style.format({
-                    "외국인": fmt_money,
-                    "개인": fmt_money,
-                    "기관": fmt_money,
+                    "외국인": "{:+,.0f}",
+                    "개인": "{:+,.0f}",
+                    "기관": "{:+,.0f}",
                 }).map(
                     lambda v: "color: #d62728;" if v > 0 else ("color: #1f77b4;" if v < 0 else ""),
                     subset=["외국인", "개인", "기관"],
@@ -976,6 +976,7 @@ if df_display is not None:
 
         st.divider()
 
+        # 📌 수급 상위 종목 (단위: 백만원)
         st.markdown("<div style='display:flex; justify-content:space-between; align-items:center;'><strong>수급 상위 종목</strong> <span style='font-size:0.75rem; color:#868e96;'>단위 백만원</span></div>", unsafe_allow_html=True)
         st.write("")
 
