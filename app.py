@@ -47,7 +47,7 @@ components.html(
 
 st.markdown("<div id='top-section'></div>", unsafe_allow_html=True)
 
-# 1. 커스텀 CSS (st.expander keyboard_arrow... 문자 겹침 완전 제거)
+# 1. 커스텀 CSS (st.expander keyboard_arrow... 문자 겹침 완벽 보정)
 st.markdown(
     """
     <style>
@@ -78,7 +78,7 @@ st.markdown(
         font-size: 0.85rem !important;
     }
 
-    /* expander keyboard_arrow_... 글자 겹침 보정 */
+    /* expander keyboard_arrow_... 글자 겹침 완벽 제거 */
     div[data-testid="stExpander"] details summary {
         display: flex !important;
         align-items: center !important;
@@ -1283,7 +1283,6 @@ if df_display is not None:
                 df_hist = df_hist_raw[mask_period].copy()
 
                 if not df_hist.empty:
-                    # stocks 테이블과 결합하여 종목명 확정 보장
                     try:
                         df_stocks = pd.DataFrame(supabase.table("stocks").select("ticker, name").execute().data)
                         if not df_stocks.empty:
@@ -1297,7 +1296,6 @@ if df_display is not None:
                         if "종목명" not in df_hist.columns:
                             df_hist["종목명"] = df_hist["ticker"]
 
-                    # holding_days 컬럼 보장 (AttributeError 원인 차단)
                     if "holding_days" not in df_hist.columns:
                         df_hist["holding_days"] = 0
 
