@@ -47,7 +47,7 @@ components.html(
 
 st.markdown("<div id='top-section'></div>", unsafe_allow_html=True)
 
-# 1. 커스텀 CSS (st.expander keyboard_arrow... 문자 겹침 완벽 보정)
+# 1. 커스텀 CSS (st.expander keyboard_arrow... 기호/글자 겹침 완벽 보정)
 st.markdown(
     """
     <style>
@@ -78,20 +78,20 @@ st.markdown(
         font-size: 0.85rem !important;
     }
 
-    /* expander keyboard_arrow_... 글자 겹침 완벽 제거 */
+    /* expander keyboard_arrow_... 글자/기호 겹침 완전 방지 */
     div[data-testid="stExpander"] details summary {
         display: flex !important;
         align-items: center !important;
         gap: 8px !important;
     }
 
-    div[data-testid="stExpander"] details summary [data-testid="stIconMaterial"],
-    div[data-testid="stExpander"] details summary span {
+    div[data-testid="stExpander"] details summary [data-testid="stIconMaterial"] {
         font-family: 'Material Symbols Outlined', 'Material Icons' !important;
         font-size: 1.2rem !important;
         line-height: 1 !important;
     }
 
+    /* 아이콘 텍스트 노출 문제 대비 강제 분리 */
     div[data-testid="stExpander"] details summary p {
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
         margin: 0 !important;
@@ -976,7 +976,6 @@ if df_display is not None:
 
         st.divider()
 
-        # 📌 단위 보정: 단위 백만원 반영
         st.markdown("<div style='display:flex; justify-content:space-between; align-items:center;'><strong>수급 상위 종목</strong> <span style='font-size:0.75rem; color:#868e96;'>단위 백만원</span></div>", unsafe_allow_html=True)
         st.write("")
 
@@ -988,7 +987,6 @@ if df_display is not None:
 
         df_stock_liq = df_liq_10d[df_liq_10d["trade_date"] == target_date_str] if not df_liq_10d.empty else pd.DataFrame()
 
-        # 📌 수급 상위 4개 탭 전면 보정 (단위: 백만원)
         s_tab1, s_tab2, s_tab3, s_tab4 = st.tabs(["외인 TOP5", "기관 TOP5", "외인 빈도", "기관 빈도"])
 
         with s_tab1:
@@ -997,7 +995,6 @@ if df_display is not None:
                 
                 df_f_top["foreign_net_val"] = pd.to_numeric(df_f_top["foreign_net"], errors="coerce").fillna(0).astype(int)
                 df_f_top["inst_net_val"] = pd.to_numeric(df_f_top["inst_net"], errors="coerce").fillna(0).astype(int)
-                
                 df_f_top["종목"] = df_f_top.apply(lambda r: f"**{r['name']}**\n`{r['ticker']}` · 수급 {r['rank']}위", axis=1)
                 
                 st.dataframe(
