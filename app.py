@@ -47,7 +47,7 @@ components.html(
 
 st.markdown("<div id='top-section'></div>", unsafe_allow_html=True)
 
-# 1. 커스텀 CSS (아이콘 대체 텍스트 완벽 차단 및 작은 화면 반응형 보정)
+# 1. 커스텀 CSS (아이콘 대체 텍스트 차단 및 작은 화면 반응형 보정)
 st.markdown(
     """
     <style>
@@ -72,7 +72,7 @@ st.markdown(
     }
     div[data-testid="stTextInput"] input { font-size: 0.85rem !important; }
 
-    /* 📌 모든 아이콘(Popover, Expander, Password Eye) 대체 텍스트 글자 겹침 완벽 차단 */
+    /* 모든 아이콘(Popover, Expander, Password Eye) 대체 텍스트 글자 겹침 완벽 차단 */
     [data-testid="stIconMaterial"],
     [data-testid="stPopover"] span[class*="material-symbols"],
     [data-testid="stExpander"] details summary span[class*="material-symbols"],
@@ -557,7 +557,7 @@ if "db_settings_loaded" not in st.session_state:
 all_dates = get_available_dates()
 latest_date_default = pd.to_datetime(all_dates[0]) if all_dates else None
 
-# 📌 상단 Header UI (반응형 레이아웃 및 한 줄 배치 완벽 보정)
+# 📌 상단 Header UI
 head_col1, head_col2 = st.columns([1.8, 2.2], vertical_alignment="center")
 
 with head_col1:
@@ -915,8 +915,10 @@ if df_display is not None:
                 df_k_inv = df_inv_all[df_inv_all["market_type"] == "KOSPI"]
                 k_f_5d_tr = (df_k_inv.head(10)["foreign_net"] > 0).sum() if not df_k_inv.empty else 0
                 k_i_5d_tr = (df_k_inv.head(10)["institution_net"] > 0).sum() if not df_k_inv.empty else 0
-                k_f_val = float(df_k_inv.iloc[0].get("foreign_net", 0)) / 1000000000000 if not df_k_inv.empty else 0.0
-                k_i_val = float(df_k_inv.iloc[0].get("institution_net", 0)) / 1000000000000 if not df_k_inv.empty else 0.0
+                
+                # 📌 [수정] DB의 백만원 단위를 조원 단위로 정확히 변환 (1,000,000 백만원 = 1조원)
+                k_f_val = float(df_k_inv.iloc[0].get("foreign_net", 0)) / 1000000.0 if not df_k_inv.empty else 0.0
+                k_i_val = float(df_k_inv.iloc[0].get("institution_net", 0)) / 1000000.0 if not df_k_inv.empty else 0.0
             else:
                 k_f_val, k_i_val = 0.0, 0.0
 
@@ -931,6 +933,7 @@ if df_display is not None:
                 unsafe_allow_html=True
             )
 
+            # 외국인 게이지 바
             f_bars = "".join([f'<div class="gauge-segment segment-blue"></div>' if i < k_f_5d_tr else '<div class="gauge-segment segment-gray"></div>' for i in range(10)])
             st.markdown(
                 f"""<div class="gauge-card">
@@ -938,12 +941,13 @@ if df_display is not None:
 <span class="gauge-title">코스피 외국인</span>
 <span class="gauge-tag">10일 중 {k_f_5d_tr}일</span>
 </div>
-<div class="gauge-value" style="color: {'#d62728' if k_f_val >= 0 else '#1f77b4'};">{k_f_val:+.1f}조원</div>
+<div class="gauge-value" style="color: {'#d62728' if k_f_val >= 0 else '#1f77b4'};">{k_f_val:+.2f}조원</div>
 <div class="gauge-bar-bg">{f_bars}</div>
 </div>""",
                 unsafe_allow_html=True
             )
 
+            # 기관 게이지 바
             i_bars = "".join([f'<div class="gauge-segment segment-red"></div>' if i < k_i_5d_tr else '<div class="gauge-segment segment-gray"></div>' for i in range(10)])
             st.markdown(
                 f"""<div class="gauge-card">
@@ -951,7 +955,7 @@ if df_display is not None:
 <span class="gauge-title">코스피 기관</span>
 <span class="gauge-tag">10일 중 {k_i_5d_tr}일</span>
 </div>
-<div class="gauge-value" style="color: {'#d62728' if k_i_val >= 0 else '#1f77b4'};">{k_i_val:+.1f}조원</div>
+<div class="gauge-value" style="color: {'#d62728' if k_i_val >= 0 else '#1f77b4'};">{k_i_val:+.2f}조원</div>
 <div class="gauge-bar-bg">{i_bars}</div>
 </div>""",
                 unsafe_allow_html=True
@@ -1455,7 +1459,6 @@ if df_display is not None:
 
                     st.divider()
 
-                    # 📌 복구된 청산 거래 내역 전체 표
                     st.markdown("###### 청산 완료 거래 내역")
                     disp_perf_df = df_hist[["buy_date", "sell_date", "ticker", "종목명", "buy_price", "sell_price", "quantity", "profit_amount", "profit_rate", "exit_reason"]].copy()
                     disp_perf_df = disp_perf_df.rename(columns={
