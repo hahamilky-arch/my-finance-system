@@ -47,7 +47,7 @@ components.html(
 
 st.markdown("<div id='top-section'></div>", unsafe_allow_html=True)
 
-# 1. 커스텀 CSS (st.expander keyboard_arrow... 기호 및 글자 겹침 근본 해결)
+# 1. 커스텀 CSS (st.expander 기호/글자 겹침 완벽 보정 및 반응형 카드 스타일링)
 st.markdown(
     """
     <style>
@@ -68,17 +68,11 @@ st.markdown(
     div[data-testid="stTextInput"] [data-testid="stInputHelperText"],
     div[data-testid="stTextInput"] p:not(:has(input)),
     div[data-testid="stTextInput"] small {
-        display: none !important;
-        height: 0 !important;
-        margin: 0 !important;
-        padding: 0 !important;
-        overflow: hidden !important;
+        display: none !important; height: 0 !important; margin: 0 !important; padding: 0 !important; overflow: hidden !important;
     }
-    div[data-testid="stTextInput"] input {
-        font-size: 0.85rem !important;
-    }
+    div[data-testid="stTextInput"] input { font-size: 0.85rem !important; }
 
-    /* expander keyboard_arrow_... 기호/글자 겹침 근본 방지 */
+    /* expander keyboard_arrow_... 기호/글자 겹침 완벽 차단 */
     div[data-testid="stExpander"] details summary {
         display: flex !important;
         align-items: center !important;
@@ -86,14 +80,12 @@ st.markdown(
         gap: 8px !important;
     }
 
-    /* 아이콘 크기 및 위치 정돈 */
     div[data-testid="stExpander"] details summary svg,
     div[data-testid="stExpander"] details summary [data-testid="stIconMaterial"] {
         order: 1 !important;
         flex-shrink: 0 !important;
     }
 
-    /* Expander 제목 텍스트 위치 정돈 */
     div[data-testid="stExpander"] details summary p {
         order: 2 !important;
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
@@ -790,14 +782,17 @@ if df_display is not None:
             action_title = "신규 매수 중지"
             action_desc = "코스피가 MA200 아래에 있고, 외인+기관 30일 누적이 순매도입니다." if market_type == "KR" else "지수가 MA20 아래에 3일 연속 머물러 신규 매수를 중단합니다."
             regime_label = "Regime · 하락 (Bear)"
+            regime_tooltip = "지수가 MA20을 3일 연속 하회하여 신규 매수가 중지된 상태입니다."
         elif reduce_holdings:
             action_title = "보유 비중 축소"
             action_desc = "지수가 MA20 아래에 있어 관망 및 기존 포지션 비중 축소를 권장합니다."
             regime_label = "Regime · 경계 (Caution)"
+            regime_tooltip = "지수가 MA20 아래에 위치하여 매수 자제 및 기존 비중 축소가 권장됩니다."
         else:
             action_title = "정상 매수 & 보유"
             action_desc = "지수가 MA20/MA200 위에 안착하여 알파 주도주 중심의 매수가 허용됩니다."
             regime_label = "Regime · 상승 (Bull)"
+            regime_tooltip = "지수가 MA20 위에 위치하여 전략에 따라 매수가 허용된 상태입니다."
 
         buy_cnt = len(df_display[df_display["매매상태"] == "추천"])
         buy_cnt_display = min(buy_cnt, needed_slots)
@@ -828,24 +823,41 @@ if df_display is not None:
 
         st.markdown(action_card_html, unsafe_allow_html=True)
 
-        used_cnt, remain_cnt = get_remaining_quota()
-        ai_col1, ai_col2 = st.columns([2.0, 1.0], vertical_alignment="center")
-        with ai_col1:
-            run_ai_market_btn = st.button("AI 시장 요약 보기", type="primary", key="btn_ai_market_summary", use_container_width=True)
-        with ai_col2:
-            st.markdown(f"<div style='text-align:right; font-size:0.75rem; color:#868e96;'>잔여 {remain_cnt}/{MAX_DAILY_QUOTA}회</div>", unsafe_allow_html=True)
+        # 📌 복구: 지수 Regime 도움말 Popover
+        with st.popover("ⓘ 지수 Regime 및 수급 지표 도움말"):
+            st.markdown(f"**📌 Regime 상태 ({regime_label})**")
+            st.caption(regime_tooltip)
+            st.markdown("---")
+            st.markdown("**📌 비차익 Z-Score**")
+            st.caption("최근 20영업일 비차익 순매수 유입 강도입니다. (+1.5 이상: 강한 유입 / -1.5 이하: 강한 이탈)")
 
-        if run_ai_market_btn:
-            with st.spinner("Gemini AI로 시장 수급 및 섹터 흐름을 요약 분석 중입니다..."):
-                summary_market_data = {
-                    "조회일자": target_date_str,
-                    "시장상태": action_title,
-                    "잔여슬롯": f"{current_holdings_count}/{top_n_cfg}",
-                    "추천종목수": f"{buy_cnt_display}개",
-                }
-                ai_res = analyze_stock_with_gemini("^KS11", "시장 수급 및 주도 섹터 종합", summary_market_data, "스마트머니 수급 분석")
-                st.success("AI 시장 분석 완료")
-                st.markdown(ai_res)
+        # 📌 복구: Gemini 시장 전체 스마트머니 흐름 & 주도 섹터 AI 진단 컨테이너
+        with st.expander("🤖 Gemini 시장 전체 스마트머니 흐름 & 주도 섹터 AI 진단", expanded=False):
+            used_cnt, remain_cnt = get_remaining_quota()
+            st.caption(f"Gemini AI 잔여 사용량: **{remain_cnt}/{MAX_DAILY_QUOTA}회**")
+            
+            if st.button("시장 전체 스마트머니 자금 흐름 AI 진단 실행", type="primary", key="btn_run_smart_money_ai_tab1", use_container_width=True):
+                with st.spinner("시장 전체 수급 및 주도 섹터를 Gemini AI로 분석 중입니다..."):
+                    top_liq_names = []
+                    try:
+                        res_top_liq = supabase.table("daily_top_liquidity").select("name, foreign_net, inst_net").lte("trade_date", target_date_str).order("trade_date", desc=True).limit(100).execute()
+                        if res_top_liq.data:
+                            df_top_agg = pd.DataFrame(res_top_liq.data).groupby("name").sum(numeric_only=True)
+                            df_top_agg["total_net"] = df_top_agg["foreign_net"] + df_top_agg["inst_net"]
+                            top_liq_names = df_top_agg.sort_values("total_net", ascending=False).head(10).index.tolist()
+                    except Exception:
+                        pass
+
+                    summary_market_data = {
+                        "조회일자": target_date_str,
+                        "시장상태": action_title,
+                        "잔여슬롯": f"{current_holdings_count}/{top_n_cfg}",
+                        "추천종목수": f"{buy_cnt_display}개",
+                        "수급상위주요종목": ", ".join(top_liq_names) if top_liq_names else "집계중",
+                    }
+                    ai_res = analyze_stock_with_gemini("^KS11", "시장 수급 및 주도 섹터 종합", summary_market_data, "스마트머니 수급 분석")
+                    st.success("시장 AI 분석 완료")
+                    st.markdown(ai_res)
 
         st.markdown(
             """<div class="tag-container">
@@ -1056,13 +1068,20 @@ if df_display is not None:
                     use_container_width=True
                 )
 
-        with st.expander("전체 종목 보기", expanded=False):
+        # 📌 복구: 당일 수급 포착 전체 종목 목록
+        with st.expander("당일 수급 포착 전체 종목 목록", expanded=False):
             if not df_stock_liq.empty:
-                st.dataframe(df_stock_liq[["rank", "name", "ticker", "close_price", "change_rate", "foreign_net", "inst_net"]], hide_index=True, use_container_width=True)
+                disp_all_supp = df_stock_liq[["rank", "name", "ticker", "close_price", "change_rate", "foreign_net", "inst_net"]].copy()
+                disp_all_supp = disp_all_supp.rename(columns={"rank": "순위", "name": "종목명", "ticker": "티커", "close_price": "종가", "change_rate": "등락률", "foreign_net": "외국인(백만)", "inst_net": "기관(백만)"})
+                st.dataframe(
+                    disp_all_supp.style.format({"종가": "{:,.0f}원", "등락률": "{:+.2f}%", "외국인(백만)": "{:+,.0f}", "기관(백만)": "{:+,.0f}"})
+                    .map(lambda v: "color: #d62728;" if float(v) > 0 else ("color: #1f77b4;" if float(v) < 0 else ""), subset=["등락률", "외국인(백만)", "기관(백만)"]),
+                    hide_index=True, use_container_width=True
+                )
 
         st.divider()
 
-        st.markdown("<div style='display:flex; justify-content:space-between; align-items:center;'><strong>차트</strong> <span style='font-size:0.75rem; color:#868e96;'>조원 단위 통일</span></div>", unsafe_allow_html=True)
+        st.markdown("<div style='display:flex; justify-content:space-between; align-items:center;'><strong>차트</strong> <span style='font-size:0.75rem; color:#868e96;'>조원/백만원 단위</span></div>", unsafe_allow_html=True)
         st.write("")
 
         with st.expander("코스피 지수 · MA20/50/200", expanded=True):
@@ -1085,6 +1104,23 @@ if df_display is not None:
                     st.plotly_chart(fig_market_idx, use_container_width=True, config={'scrollZoom': False})
             except Exception as e:
                 st.error(f"차트 로드 실패: {e}")
+
+        # 📌 복구: 코스피 외인+기관 30일 누적 합산 차트
+        with st.expander("코스피 외국인 + 기관 합산 수급 추이 (30일)", expanded=False):
+            if market_type == "KR" and not df_inv_all.empty:
+                df_k_chart = df_inv_all[df_inv_all["market_type"] == "KOSPI"].head(30).sort_values("trade_date").copy()
+                if not df_k_chart.empty:
+                    df_k_chart["trade_date_dt"] = pd.to_datetime(df_k_chart["trade_date"])
+                    df_k_chart["f_val"] = pd.to_numeric(df_k_chart["foreign_net"], errors="coerce").fillna(0)
+                    df_k_chart["i_val"] = pd.to_numeric(df_k_chart["institution_net"], errors="coerce").fillna(0)
+                    df_k_chart["smart_sum"] = df_k_chart["f_val"] + df_k_chart["i_val"]
+                    df_k_chart["smart_cum"] = df_k_chart["smart_sum"].cumsum()
+
+                    fig_smart = gg.Figure()
+                    fig_smart.add_trace(gg.Bar(x=df_k_chart["trade_date_dt"], y=df_k_chart["smart_sum"], name="일별 합산", marker_color=np.where(df_k_chart["smart_sum"] >= 0, "#d62728", "#1f77b4")))
+                    fig_smart.add_trace(gg.Scatter(x=df_k_chart["trade_date_dt"], y=df_k_chart["smart_cum"], mode="lines+markers", name="30일 누적", line=dict(color="#2ca02c", width=2.5)))
+                    fig_smart.update_layout(height=250, margin=dict(l=10, r=10, t=20, b=20))
+                    st.plotly_chart(fig_smart, use_container_width=True, config={'scrollZoom': False})
 
         with st.expander("수급 추이 · 차트 3개", expanded=False):
             draw_market_supply_chart(target_date_str)
@@ -1208,6 +1244,33 @@ if df_display is not None:
                 st.markdown("###### 기술적 차트")
                 draw_integrated_chart(sel_chart_ticker, market_type, ticker_name_map, supply_dates=supply_dates, rank_val=sel_rank_val)
 
+                # 📌 복구: 선택 종목 외국인 vs 기관 누적 수급 차트 & 세부 수급 표
+                if market_type == "KR":
+                    st.write("")
+                    st.markdown("###### 외국인 vs 기관 누적 수급 동향")
+                    try:
+                        res_s = supabase.table("daily_top_liquidity").select("*").eq("ticker", sel_chart_ticker).order("trade_date", desc=True).limit(15).execute()
+                        df_s_stock = pd.DataFrame(res_s.data) if res_s.data else pd.DataFrame()
+                    except Exception:
+                        df_s_stock = pd.DataFrame()
+
+                    if not df_s_stock.empty:
+                        df_s_stock = df_s_stock.sort_values("trade_date").copy()
+                        df_s_stock["f_cum"] = df_s_stock["foreign_net"].cumsum()
+                        df_s_stock["i_cum"] = df_s_stock["inst_net"].cumsum()
+                        df_s_stock["trade_date_dt"] = pd.to_datetime(df_s_stock["trade_date"])
+
+                        c_s1, c_s2 = st.columns([1.2, 1.0])
+                        with c_s1:
+                            fig_s = gg.Figure()
+                            fig_s.add_trace(gg.Scatter(x=df_s_stock["trade_date_dt"], y=df_s_stock["f_cum"], mode="lines+markers", name="외국인 누적", line=dict(color="#d62728", width=2)))
+                            fig_s.add_trace(gg.Scatter(x=df_s_stock["trade_date_dt"], y=df_s_stock["i_cum"], mode="lines+markers", name="기관 누적", line=dict(color="#2ca02c", width=2)))
+                            fig_s.update_layout(height=240, margin=dict(l=10, r=10, t=20, b=20))
+                            st.plotly_chart(fig_s, use_container_width=True, config={'scrollZoom': False})
+                        with c_s2:
+                            disp_s = df_s_stock[["trade_date", "close_price", "foreign_net", "inst_net"]].sort_values("trade_date", ascending=False).rename(columns={"trade_date": "일자", "close_price": "종가", "foreign_net": "외국인", "inst_net": "기관"})
+                            st.dataframe(disp_s.style.format({"종가": "{:,.0f}원", "외국인": "{:+,.0f}", "기관": "{:+,.0f}"}).map(lambda v: "color: #d62728;" if float(v) > 0 else ("color: #1f77b4;" if float(v) < 0 else ""), subset=["외국인", "기관"]), hide_index=True, use_container_width=True)
+
                 st.write("")
                 st.markdown("###### Gemini AI 종목 분석")
                 col_opt, col_btn = st.columns([2.5, 1.5])
@@ -1270,7 +1333,10 @@ if df_display is not None:
                             "평단가": price_fmt_str, "최고가": price_fmt_str, "현재가": price_fmt_str,
                             "평가금액": price_fmt_str, "손익금액": profit_amt_fmt, "수익률(%)": "{:+.2f}%",
                             "비중(%)": "{:.1f}%", "ATR": price_fmt_str, "손절/스톱가": price_fmt_str, "보유일수": "{:,.0f}일",
-                        }),
+                        })
+                        .map(lambda x: "color: #1976d2; font-weight: bold;" if "1번" in str(x) else ("color: #e65100; font-weight: bold;" if "2번" in str(x) else ""), subset=["스톱기준"])
+                        .map(lambda x: "color: #d62728; font-weight: bold;" if "손절" in str(x) else ("color: #2ca02c; font-weight: bold;" if "익절" in str(x) else ""), subset=["상태"])
+                        .map(lambda x: "color: #d62728;" if float(x) > 0 else ("color: #1f77b4;" if float(x) < 0 else ""), subset=["손익금액", "수익률(%)"]),
                         hide_index=True,
                         use_container_width=True,
                     )
@@ -1278,6 +1344,58 @@ if df_display is not None:
             df_rebal = df_display[df_display["매매상태"].isin(["매도", "추천"])]
             display_trade_list(df_rebal[df_rebal["매매상태"] == "매도"], "시스템 매도 필요 종목", "매도", "sys_s", target_date_str, is_latest_date, market_type, holdings_db, top_n_cfg, account_total_input, current_engine_key)
             display_trade_list(df_rebal[df_rebal["매매상태"] == "추천"], "시스템 매수 추천 종목", "매수", "sys_b", target_date_str, is_latest_date, market_type, holdings_db, top_n_cfg, account_total_input, current_engine_key)
+
+            # 📌 복구: 보유 종목 수동 매수/매도 입력 센터
+            st.write("")
+            with st.expander("보유 종목 수동 매수/매도 입력 센터", expanded=False):
+                c_m1, c_m2 = st.columns(2)
+                with c_m1:
+                    st.markdown("###### 수동 매수")
+                    m_ticker = st.text_input("종목코드 (Ticker)", key="m_tk").strip().upper()
+                    m_p = st.number_input("매수가", min_value=0.0, value=0.0, key="m_p")
+                    m_q = st.number_input("수량", min_value=0.0, value=1.0, key="m_q")
+                    m_d = st.date_input("매수일", value=selected_date, key="m_d")
+                    if st.button("수동 매수 실행", type="primary", key="btn_m_buy", use_container_width=True):
+                        if m_ticker and m_p > 0 and m_q > 0:
+                            update_holdings(m_ticker, "BUY", m_p, m_d, m_q, market_type)
+                            st.success(f"[{m_ticker}] 수동 매수 등록 완료")
+                            st.rerun()
+
+                with c_m2:
+                    st.markdown("###### 수동 매도")
+                    ms_ticker = st.text_input("매도 종목코드", key="ms_tk").strip().upper()
+                    ms_p = st.number_input("매도가", min_value=0.0, value=0.0, key="ms_p")
+                    ms_q = st.number_input("수량", min_value=0.0, value=1.0, key="ms_q")
+                    ms_d = st.date_input("매도일", value=selected_date, key="ms_d")
+                    ms_reason = st.selectbox("청산 사유", ["수기 매도 (사용자 임의 청산)", "목표가 도달 (수동 익절)", "리스크 관리 (수동 손절)", "직접 입력"], key="ms_rs")
+                    if st.button("수동 매도 실행", key="btn_m_sell", use_container_width=True):
+                        if ms_ticker and ms_p > 0 and ms_q > 0:
+                            update_holdings(ms_ticker, "SELL", ms_p, ms_d, ms_q, market_type, exit_reason=ms_reason)
+                            st.success(f"[{ms_ticker}] 수동 매도 완료")
+                            st.rerun()
+
+            # 📌 복구: 운용 자금 설정 및 2% Rule 리스크 계산
+            st.divider()
+            with st.expander(f"[{market_type}] 운용 자금 설정 및 리스크 관리", expanded=False):
+                cap_c1, cap_c2 = st.columns([2.5, 1.5])
+                with cap_c1:
+                    new_cap = st.number_input(f"[{market_type}] 총 운용 자금 설정", value=account_total_input, step=100.0 if market_type == "US" else 1000000.0, key=f"cap_in_{market_type}")
+                with cap_c2:
+                    st.write("")
+                    if st.button("자금 저장", key=f"btn_cap_save_{market_type}", type="primary", use_container_width=True):
+                        st.session_state[cap_key] = new_cap
+                        try:
+                            res_ex = supabase.table("strategy_settings").select("*").eq("id", 1).execute()
+                            ex_data = res_ex.data[0] if res_ex.data else {"id": 1}
+                            ex_data[cap_key] = float(new_cap)
+                            supabase.table("strategy_settings").upsert(ex_data).execute()
+                            st.success("운용 자금 DB 저장 완료")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"저장 실패: {e}")
+
+                max_risk_amt = new_cap * 0.02
+                st.caption(f"**단일 종목 최대 허용 손실 (2% Rule)**: {max_risk_amt:,.0f}원" if market_type == "KR" else f"**단일 종목 최대 허용 손실 (2% Rule)**: ${max_risk_amt:,.2f}")
 
     # TAB 4: 성과
     with tab4:
@@ -1318,12 +1436,48 @@ if df_display is not None:
                             df_hist["종목명"] = df_hist["ticker"]
 
                     if "holding_days" not in df_hist.columns:
-                        df_hist["holding_days"] = 0
+                        df_hist["holding_days"] = (df_hist["sell_date_dt"] - pd.to_datetime(df_hist["buy_date"], errors="coerce")).dt.days.fillna(0)
 
                     df_hist["profit_amount"] = pd.to_numeric(df_hist["profit_amount"], errors="coerce").fillna(0.0)
                     total_profit = df_hist["profit_amount"].sum()
-                    st.metric("총 실현 손익", f"{total_profit:+,.0f}원")
+                    
+                    # 📌 복구: 핵심 성과 지표 (KPI 메트릭 카드)
+                    tot_trades = len(df_hist)
+                    win_df = df_hist[df_hist["profit_amount"] > 0]
+                    win_rate = (len(win_df) / tot_trades * 100) if tot_trades > 0 else 0.0
+                    
+                    st.markdown("###### 핵심 성과 지표 (KPI)")
+                    kpi_c1, kpi_c2, kpi_c3 = st.columns(3)
+                    kpi_c1.metric("총 실현 손익", f"{total_profit:+,.0f}원" if market_type == "KR" else f"${total_profit:+,.2f}")
+                    kpi_c2.metric("총 청산 거래", f"{tot_trades}건")
+                    kpi_c3.metric("승률", f"{win_rate:.1f}%")
+
+                    st.write("")
+                    st.markdown("###### 수익 기여도 시각화 차트")
                     draw_attribution_charts(df_hist, market_type)
+
+                    # 📌 복구: 선택 종목 매수/매도 타점 복기 차트
+                    st.divider()
+                    st.markdown("###### 매매 타점 복기 센터")
+                    df_hist_disp = df_hist.sort_values("sell_date", ascending=False).reset_index(drop=True)
+                    trade_opts = df_hist_disp.apply(lambda r: f"[{r['sell_date']}] [{r['ticker']}] {r['종목명']} (손익: {r['profit_amount']:+,.0f}원)", axis=1).tolist()
+                    
+                    sel_trade_opt = st.selectbox("복기할 매매 건 선택", options=trade_opts, key="sb_review_trade")
+                    if sel_trade_opt:
+                        sel_idx = trade_opts.index(sel_trade_opt)
+                        rev_row = df_hist_disp.iloc[sel_idx]
+                        rev_ticker = str(rev_row["ticker"]).strip().upper()
+                        
+                        rev_supp_dates = []
+                        try:
+                            res_rev_s = supabase.table("daily_top_liquidity").select("trade_date").eq("ticker", rev_ticker).or_("foreign_net.gt.0,inst_net.gt.0").execute()
+                            if res_rev_s.data:
+                                rev_supp_dates = [r["trade_date"] for r in res_rev_s.data]
+                        except Exception:
+                            pass
+
+                        st.markdown(f"📈 **[{rev_row['종목명']}] 타점 및 수급 복기 차트**")
+                        draw_integrated_chart(rev_ticker, market_type, {rev_ticker: rev_row["종목명"]}, buy_date=str(rev_row["buy_date"]), sell_date=str(rev_row["sell_date"]), supply_dates=rev_supp_dates)
 
     # TAB 5: 백테스트
     with tab5:
