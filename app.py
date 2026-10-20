@@ -47,7 +47,7 @@ components.html(
 
 st.markdown("<div id='top-section'></div>", unsafe_allow_html=True)
 
-# 1. 개편된 UI/UX 커스텀 CSS
+# 1. 개편된 UI/UX 커스텀 CSS (텍스트 겹침 버그 보정 반영)
 st.markdown(
     """
     <style>
@@ -62,6 +62,31 @@ st.markdown(
 
     .block-container { padding-top: 0.8rem !important; padding-bottom: 2rem !important; padding-left: 0.8rem !important; padding-right: 14px !important; max-width: 1000px !important; margin: 0 auto; }
     html, body, [class*="st-"] { font-size: 13px !important; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+
+    /* 1) 비밀번호 입력창 잔여 텍스트(visibility...) 노출 방지 보정 */
+    div[data-testid="stTextInput"] label,
+    div[data-testid="stTextInput"] [data-testid="stInputHelperText"],
+    div[data-testid="stTextInput"] small {
+        display: none !important;
+    }
+    div[data-testid="stTextInput"] input {
+        font-size: 0.85rem !important;
+    }
+
+    /* 2) expander 화살표(arrow_forward/downward) 글자 겹침 보정 */
+    div[data-testid="stExpander"] details summary span[data-testid="stIconMaterial"],
+    div[data-testid="stExpander"] details summary p {
+        font-family: inherit !important;
+    }
+    div[data-testid="stExpander"] details summary span[data-testid="stIconMaterial"] {
+        font-family: 'Material Symbols Outlined', 'Material Icons', sans-serif !important;
+        margin-right: 6px !important;
+    }
+    div[data-testid="stExpander"] details summary {
+        display: flex !important;
+        align-items: center !important;
+        gap: 6px !important;
+    }
 
     /* 메인 요약 '오늘의 행동' 카드 */
     .action-card {
