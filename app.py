@@ -47,7 +47,7 @@ components.html(
 
 st.markdown("<div id='top-section'></div>", unsafe_allow_html=True)
 
-# 1. 커스텀 CSS (expander 아이콘 대체 텍스트 제거 및 레이아웃 완벽 보정)
+# 1. 커스텀 CSS (아이콘 대체 텍스트 완벽 차단 및 작은 화면 반응형 보정)
 st.markdown(
     """
     <style>
@@ -60,10 +60,10 @@ st.markdown(
     ::-webkit-scrollbar-thumb { background: #a0a0a0 !important; border-radius: 5px; }
     ::-webkit-scrollbar-thumb:hover { background: #666666 !important; }
 
-    .block-container { padding-top: 0.8rem !important; padding-bottom: 2rem !important; padding-left: 0.8rem !important; padding-right: 14px !important; max-width: 1000px !important; margin: 0 auto; }
+    .block-container { padding-top: 0.6rem !important; padding-bottom: 2rem !important; padding-left: 0.6rem !important; padding-right: 10px !important; max-width: 1000px !important; margin: 0 auto; }
     html, body, [class*="st-"] { font-size: 13px !important; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
 
-    /* 비밀번호 입력창 잔여 텍스트 차단 */
+    /* 비밀번호 입력창 잔여 텍스트 및 비밀번호 표시 아이콘 대체 텍스트 제거 */
     div[data-testid="stTextInput"] label,
     div[data-testid="stTextInput"] [data-testid="stInputHelperText"],
     div[data-testid="stTextInput"] p:not(:has(input)),
@@ -72,36 +72,35 @@ st.markdown(
     }
     div[data-testid="stTextInput"] input { font-size: 0.85rem !important; }
 
-    /* 📌 st.expander 아이콘 대체 텍스트 글자 겹침 차단 */
-    div[data-testid="stExpander"] details summary {
-        display: flex !important;
-        align-items: center !important;
-        gap: 8px !important;
-    }
-
-    /* 아이콘 내부의 텍스트 노드(keyboard_arrow_down 등) 감추기 */
-    div[data-testid="stExpander"] details summary [data-testid="stIconMaterial"],
-    div[data-testid="stExpander"] details summary span[class*="material-symbols"] {
+    /* 📌 모든 아이콘(Popover, Expander, Password Eye) 대체 텍스트 글자 겹침 완벽 차단 */
+    [data-testid="stIconMaterial"],
+    [data-testid="stPopover"] span[class*="material-symbols"],
+    [data-testid="stExpander"] details summary span[class*="material-symbols"],
+    div[data-testid="stTextInput"] button span {
         font-size: 0px !important;
         color: transparent !important;
         overflow: hidden !important;
-        width: 20px !important;
-        height: 20px !important;
-    }
-
-    div[data-testid="stExpander"] details summary svg {
+        line-height: 0 !important;
+        text-indent: -9999px !important;
+        display: inline-block !important;
         width: 18px !important;
         height: 18px !important;
-        flex-shrink: 0 !important;
     }
 
-    div[data-testid="stExpander"] details summary p {
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
-        margin: 0 !important;
-        font-size: 0.88rem !important;
-        font-weight: 600 !important;
-        color: #212529 !important;
-        flex-grow: 1 !important;
+    div[data-testid="stExpander"] details summary,
+    div[data-testid="stPopover"] > button {
+        display: flex !important;
+        align-items: center !important;
+        gap: 4px !important;
+    }
+
+    /* 작은 화면에서 버튼 및 패딩 크기 축소 */
+    div[data-testid="stPopover"] > button,
+    div[data-testid="stButton"] > button {
+        padding: 2px 6px !important;
+        font-size: 0.78rem !important;
+        min-height: 32px !important;
+        line-height: 1.2 !important;
     }
 
     /* 메인 요약 '오늘의 행동' 카드 */
@@ -135,7 +134,6 @@ st.markdown(
     .gauge-tag { font-size: 0.7rem; font-weight: 700; padding: 2px 8px; border-radius: 12px; background: #f1f3f5; color: #495057; }
     .gauge-value { font-size: 1.25rem; font-weight: 800; margin: 4px 0 8px 0; }
     
-    /* 게이지 바 커스텀 */
     .gauge-bar-bg { background: #e9ecef; height: 8px; border-radius: 4px; overflow: hidden; display: flex; gap: 2px; }
     .gauge-segment { flex: 1; height: 100%; border-radius: 2px; }
     .segment-red { background-color: #d62728; }
@@ -150,16 +148,16 @@ st.markdown(
         top: 0rem !important;
         background-color: #f8f9fa !important;
         z-index: 99999 !important;
-        padding-top: 6px !important;
-        padding-bottom: 6px !important;
+        padding-top: 4px !important;
+        padding-bottom: 4px !important;
         border-bottom: 1px solid #e9ecef !important;
     }
 
     /* 우측 하단 플로팅 버튼 */
     .floating-top-btn {
-        position: fixed; bottom: 25px; right: 25px; z-index: 999999;
-        background-color: #3b5bdb; color: #ffffff !important; padding: 10px 16px;
-        border-radius: 50px; font-size: 0.82rem; font-weight: bold; text-decoration: none !important;
+        position: fixed; bottom: 20px; right: 20px; z-index: 999999;
+        background-color: #3b5bdb; color: #ffffff !important; padding: 8px 14px;
+        border-radius: 50px; font-size: 0.78rem; font-weight: bold; text-decoration: none !important;
         box-shadow: 0 4px 12px rgba(59, 91, 219, 0.4); transition: all 0.2s ease-in-out;
     }
     .floating-top-btn:hover { background-color: #304ffe; transform: translateY(-3px); }
@@ -559,11 +557,11 @@ if "db_settings_loaded" not in st.session_state:
 all_dates = get_available_dates()
 latest_date_default = pd.to_datetime(all_dates[0]) if all_dates else None
 
-# 📌 상단 Header UI
-head_col1, head_col2 = st.columns([2.0, 2.0], vertical_alignment="center")
+# 📌 상단 Header UI (반응형 레이아웃 및 한 줄 배치 완벽 보정)
+head_col1, head_col2 = st.columns([1.8, 2.2], vertical_alignment="center")
 
 with head_col1:
-    st.markdown("<h4 style='margin:0; padding:0; font-weight:900;'>Quant Alpha</h4>", unsafe_allow_html=True)
+    st.markdown("<h4 style='margin:0; padding:0; font-weight:900; font-size:1.15rem;'>Quant Alpha</h4>", unsafe_allow_html=True)
 
 with head_col2:
     if is_authenticated:
@@ -571,9 +569,9 @@ with head_col2:
         remaining_sec = max(0, int(LOGIN_TIMEOUT_SECONDS - elapsed))
         rem_min, rem_sec = remaining_sec // 60, remaining_sec % 60
 
-        c_time, c_ext, c_setting = st.columns([2.2, 1.0, 0.8], vertical_alignment="center")
+        c_time, c_ext, c_setting = st.columns([1.2, 1.3, 1.5], vertical_alignment="center")
         c_time.markdown(
-            f"<div style='font-size:0.78em; color:#0b7285; font-weight:bold; text-align:right;'>인증<br>{rem_min}:{rem_sec:02d}</div>",
+            f"<div style='font-size:0.75em; color:#0b7285; font-weight:bold; text-align:right; line-height:1.1;'>인증<br>{rem_min}:{rem_sec:02d}</div>",
             unsafe_allow_html=True,
         )
         with c_ext:
@@ -641,7 +639,7 @@ with head_col2:
                     st.session_state["last_auth_time"] = 0
                     st.rerun()
     else:
-        c_p1, c_p2 = st.columns([3.0, 1.0], vertical_alignment="center")
+        c_p1, c_p2 = st.columns([2.6, 1.4], vertical_alignment="center")
         with c_p1:
             input_pwd_global = st.text_input(
                 "PW",
@@ -1454,6 +1452,38 @@ if df_display is not None:
                     st.write("")
                     st.markdown("###### 수익 기여도 시각화 차트")
                     draw_attribution_charts(df_hist, market_type)
+
+                    st.divider()
+
+                    # 📌 복구된 청산 거래 내역 전체 표
+                    st.markdown("###### 청산 완료 거래 내역")
+                    disp_perf_df = df_hist[["buy_date", "sell_date", "ticker", "종목명", "buy_price", "sell_price", "quantity", "profit_amount", "profit_rate", "exit_reason"]].copy()
+                    disp_perf_df = disp_perf_df.rename(columns={
+                        "buy_date": "매수일",
+                        "sell_date": "매도일",
+                        "ticker": "티커",
+                        "buy_price": "매수가",
+                        "sell_price": "매도가",
+                        "quantity": "수량",
+                        "profit_amount": "손익금액",
+                        "profit_rate": "수익률(%)",
+                        "exit_reason": "청산사유"
+                    })
+
+                    price_fmt = "{:,.2f}" if market_type == "US" else "{:,.0f}"
+                    profit_fmt = "{:+,.2f}" if market_type == "US" else "{:+,.0f}"
+
+                    st.dataframe(
+                        disp_perf_df.style.format({
+                            "매수가": price_fmt,
+                            "매도가": price_fmt,
+                            "수량": "{:,.2f}" if market_type == "US" else "{:,.0f}",
+                            "손익금액": profit_fmt,
+                            "수익률(%)": "{:+.2f}%",
+                        }).map(lambda v: "color: #d62728;" if float(v) > 0 else ("color: #1f77b4;" if float(v) < 0 else ""), subset=["손익금액", "수익률(%)"]),
+                        hide_index=True,
+                        use_container_width=True
+                    )
 
                     st.divider()
                     st.markdown("###### 매매 타점 복기 센터")
