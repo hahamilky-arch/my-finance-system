@@ -137,19 +137,6 @@ st.markdown(
     .segment-active { background-color: #e03131; }
     .segment-inactive { background-color: #dee2e6; }
 
-    /* 지수 정보 표시 태그 */
-    .index-info-badge {
-        background-color: #f1f3f5;
-        border: 1px solid #dee2e6;
-        border-radius: 8px;
-        padding: 4px 10px;
-        font-size: 0.78rem;
-        font-weight: 700;
-        display: flex;
-        align-items: center;
-        gap: 6px;
-    }
-
     /* 태그 배지 */
     .tag-container { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
     .tag-badge { background-color: #ffffff; border: 1px solid #e9ecef; color: #495057; font-size: 0.7rem; font-weight: 600; padding: 3px 8px; border-radius: 16px; }
@@ -438,8 +425,8 @@ if "db_settings_loaded" not in st.session_state:
 all_dates = get_available_dates()
 latest_date_default = pd.to_datetime(all_dates[0]) if all_dates else None
 
-# 📌 3. 초슬림 상단 Header & Control 바 (컴팩트 한줄 통합)
-h_col1, h_col2, h_col3, h_col4 = st.columns([1.5, 1.0, 1.5, 1.2], vertical_alignment="center")
+# 📌 3. 초슬림 상단 Header & Control 바 (날짜 및 대표 지수 변동 수치 동시 배치)
+h_col1, h_col2, h_col3, h_col4 = st.columns([1.2, 0.8, 2.2, 1.2], vertical_alignment="center")
 
 with h_col1:
     st.markdown("<h4 style='margin:0; padding:0; font-weight:900; line-height:1.1;'>Quant Alpha</h4>", unsafe_allow_html=True)
@@ -449,12 +436,40 @@ with h_col2:
     if not market_type:
         market_type = "KR"
 
-with h_col3:
-    selected_date = st.date_input("Date", value=latest_date_default, label_visibility="collapsed")
+target_symbol = "^KS11" if market_type == "KR" else "^GSPC"
+target_market_name = "코스피" if market_type == "KR" else "S&P 500"
 
-target_date_str = (
-    pd.to_datetime(selected_date).strftime("%Y-%m-%d") if selected_date else ""
-)
+with h_col3:
+    dt_c1, dt_c2 = st.columns([1.1, 1.4], vertical_alignment="center")
+    with dt_c1:
+        selected_date = st.date_input("Date", value=latest_date_default, label_visibility="collapsed")
+    
+    target_date_str = (
+        pd.to_datetime(selected_date).strftime("%Y-%m-%d") if selected_date else ""
+    )
+
+    # 📌 조회일자 기준 해당 시장 지수 정보 & 변동 수치 계산 및 출력
+    with dt_c2:
+        try:
+            res_idx_val = supabase.table("daily_analysis").select("close_price, change_rate").eq("ticker", target_symbol).lte("price_date", target_date_str).order("price_date", desc=True).limit(2).execute()
+            if res_idx_val.data and len(res_idx_val.data) > 0:
+                cur_close = float(res_idx_val.data[0].get("close_price", 0))
+                cur_chg = float(res_idx_val.data[0].get("change_rate", 0))
+                
+                prev_close = float(res_idx_val.data[1].get("close_price", cur_close)) if len(res_idx_val.data) > 1 else cur_close
+                diff_val = cur_close - prev_close
+
+                fmt_close = f"{cur_close:,.2f}"
+                diff_color = "#d62728" if cur_chg > 0 else ("#1f77b4" if cur_chg < 0 else "#495057")
+                sign_str = "+" if cur_chg > 0 else ""
+
+                idx_info_html = f"""<div style="font-size:0.78rem; font-weight:700; color:#212529; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                    {target_market_name} <span style="font-weight:800;">{fmt_close}</span> 
+                    <span style="color:{diff_color}; font-weight:bold;">({sign_str}{diff_val:,.2f} / {sign_str}{cur_chg:.2f}%)</span>
+                </div>"""
+                st.markdown(idx_info_html, unsafe_allow_html=True)
+        except Exception:
+            st.markdown(f"<div style='font-size:0.75rem; color:#868e96;'>{target_market_name} 정보 로딩중...</div>", unsafe_allow_html=True)
 
 with h_col4:
     if is_authenticated:
@@ -462,7 +477,7 @@ with h_col4:
         remaining_sec = max(0, int(LOGIN_TIMEOUT_SECONDS - elapsed))
         rem_min, rem_sec = remaining_sec // 60, remaining_sec % 60
 
-        c_time, c_ext, c_setting = st.columns([1.2, 1.0, 0.8], vertical_alignment="center")
+        c_time, c_ext, c_setting = st.columns([1.1, 0.9, 0.8], vertical_alignment="center")
         c_time.markdown(f"<div style='font-size:0.75rem; color:#0b7285; font-weight:bold; text-align:right;'>{rem_min}:{rem_sec:02d}</div>", unsafe_allow_html=True)
         with c_ext:
             if st.button("연장", key="btn_header_extend", use_container_width=True):
@@ -515,34 +530,6 @@ with h_col4:
                     st.rerun()
                 else:
                     st.error("불일치")
-
-# 📌 3.1 조회일자 기준 해당 시장 지수 정보 & 변동율 표시
-target_symbol = "^KS11" if market_type == "KR" else "^GSPC"
-target_market_name = "코스피" if market_type == "KR" else "S&P 500"
-
-idx_close_str = "-"
-idx_diff_html = ""
-
-try:
-    res_idx_val = supabase.table("daily_analysis").select("close_price, change_rate").eq("ticker", target_symbol).lte("price_date", target_date_str).order("price_date", desc=True).limit(2).execute()
-    if res_idx_val.data and len(res_idx_val.data) > 0:
-        cur_close = float(res_idx_val.data[0].get("close_price", 0))
-        cur_chg = float(res_idx_val.data[0].get("change_rate", 0))
-        
-        prev_close = float(res_idx_val.data[1].get("close_price", cur_close)) if len(res_idx_val.data) > 1 else cur_close
-        diff_val = cur_close - prev_close
-
-        fmt_close = f"{cur_close:,.2f}" if market_type == "US" else f"{cur_close:,.2f}"
-        diff_color = "#d62728" if cur_chg > 0 else ("#1f77b4" if cur_chg < 0 else "#495057")
-        sign_str = "+" if cur_chg > 0 else ""
-
-        idx_info_html = f"""<div style="display:flex; align-items:center; gap:8px; margin-top:2px; margin-bottom:6px; font-size:0.82rem;">
-            <span style="font-weight:800; color:#212529;">{target_market_name} {fmt_close}</span>
-            <span style="font-weight:700; color:{diff_color};">{sign_str}{diff_val:,.2f} ({sign_str}{cur_chg:.2f}%)</span>
-        </div>"""
-        st.markdown(idx_info_html, unsafe_allow_html=True)
-except Exception:
-    pass
 
 current_engine_key = st.session_state.get("strategy_engine_mode", "strat3_top7")
 market_safe, stop_new_buy, reduce_holdings = get_market_regime(market_type, target_date_str)
