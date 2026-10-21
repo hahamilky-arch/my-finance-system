@@ -52,7 +52,6 @@ from ui_theme import inject_theme
 
 inject_theme()
 
-
 # 2. 30분 자동 세션 인증 타이머
 LOGIN_TIMEOUT_SECONDS = 1800
 
@@ -93,38 +92,6 @@ if is_authenticated:
         </script>
         """
         components.html(js_timer_code, height=0)
-
-
-# 📌 레이어 팝업 (Dialog 모달 정의)
-@st.dialog("📌 시장 Regime (국면) 가이드")
-def show_regime_info_dialog(regime_label, target_market_name):
-    st.markdown(f"### 현재 국면: **{regime_label}**")
-    st.markdown("---")
-    st.markdown("""
-    **전략의 위험 관리 판정 기준**
-    
-    1. **상승장 (Bull)**: 대표 지수가 **MA20(20일 이동평균선)** 위에 안정적으로 위치할 때입니다.
-       - **행동**: 알파 주도주 신규 매수 허용 및 적극 포지션 보유.
-    2. **경계장 (Caution)**: 대표 지수가 MA20 아래로 종가 형성 시 첫 번째 위험 경보가 발생합니다.
-       - **행동**: 신규 매수를 자제하고, 기존 보유 포지션 중 약세 종목 비중 축소.
-    3. **하락장 (Bear)**: 대표 지수가 **3일 연속 MA20 아래**에 머무를 때 발동합니다.
-       - **행동**: **신규 매수 완전 금지(Lock)** 및 현금 비중 최대 확보.
-    """)
-
-@st.dialog("📊 비차익 Z-Score (수급 강도) 가이드")
-def show_zscore_info_dialog(p_zscore, z_tag):
-    st.markdown(f"### 현재 비차익 Z-Score: **{p_zscore:+.2f} ({z_tag})**")
-    st.markdown("---")
-    st.markdown("""
-    **비차익 프로그램 수급 강도 분석**
-    
-    * **Z-Score 의미**: 최근 **20영업일간의 비차익 순매수 평균 및 표준편차**를 기준으로 당일 유입된 기관/외국인 프로그램 자금의 표준화 상대 강도입니다.
-    
-    * **구간별 해석**:
-      - **+1.5 이상 (강한 유입)**: 시장 전반에 매우 강력한 패시브/프로그램 매수세 유입 (상승 동력)
-      - **-1.5 이하 (강한 이탈)**: 대규모 프로그램 매도세 출회 (시장 하방 압력)
-      - **-1.5 ~ +1.5 (정상 범위)**: 통상적인 수급 변동 범위 내 유지
-    """)
 
 
 def apply_styles(df):
@@ -537,14 +504,17 @@ if df_display is not None:
             action_title = "신규 매수 중지"
             action_desc = f"{target_market_name} 지수가 MA20 아래에 3일 연속 머물러 신규 매수를 중단합니다."
             regime_label = "Regime · 하락 (Bear)"
+            regime_tooltip = f"{target_market_name} 지수가 MA20을 3일 연속 하회하여 신규 매수가 중지된 상태입니다."
         elif reduce_holdings:
             action_title = "보유 비중 축소"
             action_desc = f"{target_market_name} 지수가 MA20 아래에 있어 관망 및 기존 포지션 비중 축소를 권장합니다."
             regime_label = "Regime · 경계 (Caution)"
+            regime_tooltip = f"{target_market_name} 지수가 MA20 아래에 위치하여 매수 자제 및 기존 비중 축소가 권장됩니다."
         else:
             action_title = "정상 매수 & 보유"
             action_desc = f"{target_market_name} 지수가 MA20/MA200 위에 안착하여 알파 주도주 중심의 매수가 허용됩니다."
             regime_label = "Regime · 상승 (Bull)"
+            regime_tooltip = f"{target_market_name} 지수가 MA20 위에 위치하여 전략에 따라 매수가 허용된 상태입니다."
 
         buy_cnt = len(df_display[df_display["매매상태"] == "추천"])
         buy_cnt_display = min(buy_cnt, needed_slots)
@@ -552,13 +522,16 @@ if df_display is not None:
 
         buy_val_color = "#d62728" if buy_cnt_display > 0 else "#212529"
 
-        # 지수 수치 쿼리
+        # 📌 지수 수치 쿼리 (예외 완벽 보완)
         idx_badge_html = ""
         try:
             res_idx_val = supabase.table("daily_analysis").select("close_price, price_date").eq("ticker", target_symbol).lte("price_date", target_date_str).order("price_date", desc=True).limit(2).execute()
             if res_idx_val.data and len(res_idx_val.data) > 0:
                 cur_close = float(res_idx_val.data[0].get("close_price", 0))
-                prev_close = float(res_idx_val.data[1].get("close_price", cur_close)) if len(res_idx_val.data) > 1 else cur_close
+                if len(res_idx_val.data) > 1:
+                    prev_close = float(res_idx_val.data[1].get("close_price", cur_close))
+                else:
+                    prev_close = cur_close
                 
                 diff_val = cur_close - prev_close
                 cur_chg = (diff_val / prev_close * 100.0) if prev_close > 0 else 0.0
@@ -570,32 +543,40 @@ if df_display is not None:
         except Exception:
             idx_badge_html = ""
 
-        # 📌 '오늘의 행동' 컨테이너 내부 구조 통합
-        with st.container():
-            st.markdown('<div class="action-card-marker"></div>', unsafe_allow_html=True)
-            head_col1, head_col2 = st.columns([2.5, 2.5], vertical_alignment="center")
-            with head_col1:
-                st.markdown(f"<div style='font-size: 0.78rem; font-weight: 700; color: #856404;'>오늘의 행동 ({market_type})</div>", unsafe_allow_html=True)
-            with head_col2:
-                sub_c1, sub_c2 = st.columns([2.5, 1.5], vertical_alignment="center")
-                with sub_c1:
-                    st.markdown(f"<div style='text-align:right;'>{idx_badge_html}</div>", unsafe_allow_html=True)
-                with sub_c2:
-                    if st.button(regime_label, key="btn_regime_badge_click", type="secondary", use_container_width=True):
-                        show_regime_info_dialog(regime_label, target_market_name)
+        action_card_html = f"""<div class="action-card">
+<div class="action-card-header">
+<div class="action-card-subtitle">오늘의 행동 ({market_type})</div>
+<div class="action-card-right">
+{idx_badge_html}
+<div class="regime-badge">{regime_label}</div>
+</div>
+</div>
+<div class="action-card-title">{action_title}</div>
+<div class="action-card-desc">{action_desc}</div>
+<div class="action-stats-grid">
+<div class="stat-box">
+<div class="stat-box-label">잔여 슬롯</div>
+<div class="stat-box-value">{current_holdings_count} / {top_n_cfg}</div>
+</div>
+<div class="stat-box">
+<div class="stat-box-label">추천 종목</div>
+<div class="stat-box-value" style="color: {buy_val_color};">{buy_cnt_display}개</div>
+</div>
+<div class="stat-box">
+<div class="stat-box-label">매도 필요</div>
+<div class="stat-box-value" style="color: {'#1f77b4' if sell_cnt > 0 else '#2ca02c'};">{sell_cnt}개 <span style="font-size:0.7rem; font-weight:normal;">{'청산' if sell_cnt > 0 else '정상'}</span></div>
+</div>
+</div>
+</div>"""
 
-            st.markdown(f"<div style='font-size: 1.35rem; font-weight: 900; color: #111111; margin: 4px 0 6px 0; letter-spacing: -0.5px;'>{action_title}</div>", unsafe_allow_html=True)
-            st.markdown(f"<div style='font-size: 0.82rem; color: #495057; margin-bottom: 12px; line-height: 1.35;'>{action_desc}</div>", unsafe_allow_html=True)
+        st.markdown(action_card_html, unsafe_allow_html=True)
 
-            stat_c1, stat_c2, stat_c3 = st.columns(3)
-            with stat_c1:
-                st.markdown(f"""<div class="stat-box"><div class="stat-box-label">잔여 슬롯</div><div class="stat-box-value">{current_holdings_count} / {top_n_cfg}</div></div>""", unsafe_allow_html=True)
-            with stat_c2:
-                st.markdown(f"""<div class="stat-box"><div class="stat-box-label">추천 종목</div><div class="stat-box-value" style="color: {buy_val_color};">{buy_cnt_display}개</div></div>""", unsafe_allow_html=True)
-            with stat_c3:
-                st.markdown(f"""<div class="stat-box"><div class="stat-box-label">매도 필요</div><div class="stat-box-value" style="color: {'#1f77b4' if sell_cnt > 0 else '#2ca02c'};">{sell_cnt}개 <span style="font-size:0.7rem; font-weight:normal;">{'청산' if sell_cnt > 0 else '정상'}</span></div></div>""", unsafe_allow_html=True)
-
-        st.write("")
+        with st.popover("ⓘ 지수 Regime 및 수급 지표 도움말"):
+            st.markdown(f"**📌 Regime 상태 ({regime_label})**")
+            st.caption(regime_tooltip)
+            st.markdown("---")
+            st.markdown("**📌 비차익 Z-Score (KR 전용)**")
+            st.caption("최근 20영업일 비차익 순매수 유입 강도입니다. (+1.5 이상: 강한 유입 / -1.5 이하: 강한 이탈)")
 
         with st.expander("🤖 Gemini 시장 전체 스마트머니 흐름 & 주도 섹터 AI 진단", expanded=False):
             used_cnt, remain_cnt = get_remaining_quota()
@@ -681,17 +662,16 @@ if df_display is not None:
             else:
                 k_f_val, k_i_val = 0.0, 0.0
 
-            # 📌 비차익 Z 카드 통합 구조
-            with st.container():
-                st.markdown("""<div class="gauge-card">""", unsafe_allow_html=True)
-                z_head1, z_head2 = st.columns([3, 2], vertical_alignment="center")
-                with z_head1:
-                    st.markdown("""<span class="gauge-title">비차익 Z</span>""", unsafe_allow_html=True)
-                with z_head2:
-                    if st.button(z_tag, key="btn_zscore_badge_click", type="secondary", use_container_width=True):
-                        show_zscore_info_dialog(p_zscore, z_tag)
-
-                st.markdown(f"""<div class="gauge-value" style="color: {'#d62728' if p_zscore >= 0 else '#1f77b4'};">{p_zscore:+.2f}</div></div>""", unsafe_allow_html=True)
+            st.markdown(
+                f"""<div class="gauge-card">
+<div class="gauge-card-header">
+<span class="gauge-title">비차익 Z</span>
+<span class="gauge-tag">{z_tag}</span>
+</div>
+<div class="gauge-value" style="color: {'#d62728' if p_zscore >= 0 else '#1f77b4'};">{p_zscore:+.2f}</div>
+</div>""",
+                unsafe_allow_html=True
+            )
 
             f_bars = "".join([f'<div class="gauge-segment segment-active"></div>' if i < k_f_5d_tr else '<div class="gauge-segment segment-inactive"></div>' for i in range(10)])
             st.markdown(
