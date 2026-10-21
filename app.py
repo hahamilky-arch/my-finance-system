@@ -113,8 +113,10 @@ st.markdown(
         margin-bottom: 12px;
         box-shadow: 0 2px 8px rgba(0,0,0,0.02);
     }
-    .action-card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 4px; }
+    .action-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
     .action-card-subtitle { font-size: 0.78rem; font-weight: 700; color: #856404; }
+    .action-card-right { display: flex; align-items: center; gap: 8px; }
+    .index-summary-badge { background-color: #ffffff; color: #212529; font-size: 0.72rem; font-weight: 800; padding: 2px 8px; border-radius: 16px; border: 1px solid #ffe066; }
     .regime-badge { background-color: #ffffff; color: #856404; font-size: 0.7rem; font-weight: 800; padding: 2px 8px; border-radius: 16px; border: 1px solid #ffe066; }
     .action-card-title { font-size: 1.35rem; font-weight: 900; color: #111111; margin: 2px 0 6px 0; letter-spacing: -0.5px; }
     .action-card-desc { font-size: 0.82rem; color: #495057; margin-bottom: 12px; line-height: 1.35; }
@@ -425,8 +427,8 @@ if "db_settings_loaded" not in st.session_state:
 all_dates = get_available_dates()
 latest_date_default = pd.to_datetime(all_dates[0]) if all_dates else None
 
-# 📌 3. 초슬림 상단 Header & Control 바 (날짜 및 대표 지수 변동 수치 동시 배치)
-h_col1, h_col2, h_col3, h_col4 = st.columns([1.2, 0.8, 2.2, 1.2], vertical_alignment="center")
+# 📌 3. 초슬림 상단 Header & Control 바
+h_col1, h_col2, h_col3, h_col4 = st.columns([1.5, 0.8, 1.5, 1.2], vertical_alignment="center")
 
 with h_col1:
     st.markdown("<h4 style='margin:0; padding:0; font-weight:900; line-height:1.1;'>Quant Alpha</h4>", unsafe_allow_html=True)
@@ -440,36 +442,11 @@ target_symbol = "^KS11" if market_type == "KR" else "^GSPC"
 target_market_name = "코스피" if market_type == "KR" else "S&P 500"
 
 with h_col3:
-    dt_c1, dt_c2 = st.columns([1.1, 1.4], vertical_alignment="center")
-    with dt_c1:
-        selected_date = st.date_input("Date", value=latest_date_default, label_visibility="collapsed")
-    
-    target_date_str = (
-        pd.to_datetime(selected_date).strftime("%Y-%m-%d") if selected_date else ""
-    )
+    selected_date = st.date_input("Date", value=latest_date_default, label_visibility="collapsed")
 
-    # 📌 조회일자 기준 해당 시장 지수 정보 & 변동 수치 계산 및 출력
-    with dt_c2:
-        try:
-            res_idx_val = supabase.table("daily_analysis").select("close_price, change_rate").eq("ticker", target_symbol).lte("price_date", target_date_str).order("price_date", desc=True).limit(2).execute()
-            if res_idx_val.data and len(res_idx_val.data) > 0:
-                cur_close = float(res_idx_val.data[0].get("close_price", 0))
-                cur_chg = float(res_idx_val.data[0].get("change_rate", 0))
-                
-                prev_close = float(res_idx_val.data[1].get("close_price", cur_close)) if len(res_idx_val.data) > 1 else cur_close
-                diff_val = cur_close - prev_close
-
-                fmt_close = f"{cur_close:,.2f}"
-                diff_color = "#d62728" if cur_chg > 0 else ("#1f77b4" if cur_chg < 0 else "#495057")
-                sign_str = "+" if cur_chg > 0 else ""
-
-                idx_info_html = f"""<div style="font-size:0.78rem; font-weight:700; color:#212529; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
-                    {target_market_name} <span style="font-weight:800;">{fmt_close}</span> 
-                    <span style="color:{diff_color}; font-weight:bold;">({sign_str}{diff_val:,.2f} / {sign_str}{cur_chg:.2f}%)</span>
-                </div>"""
-                st.markdown(idx_info_html, unsafe_allow_html=True)
-        except Exception:
-            st.markdown(f"<div style='font-size:0.75rem; color:#868e96;'>{target_market_name} 정보 로딩중...</div>", unsafe_allow_html=True)
+target_date_str = (
+    pd.to_datetime(selected_date).strftime("%Y-%m-%d") if selected_date else ""
+)
 
 with h_col4:
     if is_authenticated:
@@ -651,10 +628,32 @@ if df_display is not None:
 
         buy_val_color = "#d62728" if buy_cnt_display > 0 else "#212529"
 
+        # 📌 [수정] 대표 지수 변동 수치 쿼리 및 '오늘의 행동' 카드 우측 상단 표시
+        idx_badge_html = ""
+        try:
+            res_idx_val = supabase.table("daily_analysis").select("close_price, change_rate").eq("ticker", target_symbol).lte("price_date", target_date_str).order("price_date", desc=True).limit(2).execute()
+            if res_idx_val.data and len(res_idx_val.data) > 0:
+                cur_close = float(res_idx_val.data[0].get("close_price", 0))
+                cur_chg = float(res_idx_val.data[0].get("change_rate", 0))
+                prev_close = float(res_idx_val.data[1].get("close_price", cur_close)) if len(res_idx_val.data) > 1 else cur_close
+                diff_val = cur_close - prev_close
+
+                diff_color = "#d62728" if cur_chg > 0 else ("#1f77b4" if cur_chg < 0 else "#495057")
+                sign_str = "+" if cur_chg > 0 else ""
+
+                idx_badge_html = f"""<div class="index-summary-badge">
+                    {target_market_name} {cur_close:,.2f} <span style="color:{diff_color}; font-weight:800;">({sign_str}{diff_val:,.2f} / {sign_str}{cur_chg:.2f}%)</span>
+                </div>"""
+        except Exception:
+            idx_badge_html = ""
+
         action_card_html = f"""<div class="action-card">
 <div class="action-card-header">
 <div class="action-card-subtitle">오늘의 행동 ({market_type})</div>
+<div class="action-card-right">
+{idx_badge_html}
 <div class="regime-badge">{regime_label}</div>
+</div>
 </div>
 <div class="action-card-title">{action_title}</div>
 <div class="action-card-desc">{action_desc}</div>
