@@ -115,9 +115,19 @@ st.markdown(
     }
     .action-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
     .action-card-subtitle { font-size: 0.78rem; font-weight: 700; color: #856404; }
-    .action-card-right { display: flex; align-items: center; gap: 8px; }
-    .index-summary-badge { background-color: #ffffff; color: #212529; font-size: 0.72rem; font-weight: 800; padding: 2px 8px; border-radius: 16px; border: 1px solid #ffe066; }
-    .regime-badge { background-color: #ffffff; color: #856404; font-size: 0.7rem; font-weight: 800; padding: 2px 8px; border-radius: 16px; border: 1px solid #ffe066; }
+    .action-card-right { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .index-summary-badge {
+        background-color: #ffffff;
+        color: #212529;
+        font-size: 0.72rem;
+        font-weight: 800;
+        padding: 2px 8px;
+        border-radius: 16px;
+        border: 1px solid #ffe066;
+        display: inline-block;
+        white-space: nowrap;
+    }
+    .regime-badge { background-color: #ffffff; color: #856404; font-size: 0.7rem; font-weight: 800; padding: 2px 8px; border-radius: 16px; border: 1px solid #ffe066; display: inline-block; white-space: nowrap; }
     .action-card-title { font-size: 1.35rem; font-weight: 900; color: #111111; margin: 2px 0 6px 0; letter-spacing: -0.5px; }
     .action-card-desc { font-size: 0.82rem; color: #495057; margin-bottom: 12px; line-height: 1.35; }
 
@@ -628,22 +638,24 @@ if df_display is not None:
 
         buy_val_color = "#d62728" if buy_cnt_display > 0 else "#212529"
 
-        # 📌 [수정] 대표 지수 변동 수치 쿼리 및 '오늘의 행동' 카드 우측 상단 표시
+        # 📌 지수 수치 쿼리 (예외 완벽 보완)
         idx_badge_html = ""
         try:
-            res_idx_val = supabase.table("daily_analysis").select("close_price, change_rate").eq("ticker", target_symbol).lte("price_date", target_date_str).order("price_date", desc=True).limit(2).execute()
+            res_idx_val = supabase.table("daily_analysis").select("close_price, price_date").eq("ticker", target_symbol).lte("price_date", target_date_str).order("price_date", desc=True).limit(2).execute()
             if res_idx_val.data and len(res_idx_val.data) > 0:
                 cur_close = float(res_idx_val.data[0].get("close_price", 0))
-                cur_chg = float(res_idx_val.data[0].get("change_rate", 0))
-                prev_close = float(res_idx_val.data[1].get("close_price", cur_close)) if len(res_idx_val.data) > 1 else cur_close
+                if len(res_idx_val.data) > 1:
+                    prev_close = float(res_idx_val.data[1].get("close_price", cur_close))
+                else:
+                    prev_close = cur_close
+                
                 diff_val = cur_close - prev_close
+                cur_chg = (diff_val / prev_close * 100.0) if prev_close > 0 else 0.0
 
                 diff_color = "#d62728" if cur_chg > 0 else ("#1f77b4" if cur_chg < 0 else "#495057")
                 sign_str = "+" if cur_chg > 0 else ""
 
-                idx_badge_html = f"""<div class="index-summary-badge">
-                    {target_market_name} {cur_close:,.2f} <span style="color:{diff_color}; font-weight:800;">({sign_str}{diff_val:,.2f} / {sign_str}{cur_chg:.2f}%)</span>
-                </div>"""
+                idx_badge_html = f"""<div class="index-summary-badge">{target_market_name} {cur_close:,.2f} <span style="color:{diff_color}; font-weight:800;">({sign_str}{diff_val:,.2f} / {sign_str}{cur_chg:.2f}%)</span></div>"""
         except Exception:
             idx_badge_html = ""
 
