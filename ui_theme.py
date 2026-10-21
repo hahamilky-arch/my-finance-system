@@ -170,30 +170,24 @@ div[data-testid="stMetricValue"] { font-weight: 900 !important; }
 div[data-testid="stSegmentedControl"] button { border-radius: 10px !important; font-weight: 700 !important; }
 
 /* ---------- 오늘의 행동 히어로 카드 ---------- */
-div[data-testid="stVerticalBlock"]:has(> div.action-card-marker) {
-    background: linear-gradient(135deg, #4c5fe0 0%, #6a7bf0 55%, #8b9bff 100%) !important;
-    border: none !important;
-    border-radius: 20px !important;
-    padding: 16px 16px 14px 16px !important;
-    margin-bottom: 12px !important;
+.action-card {
+    background: linear-gradient(135deg, #4c5fe0 0%, #6a7bf0 55%, #8b9bff 100%);
+    border-radius: 20px;
+    padding: 16px 16px 14px 16px;
+    margin-bottom: 12px;
     box-shadow: 0 10px 28px rgba(76,95,224,.28);
+    color: #fff;
 }
-div[data-testid="stVerticalBlock"]:has(> div.action-card-marker) div,
-div[data-testid="stVerticalBlock"]:has(> div.action-card-marker) span { color: #fff; }
-/* 히어로 안의 레짐 버튼은 반투명 */
-div[data-testid="stVerticalBlock"]:has(> div.action-card-marker) div[data-testid="stButton"] > button {
-    background: rgba(255,255,255,.18) !important;
-    border: 1px solid rgba(255,255,255,.35) !important;
-    color: #fff !important;
-}
-div[data-testid="stVerticalBlock"]:has(> div.action-card-marker) div[data-testid="stButton"] > button:hover {
-    background: rgba(255,255,255,.30) !important;
-    color: #fff !important;
-}
+.action-card-header { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+.action-card-subtitle { font-size: 0.74rem; font-weight: 700; color: rgba(255,255,255,.85); }
+.action-card-right { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.action-card-title { font-size: 1.45rem; font-weight: 900; color: #fff; margin: 2px 0 6px 0; letter-spacing: -0.5px; }
+.action-card-desc { font-size: 0.8rem; color: rgba(255,255,255,.88); margin-bottom: 14px; line-height: 1.4; }
+.action-stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 
 .index-summary-badge {
     background: rgba(255,255,255,.95);
-    color: #151826 !important;
+    color: #151826;
     font-size: 0.72rem;
     font-weight: 800;
     padding: 4px 10px;
@@ -201,7 +195,17 @@ div[data-testid="stVerticalBlock"]:has(> div.action-card-marker) div[data-testid
     display: inline-block;
     white-space: nowrap;
 }
-.index-summary-badge span { color: inherit; }
+.regime-badge {
+    background: rgba(255,255,255,.2);
+    border: 1px solid rgba(255,255,255,.4);
+    color: #fff;
+    font-size: 0.7rem;
+    font-weight: 800;
+    padding: 3px 10px;
+    border-radius: 16px;
+    display: inline-block;
+    white-space: nowrap;
+}
 
 .stat-box {
     background: rgba(255,255,255,.96);
@@ -209,7 +213,7 @@ div[data-testid="stVerticalBlock"]:has(> div.action-card-marker) div[data-testid
     padding: 9px 11px;
     text-align: left;
 }
-.stat-box-label { font-size: 0.68rem; color: var(--sub) !important; font-weight: 700; margin-bottom: 2px; }
+.stat-box-label { font-size: 0.68rem; color: var(--sub); font-weight: 700; margin-bottom: 2px; }
 .stat-box-value { font-size: 1.1rem; font-weight: 900; color: var(--text); }
 
 /* ---------- 수급 게이지 카드 ---------- */
