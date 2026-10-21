@@ -63,7 +63,7 @@ st.markdown(
     html, body, [class*="st-"] { font-size: 13px !important; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
 
     /* 여백 및 구분선 정돈 */
-    div[data-testid="stVerticalBlock"] > div { margin-bottom: 0.6rem !important; }
+    div[data-testid="stVerticalBlock"] > div { margin-bottom: 0.4rem !important; }
     
     /* 비밀번호 및 컴포넌트 내부 잔여 아이콘 대체 텍스트 완전 은폐 */
     div[data-testid="stTextInput"] label,
@@ -96,11 +96,12 @@ st.markdown(
     }
 
     /* 상단 헤더 컴팩트 버튼 */
-    .header-btn button {
-        padding: 2px 8px !important;
+    div[data-testid="stPopover"] > button,
+    div[data-testid="stButton"] > button {
+        padding: 2px 6px !important;
         font-size: 0.75rem !important;
-        height: 28px !important;
-        min-height: 28px !important;
+        height: 30px !important;
+        min-height: 30px !important;
     }
 
     /* 메인 요약 '오늘의 행동' 카드 */
@@ -133,8 +134,21 @@ st.markdown(
     
     .gauge-bar-bg { background: #e9ecef; height: 6px; border-radius: 3px; overflow: hidden; display: flex; gap: 2px; }
     .gauge-segment { flex: 1; height: 100%; border-radius: 2px; }
-    .segment-active { background-color: #e03131; } /* 순매수일: 빨강 */
-    .segment-inactive { background-color: #dee2e6; } /* 아닌날: 회색 */
+    .segment-active { background-color: #e03131; }
+    .segment-inactive { background-color: #dee2e6; }
+
+    /* 지수 정보 표시 태그 */
+    .index-info-badge {
+        background-color: #f1f3f5;
+        border: 1px solid #dee2e6;
+        border-radius: 8px;
+        padding: 4px 10px;
+        font-size: 0.78rem;
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
 
     /* 태그 배지 */
     .tag-container { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
@@ -424,27 +438,32 @@ if "db_settings_loaded" not in st.session_state:
 all_dates = get_available_dates()
 latest_date_default = pd.to_datetime(all_dates[0]) if all_dates else None
 
-# 상단 Header UI
-head_col1, head_col2 = st.columns([1.5, 2.5], vertical_alignment="center")
+# 📌 3. 초슬림 상단 Header & Control 바 (컴팩트 한줄 통합)
+h_col1, h_col2, h_col3, h_col4 = st.columns([1.5, 1.0, 1.5, 1.2], vertical_alignment="center")
 
-with head_col1:
-    st.markdown("<h4 style='margin:0; padding:0; font-weight:900;'>Quant Alpha</h4>", unsafe_allow_html=True)
+with h_col1:
+    st.markdown("<h4 style='margin:0; padding:0; font-weight:900; line-height:1.1;'>Quant Alpha</h4>", unsafe_allow_html=True)
 
-with head_col2:
+with h_col2:
+    market_type = st.segmented_control("Market", options=["KR", "US"], default="KR", label_visibility="collapsed")
+    if not market_type:
+        market_type = "KR"
+
+with h_col3:
+    selected_date = st.date_input("Date", value=latest_date_default, label_visibility="collapsed")
+
+target_date_str = (
+    pd.to_datetime(selected_date).strftime("%Y-%m-%d") if selected_date else ""
+)
+
+with h_col4:
     if is_authenticated:
         elapsed = time.time() - st.session_state.get("last_auth_time", 0)
         remaining_sec = max(0, int(LOGIN_TIMEOUT_SECONDS - elapsed))
         rem_min, rem_sec = remaining_sec // 60, remaining_sec % 60
 
-        st.markdown(
-            f"""
-            <div style="display: flex; align-items: center; justify-content: flex-end; gap: 8px;">
-                <span style="font-size: 0.8rem; color: #0b7285; font-weight: bold;">인증 {rem_min}:{rem_sec:02d}</span>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-        c_space, c_ext, c_setting = st.columns([2.0, 1.0, 0.8], vertical_alignment="center")
+        c_time, c_ext, c_setting = st.columns([1.2, 1.0, 0.8], vertical_alignment="center")
+        c_time.markdown(f"<div style='font-size:0.75rem; color:#0b7285; font-weight:bold; text-align:right;'>{rem_min}:{rem_sec:02d}</div>", unsafe_allow_html=True)
         with c_ext:
             if st.button("연장", key="btn_header_extend", use_container_width=True):
                 st.session_state["last_auth_time"] = time.time()
@@ -485,9 +504,9 @@ with head_col2:
                     st.session_state["last_auth_time"] = 0
                     st.rerun()
     else:
-        c_p1, c_p2 = st.columns([3.0, 1.0], vertical_alignment="center")
+        c_p1, c_p2 = st.columns([2.5, 1.2], vertical_alignment="center")
         with c_p1:
-            input_pwd_global = st.text_input("PW", type="password", key="global_pwd_input", label_visibility="collapsed", placeholder="비밀번호 입력")
+            input_pwd_global = st.text_input("PW", type="password", key="global_pwd_input", label_visibility="collapsed", placeholder="비밀번호")
         with c_p2:
             if st.button("해제", key="btn_global_unlock", type="primary", use_container_width=True):
                 if input_pwd_global == st.secrets.get("TRADE_PASSWORD", "1234"):
@@ -497,17 +516,33 @@ with head_col2:
                 else:
                     st.error("불일치")
 
-ctrl_col1, ctrl_col2 = st.columns([1.2, 1.8], vertical_alignment="center")
-with ctrl_col1:
-    market_type = st.segmented_control("Market", options=["KR", "US"], default="KR", label_visibility="collapsed")
-    if not market_type:
-        market_type = "KR"
-with ctrl_col2:
-    selected_date = st.date_input("Date", value=latest_date_default, label_visibility="collapsed")
+# 📌 3.1 조회일자 기준 해당 시장 지수 정보 & 변동율 표시
+target_symbol = "^KS11" if market_type == "KR" else "^GSPC"
+target_market_name = "코스피" if market_type == "KR" else "S&P 500"
 
-target_date_str = (
-    pd.to_datetime(selected_date).strftime("%Y-%m-%d") if selected_date else ""
-)
+idx_close_str = "-"
+idx_diff_html = ""
+
+try:
+    res_idx_val = supabase.table("daily_analysis").select("close_price, change_rate").eq("ticker", target_symbol).lte("price_date", target_date_str).order("price_date", desc=True).limit(2).execute()
+    if res_idx_val.data and len(res_idx_val.data) > 0:
+        cur_close = float(res_idx_val.data[0].get("close_price", 0))
+        cur_chg = float(res_idx_val.data[0].get("change_rate", 0))
+        
+        prev_close = float(res_idx_val.data[1].get("close_price", cur_close)) if len(res_idx_val.data) > 1 else cur_close
+        diff_val = cur_close - prev_close
+
+        fmt_close = f"{cur_close:,.2f}" if market_type == "US" else f"{cur_close:,.2f}"
+        diff_color = "#d62728" if cur_chg > 0 else ("#1f77b4" if cur_chg < 0 else "#495057")
+        sign_str = "+" if cur_chg > 0 else ""
+
+        idx_info_html = f"""<div style="display:flex; align-items:center; gap:8px; margin-top:2px; margin-bottom:6px; font-size:0.82rem;">
+            <span style="font-weight:800; color:#212529;">{target_market_name} {fmt_close}</span>
+            <span style="font-weight:700; color:{diff_color};">{sign_str}{diff_val:,.2f} ({sign_str}{cur_chg:.2f}%)</span>
+        </div>"""
+        st.markdown(idx_info_html, unsafe_allow_html=True)
+except Exception:
+    pass
 
 current_engine_key = st.session_state.get("strategy_engine_mode", "strat3_top7")
 market_safe, stop_new_buy, reduce_holdings = get_market_regime(market_type, target_date_str)
@@ -584,9 +619,6 @@ if df_display is not None:
 
     # TAB 1: 오늘
     with tab1:
-        target_symbol = "^KS11" if market_type == "KR" else "^GSPC"
-        target_market_name = "코스피" if market_type == "KR" else "S&P 500"
-
         try:
             chk_res = (
                 supabase.table("daily_analysis")
@@ -921,7 +953,7 @@ if df_display is not None:
 
         st.write("")
 
-        # 📌 지수 차트 (MA20 이탈점 마커 버그 수정 완료)
+        # 지수 차트
         index_chart_title = f"{target_market_name} 지수 · MA20/50/200"
         with st.expander(index_chart_title, expanded=True):
             try:
@@ -931,7 +963,6 @@ if df_display is not None:
                     df_idx_c["price_date_dt"] = pd.to_datetime(df_idx_c["price_date"])
                     df_idx_c = df_idx_c.sort_values("price_date_dt").reset_index(drop=True)
 
-                    # MA20 아래로 이탈하기 시작하는 날(Below Breakout) 탐지
                     df_idx_c["below_ma20"] = df_idx_c["close_price"] < df_idx_c["ma20"]
                     df_idx_c["ma20_breakdown"] = df_idx_c["below_ma20"] & (~df_idx_c["below_ma20"].shift(1, fill_value=False))
 
@@ -942,7 +973,6 @@ if df_display is not None:
                     if "ma200" in df_idx_c.columns:
                         fig_market_idx.add_trace(gg.Scatter(x=df_idx_c["price_date_dt"], y=df_idx_c["ma200"], mode="lines", name="MA200", line=dict(color="#e03131", width=1.5, dash="dot")))
 
-                    # 📌 [수정] 이탈 시점 마커 (linewidth 속성 오류 해결)
                     breakdown_df = df_idx_c[df_idx_c["ma20_breakdown"]]
                     if not breakdown_df.empty:
                         fig_market_idx.add_trace(gg.Scatter(
