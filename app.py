@@ -100,69 +100,31 @@ st.markdown(
     div[data-testid="stButton"] > button {
         padding: 2px 6px !important;
         font-size: 0.75rem !important;
-        height: 30px !important;
-        min-height: 30px !important;
+        height: 28px !important;
+        min-height: 28px !important;
     }
 
-    /* 클릭 가능한 Regime 배지 전용 버튼 스타일 */
-    div[data-testid="stButton"] > button.regime-badge-btn {
-        background-color: #ffffff !important;
-        color: #856404 !important;
-        font-size: 0.72rem !important;
-        font-weight: 800 !important;
-        padding: 2px 10px !important;
-        border-radius: 16px !important;
+    /* 메인 요약 '오늘의 행동' 컨테이너 커스텀 */
+    div[data-testid="stVerticalBlock"]:has(> div.action-card-marker) {
+        background: linear-gradient(180deg, #fff9db 0%, #fff3bf 100%) !important;
         border: 1px solid #ffe066 !important;
-        height: 24px !important;
-        min-height: 24px !important;
-        line-height: 1 !important;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.05) !important;
-    }
-    div[data-testid="stButton"] > button.regime-badge-btn:hover {
-        background-color: #fff9db !important;
-        border-color: #fcc419 !important;
+        border-radius: 14px !important;
+        padding: 12px 14px !important;
+        margin-bottom: 12px !important;
     }
 
-    /* 클릭 가능한 Z-Score 배지 버튼 스타일 */
-    div[data-testid="stButton"] > button.zscore-badge-btn {
-        background-color: #f1f3f5 !important;
-        color: #495057 !important;
-        font-size: 0.68rem !important;
-        font-weight: 700 !important;
-        padding: 1px 8px !important;
-        border-radius: 10px !important;
-        border: 1px solid #dee2e6 !important;
-        height: 22px !important;
-        min-height: 22px !important;
-    }
-
-    /* 메인 요약 '오늘의 행동' 카드 */
-    .action-card {
-        background: linear-gradient(180deg, #fff9db 0%, #fff3bf 100%);
-        border: 1px solid #ffe066;
-        border-radius: 14px;
-        padding: 14px 16px;
-        margin-bottom: 12px;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.02);
-    }
-    .action-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
-    .action-card-subtitle { font-size: 0.78rem; font-weight: 700; color: #856404; }
-    .action-card-right { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
     .index-summary-badge {
         background-color: #ffffff;
         color: #212529;
         font-size: 0.72rem;
         font-weight: 800;
-        padding: 2px 8px;
+        padding: 3px 8px;
         border-radius: 16px;
         border: 1px solid #ffe066;
         display: inline-block;
         white-space: nowrap;
     }
-    .action-card-title { font-size: 1.35rem; font-weight: 900; color: #111111; margin: 2px 0 6px 0; letter-spacing: -0.5px; }
-    .action-card-desc { font-size: 0.82rem; color: #495057; margin-bottom: 12px; line-height: 1.35; }
 
-    .action-stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
     .stat-box { background: #ffffff; border-radius: 10px; padding: 8px 10px; text-align: left; border: 1px solid #f1f3f5; }
     .stat-box-label { font-size: 0.7rem; color: #868e96; font-weight: 600; margin-bottom: 2px; }
     .stat-box-value { font-size: 1.05rem; font-weight: 800; color: #212529; }
@@ -715,45 +677,32 @@ if df_display is not None:
         except Exception:
             idx_badge_html = ""
 
-        # 📌 상단 카드의 우측 버튼 배치 (Regime 클릭 시 모달 팝업 연결)
-        c_card, c_btn = st.columns([3.8, 1.2])
-        with c_card:
-            st.markdown(f"""<div class="action-card-subtitle">오늘의 행동 ({market_type})</div>""", unsafe_allow_html=True)
-        with c_btn:
-            st.markdown(f"""<div style="display:flex; justify-content:flex-end; align-items:center; gap:6px;">{idx_badge_html}</div>""", unsafe_allow_html=True)
+        # 📌 '오늘의 행동' 컨테이너 내부 구조 통합
+        with st.container():
+            st.markdown('<div class="action-card-marker"></div>', unsafe_allow_html=True)
+            head_col1, head_col2 = st.columns([2.5, 2.5], vertical_alignment="center")
+            with head_col1:
+                st.markdown(f"<div style='font-size: 0.78rem; font-weight: 700; color: #856404;'>오늘의 행동 ({market_type})</div>", unsafe_allow_html=True)
+            with head_col2:
+                sub_c1, sub_c2 = st.columns([2.5, 1.5], vertical_alignment="center")
+                with sub_c1:
+                    st.markdown(f"<div style='text-align:right;'>{idx_badge_html}</div>", unsafe_allow_html=True)
+                with sub_c2:
+                    if st.button(regime_label, key="btn_regime_badge_click", type="secondary", use_container_width=True):
+                        show_regime_info_dialog(regime_label, target_market_name)
 
-        action_card_html = f"""<div class="action-card">
-<div class="action-card-header">
-<div class="action-card-subtitle">오늘의 행동 ({market_type})</div>
-<div class="action-card-right">
-{idx_badge_html}
-</div>
-</div>
-<div class="action-card-title">{action_title}</div>
-<div class="action-card-desc">{action_desc}</div>
-<div class="action-stats-grid">
-<div class="stat-box">
-<div class="stat-box-label">잔여 슬롯</div>
-<div class="stat-box-value">{current_holdings_count} / {top_n_cfg}</div>
-</div>
-<div class="stat-box">
-<div class="stat-box-label">추천 종목</div>
-<div class="stat-box-value" style="color: {buy_val_color};">{buy_cnt_display}개</div>
-</div>
-<div class="stat-box">
-<div class="stat-box-label">매도 필요</div>
-<div class="stat-box-value" style="color: {'#1f77b4' if sell_cnt > 0 else '#2ca02c'};">{sell_cnt}개 <span style="font-size:0.7rem; font-weight:normal;">{'청산' if sell_cnt > 0 else '정상'}</span></div>
-</div>
-</div>
-</div>"""
+            st.markdown(f"<div style='font-size: 1.35rem; font-weight: 900; color: #111111; margin: 4px 0 6px 0; letter-spacing: -0.5px;'>{action_title}</div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='font-size: 0.82rem; color: #495057; margin-bottom: 12px; line-height: 1.35;'>{action_desc}</div>", unsafe_allow_html=True)
 
-        # 📌 Regime 클릭 가능한 배지 구현
-        reg_col1, reg_col2 = st.columns([3.5, 1.5])
-        with reg_col2:
-            if st.button(regime_label, key="btn_regime_badge_click", type="secondary"):
-                show_regime_info_dialog(regime_label, target_market_name)
+            stat_c1, stat_c2, stat_c3 = st.columns(3)
+            with stat_c1:
+                st.markdown(f"""<div class="stat-box"><div class="stat-box-label">잔여 슬롯</div><div class="stat-box-value">{current_holdings_count} / {top_n_cfg}</div></div>""", unsafe_allow_html=True)
+            with stat_c2:
+                st.markdown(f"""<div class="stat-box"><div class="stat-box-label">추천 종목</div><div class="stat-box-value" style="color: {buy_val_color};">{buy_cnt_display}개</div></div>""", unsafe_allow_html=True)
+            with stat_c3:
+                st.markdown(f"""<div class="stat-box"><div class="stat-box-label">매도 필요</div><div class="stat-box-value" style="color: {'#1f77b4' if sell_cnt > 0 else '#2ca02c'};">{sell_cnt}개 <span style="font-size:0.7rem; font-weight:normal;">{'청산' if sell_cnt > 0 else '정상'}</span></div></div>""", unsafe_allow_html=True)
 
-        st.markdown(action_card_html, unsafe_allow_html=True)
+        st.write("")
 
         with st.expander("🤖 Gemini 시장 전체 스마트머니 흐름 & 주도 섹터 AI 진단", expanded=False):
             used_cnt, remain_cnt = get_remaining_quota()
@@ -839,21 +788,17 @@ if df_display is not None:
             else:
                 k_f_val, k_i_val = 0.0, 0.0
 
-            # 📌 비차익 Z 배지 클릭 시 Dialog 모달 팝업 연결
-            z_c1, z_c2 = st.columns([3.5, 1.5])
-            with z_c2:
-                if st.button(f"{z_tag} (도움말)", key="btn_zscore_badge_click"):
-                    show_zscore_info_dialog(p_zscore, z_tag)
+            # 📌 비차익 Z 카드 통합 구조
+            with st.container():
+                st.markdown("""<div class="gauge-card">""", unsafe_allow_html=True)
+                z_head1, z_head2 = st.columns([3, 2], vertical_alignment="center")
+                with z_head1:
+                    st.markdown("""<span class="gauge-title">비차익 Z</span>""", unsafe_allow_html=True)
+                with z_head2:
+                    if st.button(z_tag, key="btn_zscore_badge_click", type="secondary", use_container_width=True):
+                        show_zscore_info_dialog(p_zscore, z_tag)
 
-            st.markdown(
-                f"""<div class="gauge-card">
-<div class="gauge-card-header">
-<span class="gauge-title">비차익 Z</span>
-</div>
-<div class="gauge-value" style="color: {'#d62728' if p_zscore >= 0 else '#1f77b4'};">{p_zscore:+.2f}</div>
-</div>""",
-                unsafe_allow_html=True
-            )
+                st.markdown(f"""<div class="gauge-value" style="color: {'#d62728' if p_zscore >= 0 else '#1f77b4'};">{p_zscore:+.2f}</div></div>""", unsafe_allow_html=True)
 
             f_bars = "".join([f'<div class="gauge-segment segment-active"></div>' if i < k_f_5d_tr else '<div class="gauge-segment segment-inactive"></div>' for i in range(10)])
             st.markdown(
