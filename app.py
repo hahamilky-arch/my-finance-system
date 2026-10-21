@@ -325,7 +325,7 @@ latest_date_default = pd.to_datetime(all_dates[0]) if all_dates else None
 h_col1, h_col2, h_col3, h_col4 = st.columns([1.5, 0.8, 1.5, 1.2], vertical_alignment="center")
 
 with h_col1:
-    st.markdown("<div class='brand'><span class='brand-logo'>Q</span><span class='brand-name'>Quant Alpha</span></div>", unsafe_allow_html=True)
+    st.markdown("<h4 style='margin:0; padding:0; font-weight:900; line-height:1.1;'>Quant Alpha</h4>", unsafe_allow_html=True)
 
 with h_col2:
     market_type = st.segmented_control("Market", options=["KR", "US"], default="KR", label_visibility="collapsed")
@@ -468,11 +468,11 @@ if df_display is not None:
     needed_slots = max(0, top_n_cfg - current_holdings_count)
 
     tab1, tab2, tab3, tab4, tab5 = st.tabs([
-        "🏠 오늘",
-        "📡 시그널",
-        "🧾 주문",
-        "📊 성과",
-        "🧪 백테스트",
+        "오늘",
+        "시그널",
+        "주문 지시서",
+        "성과",
+        "백테스트",
     ])
 
     # TAB 1: 오늘
@@ -581,6 +581,35 @@ if df_display is not None:
             st.markdown("**📌 비차익 Z-Score (KR 전용)**")
             st.caption("최근 20영업일 비차익 순매수 유입 강도입니다. (+1.5 이상: 강한 유입 / -1.5 이하: 강한 이탈)")
 
+        with st.expander("🤖 Gemini 시장 전체 스마트머니 흐름 & 주도 섹터 AI 진단", expanded=False):
+            used_cnt, remain_cnt = get_remaining_quota()
+            st.caption(f"Gemini AI 잔여 사용량: **{remain_cnt}/{MAX_DAILY_QUOTA}회**")
+            
+            if st.button("시장 전체 스마트머니 자금 흐름 AI 진단 실행", type="primary", key="btn_run_smart_money_ai_tab1", use_container_width=True):
+                with st.spinner(f"[{market_type}] 시장 전체 수급 및 주도 섹터를 Gemini AI로 분석 중입니다..."):
+                    top_liq_names = []
+                    if market_type == "KR":
+                        try:
+                            res_top_liq = supabase.table("daily_top_liquidity").select("name, foreign_net, inst_net").lte("trade_date", target_date_str).order("trade_date", desc=True).limit(100).execute()
+                            if res_top_liq.data:
+                                df_top_agg = pd.DataFrame(res_top_liq.data).groupby("name").sum(numeric_only=True)
+                                df_top_agg["total_net"] = df_top_agg["foreign_net"] + df_top_agg["inst_net"]
+                                top_liq_names = df_top_agg.sort_values("total_net", ascending=False).head(10).index.tolist()
+                        except Exception:
+                            pass
+
+                    summary_market_data = {
+                        "시장타입": market_type,
+                        "조회일자": target_date_str,
+                        "시장상태": action_title,
+                        "잔여슬롯": f"{current_holdings_count}/{top_n_cfg}",
+                        "추천종목수": f"{buy_cnt_display}개",
+                        "수급상위주요종목": ", ".join(top_liq_names) if top_liq_names else "해당없음/집계중",
+                    }
+                    ai_res = analyze_stock_with_gemini(target_symbol, f"{target_market_name} 시장 수급 및 주도 섹터 종합", summary_market_data, "스마트머니 수급 분석")
+                    st.success("시장 AI 분석 완료")
+                    st.markdown(ai_res)
+
         st.markdown(
             """<div class="tag-container">
 <span class="tag-badge">전략 3</span>
@@ -594,47 +623,10 @@ if df_display is not None:
 
         st.write("")
 
-        # 지수 차트
-        index_chart_title = f"{target_market_name} 지수 · MA20/50/200"
-        with st.expander(index_chart_title, expanded=True):
-            try:
-                res_idx_chart = supabase.table("daily_analysis").select("price_date, close_price, ma20, ma50, ma200").eq("ticker", target_symbol).lte("price_date", target_date_str).order("price_date", desc=True).limit(120).execute()
-                if res_idx_chart.data:
-                    df_idx_c = pd.DataFrame(res_idx_chart.data)
-                    df_idx_c["price_date_dt"] = pd.to_datetime(df_idx_c["price_date"])
-                    df_idx_c = df_idx_c.sort_values("price_date_dt").reset_index(drop=True)
-
-                    df_idx_c["below_ma20"] = df_idx_c["close_price"] < df_idx_c["ma20"]
-                    df_idx_c["ma20_breakdown"] = df_idx_c["below_ma20"] & (~df_idx_c["below_ma20"].shift(1, fill_value=False))
-
-                    fig_market_idx = gg.Figure()
-                    fig_market_idx.add_trace(gg.Scatter(x=df_idx_c["price_date_dt"], y=df_idx_c["close_price"], mode="lines", name=f"{target_market_name} 종가", line=dict(color="#3b5bdb", width=2)))
-                    if "ma20" in df_idx_c.columns:
-                        fig_market_idx.add_trace(gg.Scatter(x=df_idx_c["price_date_dt"], y=df_idx_c["ma20"], mode="lines", name="MA20", line=dict(color="#ff922b", width=1.5, dash="dash")))
-                    if "ma200" in df_idx_c.columns:
-                        fig_market_idx.add_trace(gg.Scatter(x=df_idx_c["price_date_dt"], y=df_idx_c["ma200"], mode="lines", name="MA200", line=dict(color="#e03131", width=1.5, dash="dot")))
-
-                    breakdown_df = df_idx_c[df_idx_c["ma20_breakdown"]]
-                    if not breakdown_df.empty:
-                        fig_market_idx.add_trace(gg.Scatter(
-                            x=breakdown_df["price_date_dt"],
-                            y=breakdown_df["close_price"],
-                            mode="markers",
-                            name="MA20 이탈점",
-                            marker=dict(symbol="x", size=9, color="#f59f00", line=dict(width=2, color="#f59f00"))
-                        ))
-
-                    fig_market_idx.update_layout(height=260, margin=dict(l=10, r=10, t=20, b=20))
-                    st.plotly_chart(fig_market_idx, use_container_width=True, config={'scrollZoom': False})
-                else:
-                    st.info(f"[{target_market_name}] 지수 시계열 데이터가 존재하지 않습니다.")
-            except Exception as e:
-                st.error(f"지수 차트 로드 실패: {e}")
-
         if market_type == "US":
             st.info("💡 **미국 시장(US) 안내**: 미국장은 수급 데이터 대신 S&P 500 지수 추세 및 종목별 모멘텀 지표(Rank, RS)를 바탕으로 전략이 동작합니다.")
         else:
-            st.markdown(f"<div class='section-title'><strong>수급 요약</strong><span>{target_date_str} 기준</span></div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='display:flex; justify-content:space-between; align-items:center;'><strong>수급 요약</strong> <span style='font-size:0.75rem; color:#868e96;'>{target_date_str} 기준</span></div>", unsafe_allow_html=True)
             st.write("")
 
             p_zscore = 0.0
@@ -673,18 +665,19 @@ if df_display is not None:
             else:
                 k_f_val, k_i_val = 0.0, 0.0
 
-            z_card = (
+            st.markdown(
                 f"""<div class="gauge-card">
 <div class="gauge-card-header">
 <span class="gauge-title">비차익 Z</span>
 <span class="gauge-tag">{z_tag}</span>
 </div>
 <div class="gauge-value" style="color: {'#d62728' if p_zscore >= 0 else '#1f77b4'};">{p_zscore:+.2f}</div>
-</div>"""
+</div>""",
+                unsafe_allow_html=True
             )
 
             f_bars = "".join([f'<div class="gauge-segment segment-active"></div>' if i < k_f_5d_tr else '<div class="gauge-segment segment-inactive"></div>' for i in range(10)])
-            f_card = (
+            st.markdown(
                 f"""<div class="gauge-card">
 <div class="gauge-card-header">
 <span class="gauge-title">코스피 외국인</span>
@@ -693,11 +686,12 @@ if df_display is not None:
 <div class="gauge-value" style="color: {'#d62728' if k_f_val >= 0 else '#1f77b4'};">{k_f_val:+.2f}조원</div>
 <div class="gauge-subtext">10일 누적 {k_f_cum_10d:+.2f}조원</div>
 <div class="gauge-bar-bg">{f_bars}</div>
-</div>"""
+</div>""",
+                unsafe_allow_html=True
             )
 
             i_bars = "".join([f'<div class="gauge-segment segment-active"></div>' if i < k_i_5d_tr else '<div class="gauge-segment segment-inactive"></div>' for i in range(10)])
-            i_card = (
+            st.markdown(
                 f"""<div class="gauge-card">
 <div class="gauge-card-header">
 <span class="gauge-title">코스피 기관</span>
@@ -706,14 +700,13 @@ if df_display is not None:
 <div class="gauge-value" style="color: {'#d62728' if k_i_val >= 0 else '#1f77b4'};">{k_i_val:+.2f}조원</div>
 <div class="gauge-subtext">10일 누적 {k_i_cum_10d:+.2f}조원</div>
 <div class="gauge-bar-bg">{i_bars}</div>
-</div>"""
+</div>""",
+                unsafe_allow_html=True
             )
-
-            st.markdown(f'<div class="gauge-grid">{z_card}{f_card}{i_card}</div>', unsafe_allow_html=True)
 
             st.write("")
 
-            st.markdown(f"<div class='section-title'><strong>주체별 매매 동향</strong><span>단위 억원</span></div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='display:flex; justify-content:space-between; align-items:center;'><strong>주체별 매매 동향</strong> <span style='font-size:0.7rem; color:#868e96;'>단위 억원</span></div>", unsafe_allow_html=True)
             st.write("")
 
             k_row = df_inv_all[df_inv_all["market_type"] == "KOSPI"].iloc[0] if not df_inv_all.empty and not df_inv_all[df_inv_all["market_type"] == "KOSPI"].empty else {}
@@ -749,7 +742,7 @@ if df_display is not None:
 
             st.write("")
 
-            st.markdown("<div class='section-title'><strong>수급 상위 종목</strong><span>단위 억원</span></div>", unsafe_allow_html=True)
+            st.markdown("<div style='display:flex; justify-content:space-between; align-items:center;'><strong>수급 상위 종목</strong> <span style='font-size:0.75rem; color:#868e96;'>단위 억원</span></div>", unsafe_allow_html=True)
             st.write("")
 
             try:
@@ -845,6 +838,43 @@ if df_display is not None:
 
         st.write("")
 
+        # 지수 차트
+        index_chart_title = f"{target_market_name} 지수 · MA20/50/200"
+        with st.expander(index_chart_title, expanded=True):
+            try:
+                res_idx_chart = supabase.table("daily_analysis").select("price_date, close_price, ma20, ma50, ma200").eq("ticker", target_symbol).lte("price_date", target_date_str).order("price_date", desc=True).limit(120).execute()
+                if res_idx_chart.data:
+                    df_idx_c = pd.DataFrame(res_idx_chart.data)
+                    df_idx_c["price_date_dt"] = pd.to_datetime(df_idx_c["price_date"])
+                    df_idx_c = df_idx_c.sort_values("price_date_dt").reset_index(drop=True)
+
+                    df_idx_c["below_ma20"] = df_idx_c["close_price"] < df_idx_c["ma20"]
+                    df_idx_c["ma20_breakdown"] = df_idx_c["below_ma20"] & (~df_idx_c["below_ma20"].shift(1, fill_value=False))
+
+                    fig_market_idx = gg.Figure()
+                    fig_market_idx.add_trace(gg.Scatter(x=df_idx_c["price_date_dt"], y=df_idx_c["close_price"], mode="lines", name=f"{target_market_name} 종가", line=dict(color="#3b5bdb", width=2)))
+                    if "ma20" in df_idx_c.columns:
+                        fig_market_idx.add_trace(gg.Scatter(x=df_idx_c["price_date_dt"], y=df_idx_c["ma20"], mode="lines", name="MA20", line=dict(color="#ff922b", width=1.5, dash="dash")))
+                    if "ma200" in df_idx_c.columns:
+                        fig_market_idx.add_trace(gg.Scatter(x=df_idx_c["price_date_dt"], y=df_idx_c["ma200"], mode="lines", name="MA200", line=dict(color="#e03131", width=1.5, dash="dot")))
+
+                    breakdown_df = df_idx_c[df_idx_c["ma20_breakdown"]]
+                    if not breakdown_df.empty:
+                        fig_market_idx.add_trace(gg.Scatter(
+                            x=breakdown_df["price_date_dt"],
+                            y=breakdown_df["close_price"],
+                            mode="markers",
+                            name="MA20 이탈점",
+                            marker=dict(symbol="x", size=9, color="#f59f00", line=dict(width=2, color="#f59f00"))
+                        ))
+
+                    fig_market_idx.update_layout(height=260, margin=dict(l=10, r=10, t=20, b=20))
+                    st.plotly_chart(fig_market_idx, use_container_width=True, config={'scrollZoom': False})
+                else:
+                    st.info(f"[{target_market_name}] 지수 시계열 데이터가 존재하지 않습니다.")
+            except Exception as e:
+                st.error(f"지수 차트 로드 실패: {e}")
+
         # KR 전용 차트들
         if market_type == "KR":
             with st.expander("코스피 외국인 + 기관 합산 수급 추이 (30일)", expanded=False):
@@ -866,45 +896,15 @@ if df_display is not None:
             with st.expander("수급 추이 · 차트 3개", expanded=False):
                 draw_market_supply_chart(target_date_str)
 
-        # 🤖 AI 진단 (보조 기능이라 탭 하단에 배치)
-        with st.expander("🤖 Gemini 시장 전체 스마트머니 흐름 & 주도 섹터 AI 진단", expanded=False):
-            used_cnt, remain_cnt = get_remaining_quota()
-            st.caption(f"Gemini AI 잔여 사용량: **{remain_cnt}/{MAX_DAILY_QUOTA}회**")
-            
-            if st.button("시장 전체 스마트머니 자금 흐름 AI 진단 실행", type="primary", key="btn_run_smart_money_ai_tab1", use_container_width=True):
-                with st.spinner(f"[{market_type}] 시장 전체 수급 및 주도 섹터를 Gemini AI로 분석 중입니다..."):
-                    top_liq_names = []
-                    if market_type == "KR":
-                        try:
-                            res_top_liq = supabase.table("daily_top_liquidity").select("name, foreign_net, inst_net").lte("trade_date", target_date_str).order("trade_date", desc=True).limit(100).execute()
-                            if res_top_liq.data:
-                                df_top_agg = pd.DataFrame(res_top_liq.data).groupby("name").sum(numeric_only=True)
-                                df_top_agg["total_net"] = df_top_agg["foreign_net"] + df_top_agg["inst_net"]
-                                top_liq_names = df_top_agg.sort_values("total_net", ascending=False).head(10).index.tolist()
-                        except Exception:
-                            pass
-
-                    summary_market_data = {
-                        "시장타입": market_type,
-                        "조회일자": target_date_str,
-                        "시장상태": action_title,
-                        "잔여슬롯": f"{current_holdings_count}/{top_n_cfg}",
-                        "추천종목수": f"{buy_cnt_display}개",
-                        "수급상위주요종목": ", ".join(top_liq_names) if top_liq_names else "해당없음/집계중",
-                    }
-                    ai_res = analyze_stock_with_gemini(target_symbol, f"{target_market_name} 시장 수급 및 주도 섹터 종합", summary_market_data, "스마트머니 수급 분석")
-                    st.success("시장 AI 분석 완료")
-                    st.markdown(ai_res)
-
     # TAB 2: 시그널
     with tab2:
         st.markdown("###### 알파 시그널 스크리닝 (모멘텀 순위 상위 200위)")
-        filter_opt = st.segmented_control(
+        filter_opt = st.radio(
             "빠른 필터",
-            options=["전체보기", "추천 종목만", "매도 종목만", "보유 종목만"],
-            default="전체보기",
+            ["전체보기", "추천 종목만", "매도 종목만", "보유 종목만"],
+            horizontal=True,
             label_visibility="collapsed",
-        ) or "전체보기"
+        )
 
         df_target = df_display.head(200).copy()
         if "atr" not in df_target.columns:
