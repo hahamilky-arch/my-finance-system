@@ -3,7 +3,7 @@ import pandas as pd
 import streamlit as st
 from supabase import create_client, Client
 
-# Supabase 클라이언트 초기화
+# 1. Supabase 클라이언트 초기화
 SUPABASE_URL = st.secrets.get("SUPABASE_URL", os.environ.get("SUPABASE_URL", ""))
 SUPABASE_KEY = st.secrets.get("SUPABASE_KEY", os.environ.get("SUPABASE_KEY", ""))
 
@@ -15,18 +15,18 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 def get_holdings_table(market_type="KR"):
     """
-    시장 종류에 따른 보유/청산 내역 테이블명 반환
+    Supabase DB 스펙 기준 보유 테이블 매핑
     - KR: current_holdings
-    - US: us_current_holdings
+    - US: current_holdings_us
     """
     if market_type == "US":
-        return "us_current_holdings"
+        return "current_holdings_us"
     return "current_holdings"
 
 
 def get_available_dates():
     """
-    daily_analysis 테이블에서 데이터가 있는 날짜 목록을 최신순으로 조회
+    daily_analysis 테이블에서 데이터가 존재하는 날짜 목록 조회
     """
     try:
         res = (
@@ -48,74 +48,81 @@ def get_available_dates():
 
 def get_market_regime(market_type="KR", target_date_str=None):
     """
-    daily_analysis 및 market_regimes 테이블을 조회하여 지수 추세 및 시장 국면 판정
-    (3일 연속 MA20 하회 시 stop_new_buy=True, 1일 이상 하회 시 reduce_holdings=True)
+    daily_analysis 테이블의 지수 심볼(^KS11 / ^GSPC) 데이터로 Market Regime 판정
     """
     target_symbol = "^KS11" if market_type == "KR" else "^GSPC"
-    market_safe = True
-    stop_new_buy = False
-    reduce_holdings = False
-
     try:
-        # 1. daily_analysis 지수 이동평균선 기반 직접 계산
-        query = (
-            supabase.table("daily_analysis")
-            .select("close_price, ma20")
-            .eq("ticker", target_symbol)
-        )
+        query = supabase.table("daily_analysis").select("close_price, ma20").eq("ticker", target_symbol)
         if target_date_str:
             query = query.lte("price_date", target_date_str)
-
-        res = query.order("price_date", desc=True).limit(3).execute()
-
-        if res.data and len(res.data) > 0:
-            latest_close = float(res.data[0].get("close_price", 0))
-            latest_ma20 = float(res.data[0].get("ma20", 0))
-
-            if latest_close < latest_ma20:
-                reduce_holdings = True
-                market_safe = False
-
-                # 3일 연속 MA20 하회 감지
-                if len(res.data) >= 3:
-                    below_cnt = sum(
-                        1
-                        for r in res.data
-                        if float(r.get("close_price", 0)) < float(r.get("ma20", 0))
-                    )
-                    if below_cnt >= 3:
-                        stop_new_buy = True
-
-            return market_safe, stop_new_buy, reduce_holdings
-
-        # 2. daily_analysis 실패 시 market_regimes 테이블 조회
-        reg_query = supabase.table("market_regimes").select("*").eq("market_type", market_type)
-        if target_date_str:
-            reg_query = reg_query.lte("regime_date", target_date_str)
-
-        reg_res = reg_query.order("regime_date", desc=True).limit(1).execute()
-        if reg_res.data:
-            r_data = reg_res.data[0]
-            return (
-                bool(r_data.get("is_bull", True)),
-                bool(r_data.get("stop_new_buy", False)),
-                bool(r_data.get("reduce_holdings", False)),
-            )
-
+            
+        res = query.order("price_date", desc=True).limit(5).execute()
+        if res.data:
+            df = pd.DataFrame(res.data)
+            if not df.empty:
+                latest = df.iloc[0]
+                close_p = float(latest.get("close_price", 0.0) or 0.0)
+                ma20_p = float(latest.get("ma20", 0.0) or 0.0)
+                
+                market_safe = close_p >= ma20_p if ma20_p > 0 else True
+                return market_safe, False, False
         return True, False, False
-
     except Exception as e:
         print(f"Market Regime 조회 실패: {e}")
         return True, False, False
 
 
+def get_recently_sold_info(market_type="KR", target_date_str=None, cooldown_days=3):
+    """
+    최근 N일 이내 매도 완료된 종목 및 매도가 조회 (재진입 쿨다운 필터용)
+    strategy.py의 호출 규격 (market_type, target_date_str, cooldown_days)과 완벽 호환
+    """
+    table_name = get_holdings_table(market_type)
+    if not target_date_str:
+        return {}
+
+    try:
+        target_dt = pd.to_datetime(target_date_str)
+        min_sell_dt = (target_dt - pd.Timedelta(days=cooldown_days)).strftime("%Y-%m-%d")
+
+        res = (
+            supabase.table(table_name)
+            .select("ticker, sell_date, sell_price")
+            .not_.is_("sell_date", "null")
+            .gte("sell_date", min_sell_dt)
+            .lte("sell_date", target_date_str)
+            .execute()
+        )
+        
+        sold_dict = {}
+        if res.data:
+            for row in res.data:
+                tk = str(row["ticker"]).strip().upper()
+                s_price = float(row.get("sell_price", 0.0) or 0.0)
+                sold_dict[tk] = s_price
+        return sold_dict
+    except Exception as e:
+        print(f"최근 매도 내역 조회 실패: {e}")
+        return {}
+
+
 def update_holdings(ticker, trade_type, price, trade_date, quantity, market_type="KR", exit_reason=None):
     """
-    매수/매도 발생 시 holdings 테이블 업데이트
+    매수/매도 실행 시 holdings 테이블 기록
+    - 수량(quantity) 변환 처리로 DB Integer 타입 에러(22P02) 완전 방지
     """
     table_name = get_holdings_table(market_type)
     ticker_code = str(ticker).strip().upper()
     trade_date_str = str(trade_date)
+
+    # 수량 데이터 타입 안전 변환 (한국장의 경우 정수형 int 변환)
+    try:
+        if market_type == "KR":
+            qty_val = int(float(quantity))
+        else:
+            qty_val = float(quantity) if float(quantity) % 1 != 0 else int(float(quantity))
+    except Exception:
+        qty_val = float(quantity)
 
     try:
         if trade_type == "BUY":
@@ -123,7 +130,7 @@ def update_holdings(ticker, trade_type, price, trade_date, quantity, market_type
                 "ticker": ticker_code,
                 "buy_date": trade_date_str,
                 "buy_price": float(price),
-                "quantity": float(quantity),
+                "quantity": qty_val,
                 "sell_date": None,
                 "sell_price": None,
                 "profit_amount": None,
@@ -144,14 +151,14 @@ def update_holdings(ticker, trade_type, price, trade_date, quantity, market_type
                 target_id = res.data[0]["id"]
                 b_price = float(res.data[0]["buy_price"])
                 s_price = float(price)
-
-                profit_amt = (s_price - b_price) * float(quantity)
+                
+                profit_amt = (s_price - b_price) * float(qty_val)
                 profit_rate = ((s_price / b_price) - 1.0) * 100.0 if b_price > 0 else 0.0
 
                 update_data = {
                     "sell_date": trade_date_str,
                     "sell_price": s_price,
-                    "quantity": float(quantity),
+                    "quantity": qty_val,
                     "profit_amount": profit_amt,
                     "profit_rate": profit_rate,
                     "exit_reason": exit_reason or "사용자 매도 실행",
