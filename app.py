@@ -322,10 +322,10 @@ all_dates = get_available_dates()
 latest_date_default = pd.to_datetime(all_dates[0]) if all_dates else None
 
 # 📌 3. 초슬림 상단 Header & Control 바
-h_col1, h_col2, h_col3, h_col4 = st.columns([1.5, 0.8, 1.5, 1.2], vertical_alignment="center")
+h_col1, h_col2, h_col3, h_col4 = st.columns([1.4, 0.9, 1.4, 1.6], vertical_alignment="center")
 
 with h_col1:
-    st.markdown("<h4 style='margin:0; padding:0; font-weight:900; line-height:1.1;'>Quant Alpha</h4>", unsafe_allow_html=True)
+    st.markdown("<h4 style='margin:0; padding:0; font-weight:900; line-height:1.1;'>Quant Alpha</h4><div class='hdr-marker'></div>", unsafe_allow_html=True)
 
 with h_col2:
     market_type = st.segmented_control("Market", options=["KR", "US"], default="KR", label_visibility="collapsed")
@@ -348,7 +348,7 @@ with h_col4:
         remaining_sec = max(0, int(LOGIN_TIMEOUT_SECONDS - elapsed))
         rem_min, rem_sec = remaining_sec // 60, remaining_sec % 60
 
-        c_time, c_ext, c_setting = st.columns([1.1, 0.9, 0.8], vertical_alignment="center")
+        c_time, c_ext, c_setting = st.columns([1, 1, 1], vertical_alignment="center")
         c_time.markdown(f"<div style='font-size:0.75rem; color:#0b7285; font-weight:bold; text-align:right;'>{rem_min}:{rem_sec:02d}</div>", unsafe_allow_html=True)
         with c_ext:
             if st.button("연장", key="btn_header_extend", use_container_width=True):
