@@ -329,6 +329,38 @@ div[data-testid="stExpander"]:has(.st-key-btn_run_smart_money_ai_tab1) {
 }
 div[data-testid="stExpander"]:has(.st-key-btn_run_smart_money_ai_tab1) details summary { color: var(--text); }
 
+/* ---------- 섹션 제목 / KPI 카드 / 성과 탭 ---------- */
+.section-title {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin: 16px 2px 8px 2px; padding-left: 8px; border-left: 3px solid var(--accent);
+}
+.section-title strong { font-size: 0.92rem; font-weight: 800; color: var(--text); }
+.section-title span { font-size: 0.7rem; color: var(--sub); }
+
+.kpi-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-bottom: 4px; }
+.kpi-card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+    padding: 11px 13px; box-shadow: var(--shadow); min-width: 0;
+}
+.kpi-hero { grid-column: 1 / -1; border-left: 4px solid var(--accent); }
+.kpi-label { font-size: 0.7rem; color: var(--sub); font-weight: 700; margin-bottom: 3px; }
+.kpi-value { font-size: 1.15rem; font-weight: 900; color: var(--text); white-space: nowrap; letter-spacing: -.3px; }
+.kpi-big { font-size: 1.6rem; }
+@media (min-width: 641px) {
+    .kpi-grid { grid-template-columns: 1.6fr 1fr 1fr; }
+    .kpi-hero { grid-column: auto; }
+}
+
+/* 날짜 선택 두 칸은 모바일에서도 나란히 */
+div[data-testid="stHorizontalBlock"]:has(.st-key-perf_start) { flex-wrap: nowrap !important; gap: 8px !important; }
+div[data-testid="stHorizontalBlock"]:has(.st-key-perf_start) > div { min-width: 0 !important; }
+
+/* 차트 카드 (st.container(border=True)) */
+div[data-testid="stVerticalBlockBorderWrapper"] {
+    background: var(--card); border: 1px solid var(--line) !important; border-radius: var(--radius) !important;
+    box-shadow: var(--shadow);
+}
+
 </style>
 
 <a href="#top-section" class="floating-top-btn">▲ 맨위로</a>
