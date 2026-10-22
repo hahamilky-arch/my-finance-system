@@ -48,25 +48,34 @@ def get_available_dates():
 
 def get_market_regime(market_type="KR", target_date_str=None):
     """
-    daily_analysis 테이블의 지수 심볼(^KS11 / ^GSPC) 데이터로 Market Regime 판정
+    지수 심볼(^KS11 / ^GSPC)의 daily_analysis 최근 3거래일로 Market Regime을 판정하는 단일 함수.
+    신호 엔진(strategy.get_data)과 화면(오늘의 행동 카드)이 모두 이 값을 사용한다.
+
+    반환: (market_safe, stop_new_buy, reduce_holdings)
+    - market_safe     : 최신 종가 >= MA20 (MA20 데이터가 없으면 True)
+    - reduce_holdings : 최신 종가 <  MA20  → 경계(Caution)
+    - stop_new_buy    : 최근 3거래일 종가가 모두 MA20 미만 → 하락(Bear), 신규 매수 중지
     """
     target_symbol = "^KS11" if market_type == "KR" else "^GSPC"
     try:
         query = supabase.table("daily_analysis").select("close_price, ma20").eq("ticker", target_symbol)
         if target_date_str:
             query = query.lte("price_date", target_date_str)
-            
-        res = query.order("price_date", desc=True).limit(5).execute()
-        if res.data:
-            df = pd.DataFrame(res.data)
-            if not df.empty:
-                latest = df.iloc[0]
-                close_p = float(latest.get("close_price", 0.0) or 0.0)
-                ma20_p = float(latest.get("ma20", 0.0) or 0.0)
-                
-                market_safe = close_p >= ma20_p if ma20_p > 0 else True
-                return market_safe, False, False
-        return True, False, False
+
+        res = query.order("price_date", desc=True).limit(3).execute()
+        rows = res.data or []
+        if not rows:
+            return True, False, False
+
+        def _below(r):
+            close_p = float(r.get("close_price", 0.0) or 0.0)
+            ma20_p = float(r.get("ma20", 0.0) or 0.0)
+            return ma20_p > 0 and close_p < ma20_p
+
+        reduce_holdings = _below(rows[0])
+        market_safe = not reduce_holdings
+        stop_new_buy = len(rows) >= 3 and all(_below(r) for r in rows[:3])
+        return market_safe, stop_new_buy, reduce_holdings
     except Exception as e:
         print(f"Market Regime 조회 실패: {e}")
         return True, False, False
