@@ -349,7 +349,7 @@ with h_col4:
         rem_min, rem_sec = remaining_sec // 60, remaining_sec % 60
 
         c_time, c_ext, c_setting = st.columns([1, 1, 1], vertical_alignment="center")
-        c_time.markdown(f"<div style='font-size:0.75rem; color:#0b7285; font-weight:bold; text-align:right;'>{rem_min}:{rem_sec:02d}</div>", unsafe_allow_html=True)
+        c_time.markdown(f"<div style='font-size:0.75rem; color:#0b7285; font-weight:bold; text-align:right;'>{rem_min}:{rem_sec:02d}</div><div class='hdr-auth'></div>", unsafe_allow_html=True)
         with c_ext:
             if st.button("연장", key="btn_header_extend", use_container_width=True):
                 st.session_state["last_auth_time"] = time.time()
@@ -574,15 +574,30 @@ if df_display is not None:
 
         st.markdown(action_card_html, unsafe_allow_html=True)
 
-        with st.popover("ⓘ 지수 Regime 및 수급 지표 도움말"):
-            st.markdown(f"**📌 Regime 상태 ({regime_label})**")
-            st.caption(regime_tooltip)
-            st.markdown("---")
-            st.markdown("**📌 비차익 Z-Score (KR 전용)**")
-            st.caption("최근 20영업일 비차익 순매수 유입 강도입니다. (+1.5 이상: 강한 유입 / -1.5 이하: 강한 이탈)")
+        # 📌 전략 태그(스와이프) + 도움말(ⓘ) 한 줄
+        mid_c1, mid_c2 = st.columns([6, 1], vertical_alignment="center")
+        with mid_c1:
+            st.markdown(
+                """<div class="tag-container tag-scroll mid-marker">
+<span class="tag-badge">전략 3</span>
+<span class="tag-badge">Top 7</span>
+<span class="tag-badge">Rank ≤ 15</span>
+<span class="tag-badge">ATR 2.5x 손절</span>
+<span class="tag-badge">+8% 본전스탑</span>
+</div>""",
+                unsafe_allow_html=True
+            )
+        with mid_c2:
+            with st.popover("ⓘ"):
+                st.markdown(f"**📌 Regime 상태 ({regime_label})**")
+                st.caption(regime_tooltip)
+                st.markdown("---")
+                st.markdown("**📌 비차익 Z-Score (KR 전용)**")
+                st.caption("최근 20영업일 비차익 순매수 유입 강도입니다. (+1.5 이상: 강한 유입 / -1.5 이하: 강한 이탈)")
 
-        with st.expander("🤖 Gemini 시장 전체 스마트머니 흐름 & 주도 섹터 AI 진단", expanded=False):
-            used_cnt, remain_cnt = get_remaining_quota()
+        used_cnt, remain_cnt = get_remaining_quota()
+        with st.expander(f"🤖 AI 시장 진단 · 잔여 {remain_cnt}/{MAX_DAILY_QUOTA}회", expanded=False):
+            st.caption("Gemini 시장 전체 스마트머니 흐름 & 주도 섹터 AI 진단")
             st.caption(f"Gemini AI 잔여 사용량: **{remain_cnt}/{MAX_DAILY_QUOTA}회**")
             
             if st.button("시장 전체 스마트머니 자금 흐름 AI 진단 실행", type="primary", key="btn_run_smart_money_ai_tab1", use_container_width=True):
@@ -609,17 +624,6 @@ if df_display is not None:
                     ai_res = analyze_stock_with_gemini(target_symbol, f"{target_market_name} 시장 수급 및 주도 섹터 종합", summary_market_data, "스마트머니 수급 분석")
                     st.success("시장 AI 분석 완료")
                     st.markdown(ai_res)
-
-        st.markdown(
-            """<div class="tag-container">
-<span class="tag-badge">전략 3</span>
-<span class="tag-badge">Top 7</span>
-<span class="tag-badge">Rank ≤ 15</span>
-<span class="tag-badge">ATR 2.5x 손절</span>
-<span class="tag-badge">+8% 본전스탑</span>
-</div>""",
-            unsafe_allow_html=True
-        )
 
         st.write("")
 
