@@ -390,6 +390,16 @@ div[data-testid="stHorizontalBlock"]:has(.trade-card) > div[data-testid="stColum
 div[data-testid="stHorizontalBlock"]:has(.trade-card) > div[data-testid="stColumn"]:last-child { flex:0 0 64px !important; width:64px !important; }
 div[data-testid="stHorizontalBlock"]:has(.trade-card) > div[data-testid="stColumn"]:first-child { flex:1 1 0 !important; }
 
+/* ---------- 시그널 탭 ---------- */
+.sig-chips { display:flex; gap:6px; margin:-2px 0 8px 0; flex-wrap:wrap; }
+.sig-chip { font-size:0.72rem; font-weight:700; padding:3px 10px; border-radius:999px; background:var(--accent-soft); color:var(--accent); }
+.sig-chip b { font-weight:900; margin-left:2px; }
+.sig-chip.rec { background:#fdecec; color:var(--up); }
+.sig-chip.sell { background:#e8f0fe; color:var(--down); }
+.sig-chip.hold { background:#e3f6f3; color:var(--ok); }
+.st-key-sig_filter { overflow-x:auto; }
+.st-key-sig_filter button { white-space:nowrap; }
+
 /* 수동 입력: 종목코드 라벨 복원 (전역 라벨 숨김 규칙 예외) */
 .st-key-m_tk label, .st-key-ms_tk label,
 .st-key-m_tk label p, .st-key-ms_tk label p {
