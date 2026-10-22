@@ -258,25 +258,29 @@ div[data-testid="stSegmentedControl"] button { border-radius: 10px !important; f
     box-shadow: 0 8px 20px rgba(76,95,224,.35);
 }
 .bottom-spacer { height: 90px !important; display: block; clear: both; }
-/* ---------- 헤더 컨트롤 바 (타이머 · 연장 · 설정) ---------- */
-.hdr-marker { height: 0; margin: 0; padding: 0; }
+/* ---------- 헤더 컨트롤 바 ---------- */
+.hdr-marker, .hdr-auth { height: 0; margin: 0; padding: 0; }
 @media (min-width: 641px) {
     div[data-testid="stHorizontalBlock"]:has(.hdr-marker) > div { min-width: 0 !important; }
 }
-/* 안쪽 3개는 폭이 좁아도 한 줄 유지, 내용만큼만 차지 */
+/* 안쪽 묶음(타이머·연장·설정 / 비밀번호·해제)은 폭이 좁아도 한 줄 유지 */
 div[data-testid="stHorizontalBlock"]:has(.hdr-marker) div[data-testid="stHorizontalBlock"] {
     flex-wrap: nowrap !important;
     gap: 6px !important;
-    justify-content: flex-end;
     align-items: center;
 }
-div[data-testid="stHorizontalBlock"]:has(.hdr-marker) div[data-testid="stHorizontalBlock"] > div {
-    flex: 0 0 auto !important;
-    width: auto !important;
-    min-width: 0 !important;
+div[data-testid="stHorizontalBlock"]:has(.hdr-marker) div[data-testid="stHorizontalBlock"] > div { min-width: 0 !important; }
+/* 로그인 상태: 내용 폭만큼만 차지 */
+div[data-testid="stHorizontalBlock"]:has(.hdr-marker) div[data-testid="stHorizontalBlock"]:has(.hdr-auth) { justify-content: flex-end; }
+div[data-testid="stHorizontalBlock"]:has(.hdr-marker) div[data-testid="stHorizontalBlock"]:has(.hdr-auth) > div {
+    flex: 0 0 auto !important; width: auto !important;
 }
-div[data-testid="stHorizontalBlock"]:has(.hdr-marker) div[data-testid="stHorizontalBlock"] div[data-testid="stMarkdownContainer"] div {
-    white-space: nowrap;
+/* 로그아웃 상태: 비밀번호창은 남은 폭, 해제 버튼은 고정 폭 */
+div[data-testid="stHorizontalBlock"]:has(.hdr-marker) div[data-testid="stHorizontalBlock"]:has(.st-key-btn_global_unlock) > div:first-child {
+    flex: 1 1 0 !important; width: auto !important;
+}
+div[data-testid="stHorizontalBlock"]:has(.hdr-marker) div[data-testid="stHorizontalBlock"]:has(.st-key-btn_global_unlock) > div:last-child {
+    flex: 0 0 auto !important; width: auto !important;
 }
 div[data-testid="stHorizontalBlock"]:has(.hdr-marker) div[data-testid="stHorizontalBlock"] button {
     white-space: nowrap !important;
@@ -289,8 +293,42 @@ div[data-testid="stHorizontalBlock"]:has(.hdr-marker) div[data-testid="stHorizon
     overflow: visible !important;
     text-overflow: clip !important;
 }
-/* 팝오버 화살표 아이콘 자리 제거 (이미 안 보이는데 폭만 차지함) */
+div[data-testid="stHorizontalBlock"]:has(.hdr-marker) div[data-testid="stHorizontalBlock"] div[data-testid="stMarkdownContainer"] div { white-space: nowrap; }
+/* 팝오버 화살표 아이콘 자리 제거 */
 div[data-testid="stPopover"] > button [data-testid="stIconMaterial"] { display: none !important; }
+
+/* ---------- 중간 영역: 전략 태그(스와이프) + ⓘ ---------- */
+div[data-testid="stHorizontalBlock"]:has(.mid-marker) {
+    flex-wrap: nowrap !important; gap: 8px !important; align-items: center;
+}
+div[data-testid="stHorizontalBlock"]:has(.mid-marker) > div:first-child {
+    flex: 1 1 0 !important; min-width: 0 !important; width: auto !important;
+}
+div[data-testid="stHorizontalBlock"]:has(.mid-marker) > div:last-child {
+    flex: 0 0 auto !important; min-width: 0 !important; width: auto !important;
+}
+.tag-scroll {
+    flex-wrap: nowrap !important; overflow-x: auto; margin-top: 0 !important;
+    scrollbar-width: none; -webkit-overflow-scrolling: touch;
+    -webkit-mask-image: linear-gradient(90deg, #000 88%, transparent);
+    mask-image: linear-gradient(90deg, #000 88%, transparent);
+}
+.tag-scroll::-webkit-scrollbar { display: none; }
+.tag-scroll .tag-badge { white-space: nowrap; flex: none; }
+div[data-testid="stHorizontalBlock"]:has(.mid-marker) div[data-testid="stPopover"] { width: auto; }
+div[data-testid="stHorizontalBlock"]:has(.mid-marker) div[data-testid="stPopover"] > button {
+    width: 30px !important; min-width: 30px !important; padding: 0 !important;
+    border-radius: 50% !important; justify-content: center;
+    color: var(--accent) !important; font-weight: 800 !important; font-size: 0.9rem !important;
+}
+
+/* ---------- AI 진단 카드 (인디고 포인트) ---------- */
+div[data-testid="stExpander"]:has(.st-key-btn_run_smart_money_ai_tab1) {
+    border: 1px solid #c9d0fb !important;
+    border-left: 4px solid var(--accent) !important;
+}
+div[data-testid="stExpander"]:has(.st-key-btn_run_smart_money_ai_tab1) details summary { color: var(--text); }
+
 </style>
 
 <a href="#top-section" class="floating-top-btn">▲ 맨위로</a>
