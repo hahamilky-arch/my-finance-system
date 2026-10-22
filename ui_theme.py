@@ -361,6 +361,40 @@ div[data-testid="stVerticalBlockBorderWrapper"] {
     box-shadow: var(--shadow);
 }
 
+
+/* ---------- 주문 지시서 탭 ---------- */
+.slot-dots { display:flex; gap:6px; margin:-2px 0 10px 0; }
+.slot-dot { flex:1; height:6px; border-radius:3px; background:#e3e7f0; }
+.slot-dot.on { background:var(--accent); }
+.empty-note { color:var(--sub); font-size:0.78rem; padding:6px 2px; }
+.risk-card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:10px 12px; margin-bottom:8px; }
+.risk-head { display:flex; justify-content:space-between; align-items:baseline; font-size:0.74rem; color:var(--sub); font-weight:700; margin-bottom:6px; }
+.risk-head strong { font-size:1.05rem; color:var(--text); font-weight:900; }
+
+.trade-card { background:var(--card); border:1px solid var(--line); border-left:4px solid var(--accent); border-radius:12px; padding:9px 12px; }
+.trade-card.sell { border-left-color:var(--down); }
+.trade-top { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+.trade-top strong { font-size:0.95rem; font-weight:800; color:var(--text); }
+.trade-tk { font-size:0.68rem; color:var(--sub); font-weight:700; }
+.trade-badge { background:var(--accent-soft); color:var(--accent); font-size:0.66rem; font-weight:800; padding:1px 8px; border-radius:999px; }
+.trade-reason { font-size:0.74rem; color:var(--up); font-weight:700; margin-top:3px; line-height:1.4; }
+.trade-card.sell .trade-reason { color:var(--down); }
+.trade-alloc { font-size:0.74rem; color:var(--ok); margin-top:2px; font-weight:600; }
+.trade-alloc b { font-weight:800; }
+.trade-stats { display:flex; flex-wrap:wrap; gap:4px 12px; margin-top:6px; padding-top:6px; border-top:1px dashed var(--line); font-size:0.68rem; color:var(--sub); }
+.trade-stats b { color:var(--text); font-weight:800; }
+.trade-stats b.up { color:var(--up); }
+.trade-stats b.down { color:var(--down); }
+div[data-testid="stHorizontalBlock"]:has(.trade-card) { flex-wrap:nowrap !important; gap:8px !important; }
+div[data-testid="stHorizontalBlock"]:has(.trade-card) > div[data-testid="stColumn"] { min-width:0 !important; }
+div[data-testid="stHorizontalBlock"]:has(.trade-card) > div[data-testid="stColumn"]:last-child { flex:0 0 64px !important; width:64px !important; }
+div[data-testid="stHorizontalBlock"]:has(.trade-card) > div[data-testid="stColumn"]:first-child { flex:1 1 0 !important; }
+
+/* 수동 입력: 종목코드 라벨 복원 (전역 라벨 숨김 규칙 예외) */
+.st-key-m_tk label, .st-key-ms_tk label,
+.st-key-m_tk label p, .st-key-ms_tk label p {
+    display:flex !important; height:auto !important; overflow:visible !important; margin:0 0 4px 0 !important; padding:0 !important;
+}
 </style>
 
 <a href="#top-section" class="floating-top-btn">▲ 맨위로</a>
