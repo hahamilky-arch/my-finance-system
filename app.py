@@ -1,3 +1,4 @@
+import hmac
 import time
 import textwrap
 import numpy as np
@@ -395,7 +396,14 @@ with h_col4:
             input_pwd_global = st.text_input("PW", type="password", key="global_pwd_input", label_visibility="collapsed", placeholder="비밀번호")
         with c_p2:
             if st.button("해제", key="btn_global_unlock", type="primary", use_container_width=True):
-                if input_pwd_global == st.secrets.get("TRADE_PASSWORD", "1234"):
+                try:
+                    _trade_pw = str(st.secrets.get("TRADE_PASSWORD", "") or "")
+                except Exception:
+                    _trade_pw = ""
+
+                if not _trade_pw:
+                    st.error("TRADE_PASSWORD 미설정")
+                elif hmac.compare_digest(str(input_pwd_global).encode("utf-8"), _trade_pw.encode("utf-8")):
                     st.session_state["trade_authenticated"] = True
                     st.session_state["last_auth_time"] = time.time()
                     st.rerun()
@@ -477,28 +485,7 @@ if df_display is not None:
 
     # TAB 1: 오늘
     with tab1:
-        try:
-            chk_res = (
-                supabase.table("daily_analysis")
-                .select("close_price, ma20, ma200")
-                .eq("ticker", target_symbol)
-                .lte("price_date", target_date_str)
-                .order("price_date", desc=True)
-                .limit(3)
-                .execute()
-            )
-            if chk_res.data and len(chk_res.data) > 0:
-                c_p = float(chk_res.data[0].get("close_price", 0))
-                m_20 = float(chk_res.data[0].get("ma20", 0))
-                m_200 = float(chk_res.data[0].get("ma200", 0))
-                if c_p < m_20:
-                    reduce_holdings = True
-                    if len(chk_res.data) >= 3:
-                        below_cnt = sum(1 for r in chk_res.data if float(r.get("close_price", 0)) < float(r.get("ma20", 0)))
-                        if below_cnt >= 3:
-                            stop_new_buy = True
-        except Exception:
-            m_200 = 0
+        # 레짐(stop_new_buy / reduce_holdings)은 상단에서 db.get_market_regime()으로 한 번만 판정해 신호·화면이 같은 값을 사용
 
         if stop_new_buy:
             action_title = "신규 매수 중지"
