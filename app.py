@@ -810,11 +810,11 @@ if df_display is not None:
                     df_idx_c["ma20_breakdown"] = df_idx_c["below_ma20"] & (~df_idx_c["below_ma20"].shift(1, fill_value=False))
 
                     fig_market_idx = gg.Figure()
-                    fig_market_idx.add_trace(gg.Scatter(x=df_idx_c["price_date_dt"], y=df_idx_c["close_price"], mode="lines", name=f"{target_market_name} 종가", line=dict(color="#3b5bdb", width=2)))
-                    if "ma20" in df_idx_c.columns:
-                        fig_market_idx.add_trace(gg.Scatter(x=df_idx_c["price_date_dt"], y=df_idx_c["ma20"], mode="lines", name="MA20", line=dict(color="#ff922b", width=1.5, dash="dash")))
-                    if "ma200" in df_idx_c.columns:
-                        fig_market_idx.add_trace(gg.Scatter(x=df_idx_c["price_date_dt"], y=df_idx_c["ma200"], mode="lines", name="MA200", line=dict(color="#e03131", width=1.5, dash="dot")))
+                    fig_market_idx.add_trace(gg.Scatter(x=df_idx_c["price_date_dt"], y=df_idx_c["close_price"], mode="lines", name=f"{target_market_name} 종가", line=dict(color="#3b5bdb", width=2.2)))
+                    # 이동평균선은 모두 실선 (MA50 추가)
+                    for _ma_col, _ma_name, _ma_color in [("ma20", "MA20", "#ff922b"), ("ma50", "MA50", "#12a594"), ("ma200", "MA200", "#e03131")]:
+                        if _ma_col in df_idx_c.columns and df_idx_c[_ma_col].notna().any():
+                            fig_market_idx.add_trace(gg.Scatter(x=df_idx_c["price_date_dt"], y=df_idx_c[_ma_col], mode="lines", name=_ma_name, line=dict(color=_ma_color, width=1.6), connectgaps=True))
 
                     breakdown_df = df_idx_c[df_idx_c["ma20_breakdown"]]
                     if not breakdown_df.empty:
@@ -826,7 +826,10 @@ if df_display is not None:
                             marker=dict(symbol="x", size=9, color="#f59f00", line=dict(width=2, color="#f59f00"))
                         ))
 
-                    fig_market_idx.update_layout(height=260, margin=dict(l=10, r=10, t=20, b=20))
+                    fig_market_idx.update_layout(
+                        height=280, margin=dict(l=10, r=10, t=30, b=20), hovermode="x unified",
+                        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+                    )
                     st.plotly_chart(fig_market_idx, use_container_width=True, config={'scrollZoom': False})
                 else:
                     st.info(f"[{target_market_name}] 지수 시계열 데이터가 존재하지 않습니다.")
@@ -856,17 +859,30 @@ if df_display is not None:
 
     # TAB 2: 시그널
     with tab2:
-        st.markdown("###### 알파 시그널 스크리닝 (모멘텀 순위 상위 200위)")
-        filter_opt = st.radio(
-            "빠른 필터",
-            ["전체보기", "추천 종목만", "매도 종목만", "보유 종목만"],
-            horizontal=True,
-            label_visibility="collapsed",
-        )
-
         df_target = df_display.head(200).copy()
         if "atr" not in df_target.columns:
             df_target["atr"] = 0.0
+
+        _cnt_rec = int((df_target["매매상태"] == "추천").sum())
+        _cnt_sell = int((df_target["매매상태"] == "매도").sum())
+        _cnt_hold = int((df_target["매매상태"] == "보유").sum())
+        st.markdown(
+            "<div class='section-title'><strong>알파 시그널 스크리닝</strong><span>모멘텀 순위 상위 200위</span></div>"
+            "<div class='sig-chips'>"
+            f"<span class='sig-chip rec'>추천 <b>{_cnt_rec}</b></span>"
+            f"<span class='sig-chip sell'>매도 <b>{_cnt_sell}</b></span>"
+            f"<span class='sig-chip hold'>보유 <b>{_cnt_hold}</b></span>"
+            "</div>",
+            unsafe_allow_html=True,
+        )
+        filter_opt = st.segmented_control(
+            "빠른 필터",
+            ["전체보기", "추천 종목만", "매도 종목만", "보유 종목만"],
+            default="전체보기",
+            key="sig_filter",
+            label_visibility="collapsed",
+        ) or "전체보기"
+        st.caption("행을 누르면 아래 '개별 종목 통합 분석 센터'에 해당 종목 차트가 열립니다.")
 
         col_order = [
             "순위",
@@ -874,6 +890,8 @@ if df_display is not None:
             "변동",
             "매매상태",
             "종목명",
+            "종가",
+            "상승률",
             "이격도",
             "MOT",
             "RS(90)",
@@ -881,9 +899,7 @@ if df_display is not None:
             "MA20",
             "atr",
             "제외사유",
-            "종가",
             "상승금액",
-            "상승률",
             "ticker",
         ]
         df_target = df_target[col_order].rename(columns={
@@ -919,6 +935,15 @@ if df_display is not None:
                 df_target.style.apply(apply_styles, axis=None).format(fmt_dict),
                 hide_index=True,
                 use_container_width=True,
+                height=480,
+                column_config={
+                    "순위": st.column_config.NumberColumn("순위", width="small"),
+                    "추천순위": st.column_config.NumberColumn("추천", width="small"),
+                    "변동": st.column_config.NumberColumn("변동", width="small"),
+                    "상태": st.column_config.TextColumn("상태", width="small"),
+                    "종목명": st.column_config.TextColumn("종목명", width="medium"),
+                    "제외사유": st.column_config.TextColumn("제외사유", width="large"),
+                },
                 on_select="rerun",
                 selection_mode="single-row",
                 key="overview_table_selection",
