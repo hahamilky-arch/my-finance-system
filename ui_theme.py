@@ -258,6 +258,39 @@ div[data-testid="stSegmentedControl"] button { border-radius: 10px !important; f
     box-shadow: 0 8px 20px rgba(76,95,224,.35);
 }
 .bottom-spacer { height: 90px !important; display: block; clear: both; }
+/* ---------- 헤더 컨트롤 바 (타이머 · 연장 · 설정) ---------- */
+.hdr-marker { height: 0; margin: 0; padding: 0; }
+@media (min-width: 641px) {
+    div[data-testid="stHorizontalBlock"]:has(.hdr-marker) > div { min-width: 0 !important; }
+}
+/* 안쪽 3개는 폭이 좁아도 한 줄 유지, 내용만큼만 차지 */
+div[data-testid="stHorizontalBlock"]:has(.hdr-marker) div[data-testid="stHorizontalBlock"] {
+    flex-wrap: nowrap !important;
+    gap: 6px !important;
+    justify-content: flex-end;
+    align-items: center;
+}
+div[data-testid="stHorizontalBlock"]:has(.hdr-marker) div[data-testid="stHorizontalBlock"] > div {
+    flex: 0 0 auto !important;
+    width: auto !important;
+    min-width: 0 !important;
+}
+div[data-testid="stHorizontalBlock"]:has(.hdr-marker) div[data-testid="stHorizontalBlock"] div[data-testid="stMarkdownContainer"] div {
+    white-space: nowrap;
+}
+div[data-testid="stHorizontalBlock"]:has(.hdr-marker) div[data-testid="stHorizontalBlock"] button {
+    white-space: nowrap !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    padding: 0 12px !important;
+    min-width: 44px;
+}
+div[data-testid="stHorizontalBlock"]:has(.hdr-marker) div[data-testid="stHorizontalBlock"] button p {
+    overflow: visible !important;
+    text-overflow: clip !important;
+}
+/* 팝오버 화살표 아이콘 자리 제거 (이미 안 보이는데 폭만 차지함) */
+div[data-testid="stPopover"] > button [data-testid="stIconMaterial"] { display: none !important; }
 </style>
 
 <a href="#top-section" class="floating-top-btn">▲ 맨위로</a>
