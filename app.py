@@ -349,47 +349,12 @@ with h_col4:
         remaining_sec = max(0, int(LOGIN_TIMEOUT_SECONDS - elapsed))
         rem_min, rem_sec = remaining_sec // 60, remaining_sec % 60
 
-        c_time, c_ext, c_setting = st.columns([1, 1, 1], vertical_alignment="center")
+        c_time, c_ext = st.columns([1, 1], vertical_alignment="center")
         c_time.markdown(f"<div style='font-size:0.75rem; color:#0b7285; font-weight:bold; text-align:right;'>{rem_min}:{rem_sec:02d}</div><div class='hdr-auth'></div>", unsafe_allow_html=True)
         with c_ext:
             if st.button("연장", key="btn_header_extend", use_container_width=True):
                 st.session_state["last_auth_time"] = time.time()
                 st.rerun()
-        with c_setting:
-            with st.popover("⚙️", use_container_width=True):
-                st.markdown("#### 전략 설정")
-                sel_engine_display = st.radio(
-                    "전략 엔진 선택",
-                    ["전략 3: Top 7 Regime", "단기 타점 모멘텀", "Ultimate 듀얼 모멘텀"],
-                    index=0 if st.session_state.get("strategy_engine_mode") == "strat3_top7" else (1 if st.session_state.get("strategy_engine_mode") == "short_term" else 2),
-                    key="pop_engine_select"
-                )
-
-                pop_engine_key = "strat3_top7" if "전략 3" in sel_engine_display else ("short_term" if "단기" in sel_engine_display else "ultimate_dual")
-
-                pop_strategy_mode = st.radio(
-                    "운용 모드 선택",
-                    ["자동 감지", "상승장 (Bull)", "하락장 (Bear)"],
-                    horizontal=True,
-                    key="pop_mode_select"
-                )
-
-                pop_rebal_cycle = st.selectbox(
-                    "리밸런싱 주기",
-                    ["상시 (빈자리 즉시 채우기)", "주기 (매주 수요일)"],
-                    key="pop_rebal_select"
-                )
-
-                if st.button("적용", type="primary", use_container_width=True, key="pop_btn_apply"):
-                    st.session_state["strategy_engine_mode"] = pop_engine_key
-                    st.session_state["pop_saved_mode"] = pop_strategy_mode
-                    st.session_state["pop_saved_rebal"] = pop_rebal_cycle
-                    st.rerun()
-
-                if st.button("화면 잠금", use_container_width=True, key="pop_btn_lock"):
-                    st.session_state["trade_authenticated"] = False
-                    st.session_state["last_auth_time"] = 0
-                    st.rerun()
     else:
         c_p1, c_p2 = st.columns([2.5, 1.2], vertical_alignment="center")
         with c_p1:
@@ -1153,9 +1118,45 @@ if df_display is not None:
                 max_risk_amt = new_cap * 0.02
                 st.caption(f"**단일 종목 최대 허용 손실 (2% Rule)**: {max_risk_amt:,.0f}원" if market_type == "KR" else f"**단일 종목 최대 허용 손실 (2% Rule)**: ${max_risk_amt:,.2f}")
 
+            st.write("")
+            with st.expander("⚙ 전략 설정 · 화면 잠금", expanded=False):
+                st.markdown("#### 전략 설정")
+                sel_engine_display = st.radio(
+                    "전략 엔진 선택",
+                    ["전략 3: Top 7 Regime", "단기 타점 모멘텀", "Ultimate 듀얼 모멘텀"],
+                    index=0 if st.session_state.get("strategy_engine_mode") == "strat3_top7" else (1 if st.session_state.get("strategy_engine_mode") == "short_term" else 2),
+                    key="pop_engine_select"
+                )
+
+                pop_engine_key = "strat3_top7" if "전략 3" in sel_engine_display else ("short_term" if "단기" in sel_engine_display else "ultimate_dual")
+
+                pop_strategy_mode = st.radio(
+                    "운용 모드 선택",
+                    ["자동 감지", "상승장 (Bull)", "하락장 (Bear)"],
+                    horizontal=True,
+                    key="pop_mode_select"
+                )
+
+                pop_rebal_cycle = st.selectbox(
+                    "리밸런싱 주기",
+                    ["상시 (빈자리 즉시 채우기)", "주기 (매주 수요일)"],
+                    key="pop_rebal_select"
+                )
+
+                if st.button("적용", type="primary", use_container_width=True, key="pop_btn_apply"):
+                    st.session_state["strategy_engine_mode"] = pop_engine_key
+                    st.session_state["pop_saved_mode"] = pop_strategy_mode
+                    st.session_state["pop_saved_rebal"] = pop_rebal_cycle
+                    st.rerun()
+
+                if st.button("화면 잠금", use_container_width=True, key="pop_btn_lock"):
+                    st.session_state["trade_authenticated"] = False
+                    st.session_state["last_auth_time"] = 0
+                    st.rerun()
+
     # TAB 4: 성과
     with tab4:
-        st.markdown(f"##### {market_type} 시장 성과 분석 리포트")
+        st.markdown(f"<div class='section-title perf-marker'><strong>{market_type} 시장 성과 분석 리포트</strong><span>청산 완료 거래 기준</span></div>", unsafe_allow_html=True)
         if not is_authenticated:
             st.info("성과 내역 확인을 위해 우측 상단 [비밀번호 해제]를 완료해 주세요.")
         else:
@@ -1171,8 +1172,11 @@ if df_display is not None:
                 st.info("청산 완료된 매매 이력이 존재하지 않습니다.")
             else:
                 df_hist_raw["sell_date_dt"] = pd.to_datetime(df_hist_raw["sell_date"])
-                start_date_perf = st.date_input("조회 시작일", value=df_hist_raw["sell_date_dt"].min().date(), key="perf_start")
-                end_date_perf = st.date_input("조회 종료일", value=df_hist_raw["sell_date_dt"].max().date(), key="perf_end")
+                perf_d1, perf_d2 = st.columns(2)
+                with perf_d1:
+                    start_date_perf = st.date_input("시작일", value=df_hist_raw["sell_date_dt"].min().date(), key="perf_start")
+                with perf_d2:
+                    end_date_perf = st.date_input("종료일", value=df_hist_raw["sell_date_dt"].max().date(), key="perf_end")
 
                 mask_period = (df_hist_raw["sell_date_dt"].dt.date >= start_date_perf) & (df_hist_raw["sell_date_dt"].dt.date <= end_date_perf)
                 df_hist = df_hist_raw[mask_period].copy()
@@ -1191,6 +1195,11 @@ if df_display is not None:
                         if "종목명" not in df_hist.columns:
                             df_hist["종목명"] = df_hist["ticker"]
 
+                    df_hist["종목명"] = df_hist["종목명"].where(
+                        ~df_hist["종목명"].astype(str).str.strip().str.lower().isin(["nan", "none", ""]),
+                        df_hist["ticker"],
+                    )
+
                     if "holding_days" not in df_hist.columns:
                         df_hist["holding_days"] = (df_hist["sell_date_dt"] - pd.to_datetime(df_hist["buy_date"], errors="coerce")).dt.days.fillna(0)
 
@@ -1201,18 +1210,26 @@ if df_display is not None:
                     win_df = df_hist[df_hist["profit_amount"] > 0]
                     win_rate = (len(win_df) / tot_trades * 100) if tot_trades > 0 else 0.0
                     
-                    st.markdown("###### 핵심 성과 지표 (KPI)")
-                    kpi_c1, kpi_c2, kpi_c3 = st.columns(3)
-                    kpi_c1.metric("총 실현 손익", f"{total_profit:+,.0f}원" if market_type == "KR" else f"${total_profit:+,.2f}")
-                    kpi_c2.metric("총 청산 거래", f"{tot_trades}건")
-                    kpi_c3.metric("승률", f"{win_rate:.1f}%")
+                    profit_color = "#d62728" if total_profit > 0 else ("#1f77b4" if total_profit < 0 else "#212529")
+                    if market_type == "KR":
+                        profit_txt = f"{total_profit:+,.0f}원"
+                    else:
+                        profit_txt = f"{'+' if total_profit >= 0 else '-'}${abs(total_profit):,.2f}"
 
-                    st.write("")
-                    st.markdown("###### 수익 기여도 시각화 차트")
+                    st.markdown("<div class='section-title'><strong>핵심 성과 지표 (KPI)</strong></div>", unsafe_allow_html=True)
+                    st.markdown(
+                        f"""<div class="kpi-grid">
+<div class="kpi-card kpi-hero"><div class="kpi-label">총 실현 손익</div><div class="kpi-value kpi-big" style="color: {profit_color};">{profit_txt}</div></div>
+<div class="kpi-card"><div class="kpi-label">총 청산 거래</div><div class="kpi-value">{tot_trades}건</div></div>
+<div class="kpi-card"><div class="kpi-label">승률</div><div class="kpi-value">{win_rate:.1f}%</div><div class="slot-bar"><div style="width:{win_rate:.0f}%"></div></div></div>
+</div>""",
+                        unsafe_allow_html=True,
+                    )
+
+                    st.markdown("<div class='section-title'><strong>수익 기여도 시각화 차트</strong></div>", unsafe_allow_html=True)
                     draw_attribution_charts(df_hist, market_type)
 
-                    st.write("")
-                    st.markdown("###### 청산 완료 거래 내역")
+                    st.markdown("<div class='section-title'><strong>청산 완료 거래 내역</strong><span>최근 매도순</span></div>", unsafe_allow_html=True)
                     disp_perf_df = df_hist[["buy_date", "sell_date", "ticker", "종목명", "buy_price", "sell_price", "quantity", "profit_amount", "profit_rate", "exit_reason"]].copy()
                     disp_perf_df = disp_perf_df.rename(columns={
                         "buy_date": "매수일",
@@ -1225,6 +1242,10 @@ if df_display is not None:
                         "profit_rate": "수익률(%)",
                         "exit_reason": "청산사유"
                     })
+
+                    disp_perf_df = disp_perf_df.sort_values("매도일", ascending=False)
+                    disp_perf_df["청산사유"] = disp_perf_df["청산사유"].fillna("-")
+                    disp_perf_df = disp_perf_df[["매도일", "종목명", "손익금액", "수익률(%)", "청산사유", "티커", "매수일", "매수가", "매도가", "수량"]]
 
                     price_fmt = "{:,.2f}" if market_type == "US" else "{:,.0f}"
                     profit_fmt = "{:+,.2f}" if market_type == "US" else "{:+,.0f}"
@@ -1241,8 +1262,7 @@ if df_display is not None:
                         use_container_width=True
                     )
 
-                    st.write("")
-                    st.markdown("###### 매매 타점 복기 센터")
+                    st.markdown("<div class='section-title'><strong>매매 타점 복기 센터</strong></div>", unsafe_allow_html=True)
                     df_hist_disp = df_hist.sort_values("sell_date", ascending=False).reset_index(drop=True)
                     trade_opts = df_hist_disp.apply(lambda r: f"[{r['sell_date']}] [{r['ticker']}] {r['종목명']} (손익: {r['profit_amount']:+,.0f}원)", axis=1).tolist()
                     
