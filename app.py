@@ -149,7 +149,7 @@ def display_trade_list(
         expanded=True,
     ):
         if data.empty:
-            st.write(f"해당되는 {button_label} 종목이 없습니다.")
+            st.markdown(f"<div class='empty-note'>해당되는 {button_label} 종목이 없습니다.</div>", unsafe_allow_html=True)
             return
 
         target_amount = (
@@ -176,7 +176,7 @@ def display_trade_list(
 
         for p_idx, (_, row) in enumerate(primary_data.iterrows(), 1):
             ticker = row["ticker"]
-            c1, c2 = st.columns([4, 1])
+            c1, c2 = st.columns([4, 1], vertical_alignment="center")
 
             rank_val = int(row.get("순위", 0)) if pd.notna(row.get("순위")) else "-"
             rec_rank_val = row.get("추천순위", row.get("매수추천순위", ""))
@@ -207,18 +207,20 @@ def display_trade_list(
                     if market_type == "US"
                     else f"{atr_val:,.0f}"
                 )
-                position_info = f"<br><span style='font-size: 0.85em; color: #1b5e20; font-weight: bold;'>분산 금액: {fmt_str} ({target_pct:.1f}%) | ATR: {atr_str}</span>"
-                tag_html = f"<span style='background-color:#e3f2fd; color:#0d47a1; font-size:0.75em; font-weight:bold; padding:1px 5px; border-radius:3px;'>추천 {p_idx}</span>"
+                position_info = f"<div class='trade-alloc'>분산 금액 <b>{fmt_str}</b> ({target_pct:.1f}%) · ATR <b>{atr_str}</b></div>"
+                tag_html = f"<span class='trade-badge'>추천 {p_idx}</span>"
 
+            _kind = "sell" if "매도" in title else "buy"
+            _gap = float(row['이격도'])
+            _gap_cls = "up" if _gap > 0 else ("down" if _gap < 0 else "")
             card_html = (
-                f"<div style='line-height: 1.5; margin-top: 2px;'>"
-                f"<strong style='font-size: 1.05em; color: #111111;'>{row['종목명']}</strong> "
-                f"<span style='font-size: 0.8em; color: #888888;'>({ticker})</span> "
-                f"{tag_html} "
-                f"<span style='font-size: 0.8em; color: #1565c0; font-weight: bold;'>[순위: {rank_val}위 | 추천: {rec_rank_display}]</span>"
-                f"<br><span style='font-size: 0.85em; color: #d62728; font-weight: bold;'>사유: {reason_desc}</span>"
+                f"<div class='trade-card {_kind}'>"
+                f"<div class='trade-top'><strong>{row['종목명']}</strong><span class='trade-tk'>{ticker}</span>{tag_html}</div>"
+                f"<div class='trade-reason'>{reason_desc}</div>"
                 f"{position_info}"
-                f"<br><span style='font-size: 0.8em; color: #444444;'>MOT: {row['MOT']:.2f} | RS(90): {row['RS(90)']:.2f} | 이격: {row['이격도']:+.2f}%</span>"
+                f"<div class='trade-stats'><span>순위 <b>{rank_val}위</b></span><span>추천 <b>{rec_rank_display}</b></span>"
+                f"<span>MOT <b>{row['MOT']:.2f}</b></span><span>RS(90) <b>{row['RS(90)']:.2f}</b></span>"
+                f"<span>이격 <b class='{_gap_cls}'>{_gap:+.2f}%</b></span></div>"
                 f"</div>"
             )
             c1.markdown(card_html, unsafe_allow_html=True)
@@ -1013,7 +1015,12 @@ if df_display is not None:
 
     # TAB 3: 주문 지시서
     with tab3:
-        st.markdown(f"##### 시스템 매매 지시서 [보유: {current_holdings_count} / {top_n_cfg}개]")
+        _slot_dots = "".join(f"<span class='slot-dot{' on' if _i < current_holdings_count else ''}'></span>" for _i in range(int(top_n_cfg)))
+        st.markdown(
+            f"<div class='section-title'><strong>시스템 매매 지시서</strong><span>보유 {current_holdings_count} / {top_n_cfg}개</span></div>"
+            f"<div class='slot-dots'>{_slot_dots}</div>",
+            unsafe_allow_html=True,
+        )
 
         if not is_authenticated:
             st.info("매매 신호 확인 및 주문 실행을 위해 우측 상단 [비밀번호 해제]를 진행해 주세요.")
@@ -1032,12 +1039,11 @@ if df_display is not None:
                         holdings_merged, df_display, market_type, account_total_input, current_engine_key, sl_cfg, target_date_str
                     )
 
-                    st.markdown("###### 포트폴리오 리스크")
-                    risk_col1, risk_col2 = st.columns([2.5, 1.5])
-                    with risk_col1:
-                        st.progress(min(total_risk_pct / 100.0, 1.0))
-                    with risk_col2:
-                        st.markdown(f"**총 리스크: {total_risk_pct:.2f}%**")
+                    st.markdown(
+                        f"<div class='risk-card'><div class='risk-head'><span>포트폴리오 리스크</span><strong>{total_risk_pct:.2f}%</strong></div>"
+                        f"<div class='slot-bar'><div style='width:{min(max(total_risk_pct, 0.0), 100.0):.1f}%'></div></div></div>",
+                        unsafe_allow_html=True,
+                    )
 
                     if risk_violations:
                         st.warning(f"단일 종목 손실 한도(2.0%) 초과: {', '.join(risk_violations)}")
@@ -1073,7 +1079,7 @@ if df_display is not None:
                 c_m1, c_m2 = st.columns(2)
                 with c_m1:
                     st.markdown("###### 수동 매수")
-                    m_ticker = st.text_input("종목코드 (Ticker)", key="m_tk").strip().upper()
+                    m_ticker = st.text_input("종목코드 (Ticker)", key="m_tk", placeholder="예: AAPL / 005930").strip().upper()
                     m_p = st.number_input("매수가", min_value=0.0, value=0.0, key="m_p")
                     m_q = st.number_input("수량", min_value=0.0, value=1.0, key="m_q")
                     m_d = st.date_input("매수일", value=selected_date, key="m_d")
@@ -1085,7 +1091,7 @@ if df_display is not None:
 
                 with c_m2:
                     st.markdown("###### 수동 매도")
-                    ms_ticker = st.text_input("매도 종목코드", key="ms_tk").strip().upper()
+                    ms_ticker = st.text_input("매도 종목코드", key="ms_tk", placeholder="예: AAPL / 005930").strip().upper()
                     ms_p = st.number_input("매도가", min_value=0.0, value=0.0, key="ms_p")
                     ms_q = st.number_input("수량", min_value=0.0, value=1.0, key="ms_q")
                     ms_d = st.date_input("매도일", value=selected_date, key="ms_d")
