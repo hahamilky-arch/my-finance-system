@@ -397,15 +397,22 @@ def draw_integrated_chart(
 
 
 def draw_attribution_charts(df_hist, market_type="KR"):
-    """성과 분석 탭용 수익 기여도 막대 그래프 + 수익률/보유기간 분포도(산점도)"""
+    """성과 분석 탭용 수익 기여도 막대 그래프 + 수익률/보유기간 분포도(산점도) — 토글로 하나씩 표시"""
     if df_hist.empty:
         return
 
     fmt_unit = "$" if market_type == "US" else "원"
 
-    col_chart1, col_chart2 = st.columns(2)
+    view_opts = ["종목별 손익 기여도", "보유기간 vs 수익률"]
+    view = st.segmented_control(
+        "차트 보기",
+        options=view_opts,
+        default=view_opts[0],
+        key="perf_chart_view",
+        label_visibility="collapsed",
+    ) or view_opts[0]
 
-    with col_chart1:
+    if view == view_opts[0]:
         profit_by_stock = (
             df_hist.groupby("종목명")["profit_amount"]
             .sum()
@@ -416,28 +423,31 @@ def draw_attribution_charts(df_hist, market_type="KR"):
         fig_bar = go.Figure()
         fig_bar.add_trace(
             go.Bar(
-                x=profit_by_stock["종목명"],
-                y=profit_by_stock["profit_amount"],
+                y=profit_by_stock["종목명"],
+                x=profit_by_stock["profit_amount"],
+                orientation="h",
                 marker_color=[
                     "#e53935" if v > 0 else "#1e88e5"
                     for v in profit_by_stock["profit_amount"]
                 ],
                 text=[f"{v:+,.0f}{fmt_unit}" for v in profit_by_stock["profit_amount"]],
-                textposition="auto",
+                textposition="outside",
+                cliponaxis=False,
+                hovertemplate="<b>%{y}</b><br>%{text}<extra></extra>",
             )
         )
         fig_bar.update_layout(
-            title="종목별 누적 실현 손익 기여도",
-            height=340,
-            margin=dict(l=20, r=20, t=40, b=20),
-            xaxis=dict(tickangle=-45),
+            title=dict(text="종목별 누적 실현 손익 기여도", font=dict(size=14)),
+            height=max(300, 28 * len(profit_by_stock) + 90),
+            margin=dict(l=10, r=70, t=40, b=20),
+            yaxis=dict(autorange="reversed", automargin=True),
             plot_bgcolor="#ffffff",
         )
-        fig_bar.update_xaxes(gridcolor="#f0f0f0")
+        fig_bar.update_xaxes(gridcolor="#f0f0f0", zerolinecolor="#adb5bd")
         fig_bar.update_yaxes(gridcolor="#f0f0f0")
-        st.plotly_chart(fig_bar, use_container_width=True, config={"scrollZoom": False})
-
-    with col_chart2:
+        with st.container(border=True):
+            st.plotly_chart(fig_bar, use_container_width=True, config={"scrollZoom": False})
+    else:
         fig_scatter = go.Figure()
 
         df_hist["holding_days_val"] = pd.to_numeric(df_hist.get("holding_days", 0), errors="coerce").fillna(0)
@@ -460,13 +470,14 @@ def draw_attribution_charts(df_hist, market_type="KR"):
         fig_scatter.add_hline(y=0, line_dash="dash", line_color="gray")
 
         fig_scatter.update_layout(
-            title="보유기간 대비 수익률 분포도",
+            title=dict(text="보유기간 대비 수익률 분포도", font=dict(size=14)),
             xaxis_title="보유일수 (일)",
             yaxis_title="수익률 (%)",
-            height=340,
+            height=360,
             margin=dict(l=20, r=20, t=40, b=20),
             plot_bgcolor="#ffffff",
         )
         fig_scatter.update_xaxes(gridcolor="#f0f0f0")
         fig_scatter.update_yaxes(gridcolor="#f0f0f0")
-        st.plotly_chart(fig_scatter, use_container_width=True, config={"scrollZoom": False})
+        with st.container(border=True):
+            st.plotly_chart(fig_scatter, use_container_width=True, config={"scrollZoom": False})
