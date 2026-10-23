@@ -810,21 +810,16 @@ if df_display is not None:
                     df_idx_c["ma20_breakdown"] = df_idx_c["below_ma20"] & (~df_idx_c["below_ma20"].shift(1, fill_value=False))
 
                     fig_market_idx = gg.Figure()
-                    fig_market_idx.add_trace(gg.Scatter(x=df_idx_c["price_date_dt"], y=df_idx_c["close_price"], mode="lines", name=f"{target_market_name} 종가", line=dict(color="#3b5bdb", width=2.2)))
+                    fig_market_idx.add_trace(gg.Scatter(x=df_idx_c["price_date_dt"], y=df_idx_c["close_price"], mode="lines", name=f"{target_market_name} 종가", line=dict(color="#111111", width=2.0)))
                     # 이동평균선은 모두 실선 (MA50 추가)
-                    for _ma_col, _ma_name, _ma_color in [("ma20", "MA20", "#ff922b"), ("ma50", "MA50", "#12a594"), ("ma200", "MA200", "#e03131")]:
+                    for _ma_col, _ma_name, _ma_color in [("ma20", "MA20", "#e03131"), ("ma50", "MA50", "#2f9e44"), ("ma200", "MA200", "#7b2cbf")]:
                         if _ma_col in df_idx_c.columns and df_idx_c[_ma_col].notna().any():
                             fig_market_idx.add_trace(gg.Scatter(x=df_idx_c["price_date_dt"], y=df_idx_c[_ma_col], mode="lines", name=_ma_name, line=dict(color=_ma_color, width=1.6), connectgaps=True))
 
+                    # 20일선 이탈일: 얇은 세로선으로 표시
                     breakdown_df = df_idx_c[df_idx_c["ma20_breakdown"]]
-                    if not breakdown_df.empty:
-                        fig_market_idx.add_trace(gg.Scatter(
-                            x=breakdown_df["price_date_dt"],
-                            y=breakdown_df["close_price"],
-                            mode="markers",
-                            name="MA20 이탈점",
-                            marker=dict(symbol="x", size=9, color="#f59f00", line=dict(width=2, color="#f59f00"))
-                        ))
+                    for _bd in breakdown_df["price_date_dt"]:
+                        fig_market_idx.add_shape(type="line", xref="x", yref="paper", x0=_bd, x1=_bd, y0=0, y1=1, line=dict(color="rgba(224,49,49,0.35)", width=1))
 
                     fig_market_idx.update_layout(
                         height=280, margin=dict(l=10, r=10, t=30, b=20), hovermode="x unified",
@@ -932,15 +927,15 @@ if df_display is not None:
             }
 
             event = st.dataframe(
-                df_target.style.apply(apply_styles, axis=None).format(fmt_dict),
+                df_target.style.apply(apply_styles, axis=None).format(fmt_dict, na_rep=""),
                 hide_index=True,
                 use_container_width=True,
                 height=480,
                 column_config={
-                    "순위": st.column_config.NumberColumn("순위", width="small"),
-                    "추천순위": st.column_config.NumberColumn("추천", width="small"),
-                    "변동": st.column_config.NumberColumn("변동", width="small"),
-                    "상태": st.column_config.TextColumn("상태", width="small"),
+                    "순위": st.column_config.NumberColumn("순위", width=44),
+                    "추천순위": st.column_config.NumberColumn("추천", width=44),
+                    "변동": st.column_config.NumberColumn("변동", width=44),
+                    "상태": st.column_config.TextColumn("상태", width=48),
                     "종목명": st.column_config.TextColumn("종목명", width="medium"),
                     "제외사유": st.column_config.TextColumn("제외사유", width="large"),
                 },
