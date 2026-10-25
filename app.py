@@ -18,6 +18,8 @@ from charts import (
 from db import (
     get_available_dates,
     get_holdings_table,
+    get_index_recovery_ok,
+    get_market_breadth,
     get_market_regime,
     supabase,
     update_holdings,
@@ -210,6 +212,18 @@ def display_trade_list(
                 position_info = f"<div class='trade-alloc'>분산 금액 <b>{fmt_str}</b> ({target_pct:.1f}%) · ATR <b>{atr_str}</b></div>"
                 tag_html = f"<span class='trade-badge'>추천 {p_idx}</span>"
 
+            # [옵션] ATR 변동성 비중: 손절폭(2.5×ATR) 기준 손실이 계좌의 2%를 넘지 않도록 금액 제한
+            row_target = target_amount
+            row_fmt = fmt_str
+            if button_label == "매수" and st.session_state.get("adv_opts", {}).get("atr_size"):
+                _atr_v = float(row.get("atr", 0.0) or 0.0)
+                _px = float(row.get("종가", 0.0) or 0.0)
+                if _atr_v > 0 and _px > 0 and account_total > 0:
+                    row_target = min(target_amount, account_total * 0.02 / (2.5 * _atr_v / _px))
+                    row_fmt = f"${row_target:,.2f}" if market_type == "US" else f"{row_target:,.0f}원"
+                    position_info = position_info.replace(fmt_str, row_fmt, 1)
+                    position_info = position_info.replace(f"({target_pct:.1f}%)", f"({row_target / account_total * 100:.1f}%)", 1)
+
             _kind = "sell" if "매도" in title else "buy"
             _gap = float(row['이격도'])
             _gap_cls = "up" if _gap > 0 else ("down" if _gap < 0 else "")
@@ -247,7 +261,7 @@ def display_trade_list(
                         )
                         calc_qty = max(
                             1.0,
-                            (target_amount / input_price)
+                            (row_target / input_price)
                             if input_price > 0
                             else 1.0,
                         )
@@ -383,6 +397,37 @@ saved_mode = st.session_state.get("pop_saved_mode", "자동 감지")
 is_bull = True if "상승장" in saved_mode else (False if "하락장" in saved_mode else market_safe)
 rebalance_cycle = st.session_state.get("pop_saved_rebal", "상시 (빈자리 즉시 채우기)")
 
+
+@st.cache_data(ttl=600, show_spinner=False)
+def _breadth_cached(_market, _date):
+    return get_market_breadth(_market, _date, 10)
+
+
+# ── 고급 전략 옵션 (전략 설정 > 적용 시 저장, 기본값은 모두 꺼짐 = 기존 전략과 동일) ──
+_adv = st.session_state.get("adv_opts", {})
+adv_opts = {
+    "rs_accel": bool(_adv.get("rs_accel")),
+    "corr_cap": bool(_adv.get("corr_cap")),
+    "corr_th": float(_adv.get("corr_th", 0.85)),
+    "no_new_buy": False,
+    "no_new_buy_reason": "",
+}
+_nb_reasons = []
+if _adv.get("staged") and ("자동" in saved_mode) and current_engine_key == "strat3_top7":
+    # 3단계 레짐: 강세 / 조정(지수<MA20: 신규매수만 보류, 보유는 개별 규칙) / 약세(3일 연속: 전량 청산)
+    is_bull = not stop_new_buy
+    if reduce_holdings and not stop_new_buy:
+        _nb_reasons.append("조정 레짐(지수<MA20) 신규매수 보류")
+if _adv.get("recov") and not get_index_recovery_ok(market_type, target_date_str, 2):
+    _nb_reasons.append("지수 2일 안착 대기")
+if _adv.get("breadth"):
+    _bdf = _breadth_cached(market_type, target_date_str)
+    if not _bdf.empty and _bdf["pct20"].iloc[-1] is not None and _bdf["pct20"].iloc[-1] < float(_adv.get("breadth_th", 40)):
+        _nb_reasons.append(f"시장 폭 부족(MA20 위 {_bdf['pct20'].iloc[-1]:.0f}% < {float(_adv.get('breadth_th', 40)):.0f}%)")
+if _nb_reasons:
+    adv_opts["no_new_buy"] = True
+    adv_opts["no_new_buy_reason"] = " / ".join(_nb_reasons)
+
 if current_engine_key == "strat3_top7":
     top_n_cfg = 7
     sl_cfg = -2.5
@@ -416,6 +461,7 @@ df_display = get_data(
     stop_new_buy,
     reduce_holdings,
     strategy_engine_mode=current_engine_key,
+    adv_opts=adv_opts,
 )
 
 if df_display is not None:
@@ -831,6 +877,38 @@ if df_display is not None:
             except Exception as e:
                 st.error(f"지수 차트 로드 실패: {e}")
 
+        # 시장 폭 (Breadth)
+        with st.expander("시장 폭 · 20/50/200일선 위 종목 비율", expanded=True):
+            _bdf = _breadth_cached(market_type, target_date_str)
+            if _bdf.empty:
+                st.info("시장 폭을 계산할 종목 데이터가 없습니다.")
+            else:
+                _last = _bdf.iloc[-1]
+                _prev = _bdf.iloc[-2] if len(_bdf) > 1 else _last
+
+                def _bcell(label, col):
+                    v = _last[col]
+                    if v is None or pd.isna(v):
+                        return f"<div class='kpi-card'><div class='kpi-label'>{label}</div><div class='kpi-value'>-</div></div>"
+                    d = v - (_prev[col] if pd.notna(_prev[col]) else v)
+                    color = "#e5484d" if v >= 60 else ("#3b82f6" if v < 40 else "#151826")
+                    arrow = f"<span style='font-size:.7rem;color:#7a8196;font-weight:700;'> {d:+.0f}p</span>"
+                    return f"<div class='kpi-card'><div class='kpi-label'>{label}</div><div class='kpi-value' style='color:{color};'>{v:.0f}%{arrow}</div></div>"
+
+                st.markdown(
+                    "<div class='kpi-grid breadth-grid'>"
+                    + _bcell("MA20 위", "pct20") + _bcell("MA50 위", "pct50") + _bcell("MA200 위", "pct200")
+                    + "</div>",
+                    unsafe_allow_html=True,
+                )
+                _fig_b = gg.Figure()
+                for _col, _nm, _clr in [("pct20", "MA20 위", "#e03131"), ("pct50", "MA50 위", "#2f9e44"), ("pct200", "MA200 위", "#7b2cbf")]:
+                    _fig_b.add_trace(gg.Scatter(x=pd.to_datetime(_bdf["date"]), y=_bdf[_col], mode="lines", name=_nm, line=dict(color=_clr, width=1.8), connectgaps=True))
+                _fig_b.add_hline(y=50, line_width=1, line_color="rgba(120,120,120,0.4)")
+                _fig_b.update_layout(height=220, margin=dict(l=10, r=10, t=30, b=20), hovermode="x unified", yaxis=dict(range=[0, 100], ticksuffix="%"), legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0))
+                st.plotly_chart(_fig_b, use_container_width=True, config={'scrollZoom': False})
+                st.caption(f"{market_type} 전체 {int(_last['n'])}종목 기준, 최근 {len(_bdf)}거래일. 60% 이상이면 폭넓은 상승, 40% 미만이면 약세 신호로 봅니다.")
+
         # KR 전용 차트들
         if market_type == "KR":
             with st.expander("코스피 외국인 + 기관 합산 수급 추이 (30일)", expanded=False):
@@ -1170,7 +1248,23 @@ if df_display is not None:
                     key="pop_rebal_select"
                 )
 
+                st.markdown("#### 고급 전략 옵션 (전략 3 기준 · 기본 꺼짐)")
+                st.caption("켜기 전에 백테스트로 확인하세요. 적용 시 이 세션에만 저장됩니다.")
+                _sv = st.session_state.get("adv_opts", {})
+                adv_staged = st.checkbox("3단계 레짐 (조정장은 신규매수만 보류, 약세 3일 연속일 때만 전량 청산)", value=bool(_sv.get("staged")), key="adv_w_staged")
+                adv_recov = st.checkbox("신규 매수 재개 조건: 지수 2일 연속 MA20 위", value=bool(_sv.get("recov")), key="adv_w_recov")
+                adv_breadth = st.checkbox("시장 폭 필터: MA20 위 종목 비율이 기준 미만이면 신규매수 보류", value=bool(_sv.get("breadth")), key="adv_w_breadth")
+                adv_breadth_th = st.slider("시장 폭 기준 (%)", 20, 70, int(_sv.get("breadth_th", 40)), 5, key="adv_w_breadth_th")
+                adv_rs_accel = st.checkbox("RS 가속 우선: 이격도 순위 + RS(10)-RS(90) 순위를 함께 반영", value=bool(_sv.get("rs_accel")), key="adv_w_rs_accel")
+                adv_corr = st.checkbox("상관 상한: 보유/선정 종목과 60일 수익률 상관이 높은 종목 제외", value=bool(_sv.get("corr_cap")), key="adv_w_corr")
+                adv_corr_th = st.slider("상관 상한 (이상이면 제외)", 0.50, 0.95, float(_sv.get("corr_th", 0.85)), 0.05, key="adv_w_corr_th")
+                adv_atr_size = st.checkbox("ATR 변동성 비중: 손절 시 손실이 계좌의 2%가 되도록 매수금액 제한", value=bool(_sv.get("atr_size")), key="adv_w_atr_size")
+
                 if st.button("적용", type="primary", use_container_width=True, key="pop_btn_apply"):
+                    st.session_state["adv_opts"] = {
+                        "staged": adv_staged, "recov": adv_recov, "breadth": adv_breadth, "breadth_th": adv_breadth_th,
+                        "rs_accel": adv_rs_accel, "corr_cap": adv_corr, "corr_th": adv_corr_th, "atr_size": adv_atr_size,
+                    }
                     st.session_state["strategy_engine_mode"] = pop_engine_key
                     st.session_state["pop_saved_mode"] = pop_strategy_mode
                     st.session_state["pop_saved_rebal"] = pop_rebal_cycle
