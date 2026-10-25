@@ -81,6 +81,61 @@ def get_market_regime(market_type="KR", target_date_str=None):
         return True, False, False
 
 
+def get_market_breadth(market_type="KR", target_date_str=None, days=10):
+    """
+    시장 폭(breadth): 해당 시장 전체 종목 중 20/50/200일선 위에 있는 종목 비율(%)을 최근 N거래일 산출.
+    반환: DataFrame[date, n, pct20, pct50, pct200] (오래된 날짜 → 최신 순). 실패/데이터 없음이면 빈 DataFrame.
+    """
+    target_symbol = "^KS11" if market_type == "KR" else "^GSPC"
+    try:
+        q = supabase.table("daily_analysis").select("price_date").eq("ticker", target_symbol)
+        if target_date_str:
+            q = q.lte("price_date", target_date_str)
+        dates = [r["price_date"] for r in (q.order("price_date", desc=True).limit(days).execute().data or [])]
+        rows = []
+        for d in dates:
+            res = (
+                supabase.table("daily_analysis")
+                .select("ticker, close_price, ma20, ma50, ma200")
+                .eq("price_date", d)
+                .eq("market", market_type)
+                .limit(5000)
+                .execute()
+            )
+            df = pd.DataFrame(res.data or [])
+            if df.empty:
+                continue
+            df = df[~df["ticker"].astype(str).str.startswith("^")]
+            for c in ["close_price", "ma20", "ma50", "ma200"]:
+                df[c] = pd.to_numeric(df[c], errors="coerce")
+
+            def _pct(col):
+                v = df[df[col] > 0]
+                return float((v["close_price"] > v[col]).mean() * 100) if len(v) else None
+
+            rows.append({"date": d, "n": int(len(df)), "pct20": _pct("ma20"), "pct50": _pct("ma50"), "pct200": _pct("ma200")})
+        return pd.DataFrame(rows).sort_values("date").reset_index(drop=True) if rows else pd.DataFrame()
+    except Exception as e:
+        print(f"시장 폭 조회 실패: {e}")
+        return pd.DataFrame()
+
+
+def get_index_recovery_ok(market_type="KR", target_date_str=None, days=2):
+    """지수 종가가 최근 N거래일 연속 MA20 위인지 (신규 매수 재개 조건). 데이터가 없으면 True."""
+    target_symbol = "^KS11" if market_type == "KR" else "^GSPC"
+    try:
+        q = supabase.table("daily_analysis").select("close_price, ma20").eq("ticker", target_symbol)
+        if target_date_str:
+            q = q.lte("price_date", target_date_str)
+        rows = q.order("price_date", desc=True).limit(max(1, int(days))).execute().data or []
+        if len(rows) < days:
+            return True
+        return all(float(r.get("ma20") or 0) > 0 and float(r.get("close_price") or 0) >= float(r.get("ma20") or 0) for r in rows)
+    except Exception as e:
+        print(f"지수 복귀 조건 조회 실패: {e}")
+        return True
+
+
 def get_recently_sold_info(market_type="KR", target_date_str=None, cooldown_days=3):
     """
     최근 N일 이내 매도 완료된 종목 및 매도가 조회 (재진입 쿨다운 필터용)
