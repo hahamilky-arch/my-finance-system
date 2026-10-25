@@ -914,45 +914,46 @@ if df_display is not None:
         if df_target.empty:
             st.info("해당되는 종목이 없습니다.")
         else:
-            fmt_dict = {
-                "이격(%)": lambda x: f"{x:+.2f}%" if x != 0 else "-",
-                "MOT": "{:.2f}",
-                "RS(90)": "{:.2f}",
-                "RS(10)": "{:.2f}",
-                "MA20": "{:,.2f}" if market_type == "US" else "{:,.0f}",
-                "ATR": "{:,.2f}" if market_type == "US" else "{:,.0f}",
-                "종가": "{:,.2f}" if market_type == "US" else "{:,.0f}",
-                "상승금액": "{:+,.2f}" if market_type == "US" else "{:+,.0f}",
-                "상승률": "{:+.2f}%",
-            }
+            with st.expander("시그널 종목 표", expanded=True):
+                fmt_dict = {
+                    "이격(%)": lambda x: f"{x:+.2f}%" if x != 0 else "-",
+                    "MOT": "{:.2f}",
+                    "RS(90)": "{:.2f}",
+                    "RS(10)": "{:.2f}",
+                    "MA20": "{:,.2f}" if market_type == "US" else "{:,.0f}",
+                    "ATR": "{:,.2f}" if market_type == "US" else "{:,.0f}",
+                    "종가": "{:,.2f}" if market_type == "US" else "{:,.0f}",
+                    "상승금액": "{:+,.2f}" if market_type == "US" else "{:+,.0f}",
+                    "상승률": "{:+.2f}%",
+                }
 
-            event = st.dataframe(
-                df_target.style.apply(apply_styles, axis=None).format(fmt_dict, na_rep=""),
-                hide_index=True,
-                use_container_width=True,
-                height=480,
-                column_config={
-                    "순위": st.column_config.NumberColumn("순위", width=44),
-                    "추천순위": st.column_config.NumberColumn("추천", width=44),
-                    "변동": st.column_config.NumberColumn("변동", width=44),
-                    "상태": st.column_config.TextColumn("상태", width=48),
-                    "종목명": st.column_config.TextColumn("종목명", width="medium"),
-                    "제외사유": st.column_config.TextColumn("제외사유", width="large"),
-                },
-                on_select="rerun",
-                selection_mode="single-row",
-                key="overview_table_selection",
-            )
+                event = st.dataframe(
+                    df_target.style.apply(apply_styles, axis=None).format(fmt_dict, na_rep=""),
+                    hide_index=True,
+                    use_container_width=True,
+                    height=480,
+                    column_config={
+                        "순위": st.column_config.NumberColumn("순위", width=44),
+                        "추천순위": st.column_config.NumberColumn("추천", width=44),
+                        "변동": st.column_config.NumberColumn("변동", width=44),
+                        "상태": st.column_config.TextColumn("상태", width=48),
+                        "종목명": st.column_config.TextColumn("종목명", width="medium"),
+                        "제외사유": st.column_config.TextColumn("제외사유", width="large"),
+                    },
+                    on_select="rerun",
+                    selection_mode="single-row",
+                    key="overview_table_selection",
+                )
 
-            if event and event.get("selection", {}).get("rows"):
-                selected_row_idx = event["selection"]["rows"][0]
-                selected_row = df_target.iloc[selected_row_idx]
-                clicked_ticker = str(selected_row["ticker"]).strip().upper()
+                if event and event.get("selection", {}).get("rows"):
+                    selected_row_idx = event["selection"]["rows"][0]
+                    selected_row = df_target.iloc[selected_row_idx]
+                    clicked_ticker = str(selected_row["ticker"]).strip().upper()
 
-                if st.session_state.get("last_selected_row_idx") != selected_row_idx:
-                    st.session_state["last_selected_row_idx"] = selected_row_idx
-                    st.session_state["tab2_integrated_chart_selector"] = clicked_ticker
-                    st.rerun()
+                    if st.session_state.get("last_selected_row_idx") != selected_row_idx:
+                        st.session_state["last_selected_row_idx"] = selected_row_idx
+                        st.session_state["tab2_integrated_chart_selector"] = clicked_ticker
+                        st.rerun()
 
         st.write("")
 
