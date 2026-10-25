@@ -400,6 +400,8 @@ div[data-testid="stHorizontalBlock"]:has(.trade-card) > div[data-testid="stColum
 .st-key-sig_filter { overflow-x:auto; }
 .st-key-sig_filter button { white-space:nowrap; }
 
+.kpi-grid.breadth-grid { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; margin-bottom: 8px; }
+
 /* 수동 입력: 종목코드 라벨 복원 (전역 라벨 숨김 규칙 예외) */
 .st-key-m_tk label, .st-key-ms_tk label,
 .st-key-m_tk label p, .st-key-ms_tk label p {
