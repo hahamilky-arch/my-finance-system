@@ -399,8 +399,8 @@ rebalance_cycle = st.session_state.get("pop_saved_rebal", "상시 (빈자리 즉
 
 
 @st.cache_data(ttl=600, show_spinner=False)
-def _breadth_cached(_market, _date):
-    return get_market_breadth(_market, _date, 10)
+def _breadth_cached(market, date_str):
+    return get_market_breadth(market, date_str, 10)
 
 
 # ── 고급 전략 옵션 (전략 설정 > 적용 시 저장, 기본값은 모두 꺼짐 = 기존 전략과 동일) ──
