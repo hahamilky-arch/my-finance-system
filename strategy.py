@@ -3,6 +3,34 @@ import pandas as pd
 from db import get_holdings_table, get_recently_sold_info, supabase
 
 
+def _build_corr_matrix(market_type, target_date_str, tickers, lookback=60):
+    """최근 lookback거래일 종가 수익률 상관행렬. 실패하면 None."""
+    try:
+        tickers = sorted({str(t).strip().upper() for t in tickers if str(t).strip()})
+        if len(tickers) < 2:
+            return None
+        res = (
+            supabase.table("daily_analysis")
+            .select("ticker, price_date, close_price")
+            .in_("ticker", tickers)
+            .eq("market", market_type)
+            .lte("price_date", target_date_str)
+            .order("price_date", desc=True)
+            .limit(5000)
+            .execute()
+        )
+        df = pd.DataFrame(res.data or [])
+        if df.empty:
+            return None
+        df["ticker"] = df["ticker"].astype(str).str.strip().str.upper()
+        df["close_price"] = pd.to_numeric(df["close_price"], errors="coerce")
+        px = df.pivot_table(index="price_date", columns="ticker", values="close_price").sort_index().tail(lookback + 1)
+        return px.pct_change().dropna(how="all").corr(min_periods=20)
+    except Exception as e:
+        print(f"상관행렬 계산 실패: {e}")
+        return None
+
+
 def get_data(
     target_date,
     all_dates,
@@ -14,7 +42,9 @@ def get_data(
     stop_new_buy,
     reduce_holdings,
     strategy_engine_mode="strat3_top7",
+    adv_opts=None,
 ):
+    adv_opts = adv_opts or {}
     target_date_str = pd.to_datetime(target_date).strftime("%Y-%m-%d")
 
     # 1. 당일 데이터 조회
@@ -288,6 +318,13 @@ def get_data(
         candidates = df_final[cond_rank].sort_values(
             by="이격도", ascending=True
         )
+        # [옵션] RS 가속 우선: 이격도 순위(낮을수록 좋음)와 RS 가속도(RS(10)-RS(90), 클수록 좋음) 순위를 평균
+        if adv_opts.get("rs_accel") and len(candidates) > 1:
+            _gap_rank = candidates["이격도"].rank(ascending=True, method="first")
+            _acc_rank = (candidates["RS(10)"] - candidates["RS(90)"]).rank(ascending=False, method="first")
+            candidates = candidates.assign(_score=_gap_rank + _acc_rank).sort_values(
+                by=["_score", "이격도"], ascending=[True, True]
+            ).drop(columns=["_score"])
     elif strategy_engine_mode == "short_term":
         cond_rank = (
             (df_final["순위"] <= 200)
@@ -324,8 +361,20 @@ def get_data(
     )
     total_needed = max(0, slots_available) + 2
 
+    # [옵션] 상관관계 상한: 보유/선정 종목과 최근 60거래일 수익률 상관이 임계치 이상이면 제외
+    corr_matrix = None
+    corr_th = float(adv_opts.get("corr_th", 0.0) or 0.0)
+    corr_skipped = {}
+    if adv_opts.get("corr_cap") and corr_th > 0:
+        corr_matrix = _build_corr_matrix(
+            market_type, target_date_str,
+            list(candidates["ticker"].astype(str).str.strip().str.upper()) + my_holdings_clean,
+        )
+
+    no_new_buy = bool(adv_opts.get("no_new_buy", False))
     buy_list = set()
-    if cycle_passed and (not stop_new_buy) and is_bull_mode:
+    if cycle_passed and (not stop_new_buy) and is_bull_mode and not no_new_buy:
+        kept = [t for t in my_holdings_clean if t not in sell_dict]
         for idx, row in candidates.iterrows():
             if len(buy_list) >= total_needed:
                 break
@@ -338,6 +387,16 @@ def get_data(
                 )
             ):
                 continue
+            if corr_matrix is not None and ticker_upper in corr_matrix.index:
+                hit = [
+                    o for o in (kept + list(buy_list))
+                    if o in corr_matrix.columns and o != ticker_upper
+                    and pd.notna(corr_matrix.loc[ticker_upper, o])
+                    and corr_matrix.loc[ticker_upper, o] >= corr_th
+                ]
+                if hit:
+                    corr_skipped[ticker_upper] = f"상관 {corr_th:.2f} 이상({hit[0]})"
+                    continue
             buy_list.add(ticker_upper)
 
     # 6. 상태 및 개별 세부 제외사유 부여
@@ -355,6 +414,10 @@ def get_data(
             return "매수추천", "조건충족", b_rank
 
         reasons = []
+        if no_new_buy and adv_opts.get("no_new_buy_reason"):
+            reasons.append(str(adv_opts["no_new_buy_reason"]))
+        if t in corr_skipped:
+            reasons.append(corr_skipped[t])
         if stop_new_buy:
             reasons.append("시장경보(KOSPI < MA20)")
         if not is_bull_mode:
