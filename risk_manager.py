@@ -72,9 +72,9 @@ def calculate_holdings_risk(
         tp_stop_price = max(highest_price * 0.92, buy_price)  # 1번: 익절/본절 스탑가
 
         if atr_val > 0 and current_engine_key == "strat3_top7":
-            atr_stop_price = max(
-                buy_price - (2.5 * atr_val), highest_price - (2.5 * atr_val)
-            )  # 2번: ATR 손절 스탑가
+            _ea = h_row.get("entry_atr")
+            entry_atr_val = float(_ea) if (_ea is not None and pd.notna(_ea) and float(_ea) > 0) else atr_val
+            atr_stop_price = buy_price - (2.5 * entry_atr_val)  # 2번: ATR 손절 스탑가 (진입 ATR 기준, strategy.py 와 동일)
         else:
             atr_stop_price = max(
                 buy_price * (1 + (sl_cfg / 100.0)), highest_price * 0.95
