@@ -403,6 +403,23 @@ def _breadth_cached(market, date_str):
     return get_market_breadth(market, date_str, 10)
 
 
+@st.cache_data(ttl=3600, show_spinner=False)
+def _kosdaq_index_cached(date_str):
+    """코스닥 지수(^KQ11)를 yfinance에서 받아 MA20/50/200 계산 (DB에는 저장되지 않는 지수라 화면 전용)."""
+    import yfinance as yf
+    end = pd.to_datetime(date_str) + pd.Timedelta(days=1)
+    start = end - pd.Timedelta(days=520)
+    df = yf.Ticker("^KQ11").history(start=start.strftime("%Y-%m-%d"), end=end.strftime("%Y-%m-%d"))
+    if df is None or df.empty:
+        return pd.DataFrame()
+    df = df.reset_index()
+    df["date"] = pd.to_datetime(df["Date"]).dt.tz_localize(None).dt.normalize()
+    df = df[["date", "Close"]].rename(columns={"Close": "close"}).dropna()
+    for n in (20, 50, 200):
+        df[f"ma{n}"] = df["close"].rolling(n).mean()
+    return df.tail(120).reset_index(drop=True)
+
+
 # ── 고급 전략 옵션 (전략 설정 > 적용 시 저장, 기본값은 모두 꺼짐 = 기존 전략과 동일) ──
 _adv = st.session_state.get("adv_opts", {})
 adv_opts = {
@@ -876,6 +893,32 @@ if df_display is not None:
                     st.info(f"[{target_market_name}] 지수 시계열 데이터가 존재하지 않습니다.")
             except Exception as e:
                 st.error(f"지수 차트 로드 실패: {e}")
+
+        # 코스닥 지수 차트 (KR 전용)
+        if market_type == "KR":
+            with st.expander("코스닥 지수 · MA20/50/200", expanded=True):
+                try:
+                    df_kq_idx = _kosdaq_index_cached(target_date_str)
+                except Exception as e:
+                    df_kq_idx = pd.DataFrame()
+                    st.error(f"코스닥 지수 로드 실패: {e}")
+                if df_kq_idx.empty:
+                    st.info("코스닥 지수 데이터를 가져오지 못했습니다.")
+                else:
+                    fig_kq = gg.Figure()
+                    fig_kq.add_trace(gg.Scatter(x=df_kq_idx["date"], y=df_kq_idx["close"], mode="lines", name="코스닥 종가", line=dict(color="#111111", width=2.0)))
+                    for _c, _n, _clr in [("ma20", "MA20", "#e03131"), ("ma50", "MA50", "#2f9e44"), ("ma200", "MA200", "#7b2cbf")]:
+                        if df_kq_idx[_c].notna().any():
+                            fig_kq.add_trace(gg.Scatter(x=df_kq_idx["date"], y=df_kq_idx[_c], mode="lines", name=_n, line=dict(color=_clr, width=1.6), connectgaps=True))
+                    _below = df_kq_idx["close"] < df_kq_idx["ma20"]
+                    _brk = df_kq_idx[_below & (~_below.shift(1, fill_value=False))]
+                    for _bd in _brk["date"]:
+                        fig_kq.add_shape(type="line", xref="x", yref="paper", x0=_bd, x1=_bd, y0=0, y1=1, line=dict(color="rgba(224,49,49,0.35)", width=1))
+                    fig_kq.update_layout(height=280, margin=dict(l=10, r=10, t=30, b=20), hovermode="x unified", legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0))
+                    st.plotly_chart(fig_kq, use_container_width=True, config={'scrollZoom': False})
+                    _lr = df_kq_idx.iloc[-1]
+                    if pd.notna(_lr["ma20"]):
+                        st.caption(f"코스닥 {_lr['close']:,.2f} · MA20 대비 {(_lr['close'] / _lr['ma20'] - 1) * 100:+.2f}% (yfinance 기준, 세로선은 MA20 이탈일)")
 
         # 시장 폭 (Breadth)
         with st.expander("시장 폭 · 20/50/200일선 위 종목 비율", expanded=True):
