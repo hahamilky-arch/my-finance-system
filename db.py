@@ -136,6 +136,24 @@ def get_index_recovery_ok(market_type="KR", target_date_str=None, days=2):
         return True
 
 
+def get_index_ma200_ok(market_type="KR", target_date_str=None):
+    """지수 종가가 MA200 이상이면 True (신규 매수 허용). MA200 데이터가 없으면 True."""
+    target_symbol = "^KS11" if market_type == "KR" else "^GSPC"
+    try:
+        q = supabase.table("daily_analysis").select("close_price, ma200").eq("ticker", target_symbol)
+        if target_date_str:
+            q = q.lte("price_date", target_date_str)
+        rows = q.order("price_date", desc=True).limit(1).execute().data or []
+        if not rows:
+            return True
+        ma200 = float(rows[0].get("ma200") or 0)
+        close_p = float(rows[0].get("close_price") or 0)
+        return True if ma200 <= 0 else close_p >= ma200
+    except Exception as e:
+        print(f"지수 MA200 조회 실패: {e}")
+        return True
+
+
 def get_recently_sold_info(market_type="KR", target_date_str=None, cooldown_days=3):
     """
     최근 N일 이내 매도 완료된 종목 및 매도가 조회 (재진입 쿨다운 필터용)
@@ -170,7 +188,7 @@ def get_recently_sold_info(market_type="KR", target_date_str=None, cooldown_days
         return {}
 
 
-def update_holdings(ticker, trade_type, price, trade_date, quantity, market_type="KR", exit_reason=None):
+def update_holdings(ticker, trade_type, price, trade_date, quantity, market_type="KR", exit_reason=None, entry_atr=None):
     """
     매수/매도 실행 시 holdings 테이블 기록
     - 수량(quantity) 변환 처리로 DB Integer 타입 에러(22P02) 완전 방지
@@ -201,7 +219,29 @@ def update_holdings(ticker, trade_type, price, trade_date, quantity, market_type
                 "profit_rate": None,
                 "exit_reason": None,
             }
-            supabase.table(table_name).insert(data).execute()
+            # 진입 시점 ATR 저장 (ATR 손절 기준). 전달값이 없으면 매수일 기준 최신 daily_analysis ATR 사용
+            if entry_atr is None:
+                try:
+                    ra = (
+                        supabase.table("daily_analysis").select("atr")
+                        .eq("ticker", ticker_code).lte("price_date", trade_date_str)
+                        .order("price_date", desc=True).limit(1).execute()
+                    )
+                    if ra.data and ra.data[0].get("atr") is not None:
+                        entry_atr = float(ra.data[0]["atr"])
+                except Exception:
+                    entry_atr = None
+            if entry_atr is not None and float(entry_atr) > 0:
+                data["entry_atr"] = float(entry_atr)
+            try:
+                supabase.table(table_name).insert(data).execute()
+            except Exception as ins_err:
+                if "entry_atr" in data and "entry_atr" in str(ins_err):
+                    data.pop("entry_atr")
+                    supabase.table(table_name).insert(data).execute()
+                    st.warning(f"'{table_name}' 테이블에 entry_atr 컬럼이 없어 ATR 없이 저장했습니다. (컬럼 추가 필요)")
+                else:
+                    raise
             st.success(f"[{ticker_code}] 매수 기록이 등록되었습니다.")
         elif trade_type == "SELL":
             res = (
