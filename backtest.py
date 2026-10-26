@@ -313,6 +313,67 @@ def detail_report(m, trdf, eqdf):
     return "\n".join(lines)
 
 
+def ma200_diagnostic(idx):
+    v = idx[(idx["ma200"].notna()) & (idx["ma200"] > 0)]
+    below = int((v["close_price"] < v["ma200"]).sum()) if len(v) else 0
+    return (f"- 지수 MA200 데이터: {len(v)}/{len(idx)}일 유효, 종가<MA200 인 날 {below}일"
+            + (" ⚠️ MA200 값이 비어 있어 조건이 작동하지 않습니다" if len(v) < len(idx) * 0.5 else ""))
+
+
+def top_trade_share(trdf, k=3):
+    """총 이익 중 상위 k개 거래가 차지하는 비중(%) — 소수 대박 거래 의존도."""
+    if trdf is None or trdf.empty:
+        return np.nan
+    gains = trdf[trdf["profit_amt"] > 0]["profit_amt"].sort_values(ascending=False)
+    return float(gains.head(k).sum() / gains.sum() * 100) if gains.sum() > 0 else np.nan
+
+
+def run_robust(df, idx, names, base, breadth_ths, segments):
+    """기간 분할 + 기준값 민감도. 구간마다 초기자금으로 다시 시작해 비교한다."""
+    n = len(idx)
+    cuts = [round(i * n / segments) for i in range(segments + 1)]
+    segs = [("전체", idx.reset_index(drop=True))]
+    for i in range(segments):
+        sub = idx.iloc[cuts[i]: cuts[i + 1]].reset_index(drop=True)
+        if len(sub) >= 20:
+            segs.append((f"{sub['price_date'].iloc[0][5:]}~{sub['price_date'].iloc[-1][5:]}", sub))
+
+    scen = [("기본(현행)", base), ("레짐 끔(참고)", dict(base, regime=False)), ("3단계 레짐", dict(base, staged=True))]
+    for th in breadth_ths:
+        scen.append((f"시장 폭<{th:g}%", dict(base, breadth=True, breadth_th=th)))
+    for th in breadth_ths:
+        scen.append((f"3단계+시장 폭<{th:g}%", dict(base, staged=True, breadth=True, breadth_th=th)))
+    scen.append(("3단계+폭40+RS가속", dict(base, staged=True, breadth=True, breadth_th=40, rs_accel=True)))
+    scen.append(("보완 전부(폭40)", dict(base, staged=True, recov=True, breadth=True, breadth_th=40,
+                                      rs_accel=True, corr=True, corr_th=0.85, atr_size=True)))
+
+    ret = {name: {} for name, _ in scen}
+    mdd = {name: {} for name, _ in scen}
+    share = {}
+    bench = {}
+    for sname, sidx in segs:
+        bench[sname] = (sidx["close_price"].iloc[-1] / sidx["close_price"].iloc[0] - 1) * 100
+        for name, cfg in scen:
+            m, tr, _ = simulate(df, sidx, names, cfg)
+            ret[name][sname] = m.get("수익률(%)", np.nan) if m else np.nan
+            mdd[name][sname] = m.get("MDD(%)", np.nan) if m else np.nan
+            if sname == "전체" and name in ("기본(현행)", "3단계 레짐", "보완 전부(폭40)"):
+                share[name] = top_trade_share(tr)
+
+    cols = [c for c, _ in segs]
+    r = pd.DataFrame(ret).T[cols]
+    r.loc["(벤치마크 지수)"] = pd.Series(bench)
+    d = pd.DataFrame(mdd).T[cols]
+    out = ["## 기간 분할 · 수익률(%)", _md(r.round(1)), "", "## 기간 분할 · MDD(%)", _md(d.round(1))]
+    # 구간 중 현행 대비 이긴 구간 수
+    base_row = r.loc["기본(현행)"]
+    wins = {nm: int((r.loc[nm, cols[1:]] > base_row[cols[1:]]).sum()) for nm in r.index if nm not in ("기본(현행)", "(벤치마크 지수)")}
+    out += ["", f"## 현행 대비 수익률이 더 높았던 구간 수 (총 {len(cols) - 1}개 구간)", _md(pd.Series(wins, name="이긴 구간").to_frame())]
+    out += ["", "## 총 이익 중 상위 3개 거래 비중(%) — 높을수록 소수 거래 의존",
+            _md(pd.Series(share, name="상위3 비중").round(1).to_frame())]
+    return "\n".join(out)
+
+
 def save_trades_to_db(client, trades):
     if trades is None or trades.empty:
         return
@@ -351,6 +412,8 @@ def main():
     ap.add_argument("--corr", action="store_true")
     ap.add_argument("--corr_th", type=float, default=0.85)
     ap.add_argument("--atr_size", action="store_true")
+    ap.add_argument("--robust", action="store_true", help="기간 분할 + 시장 폭 기준 민감도 분석")
+    ap.add_argument("--segments", type=int, default=3, help="--robust 기간 분할 개수")
     ap.add_argument("--compare", action="store_true", help="기본 전략과 각 보완 옵션을 한 표로 비교")
     ap.add_argument("--save_db", action="store_true", help="결과 매매를 backtest_trades 에 저장(기존 내용 삭제)")
     # 이전 버전 호환: python backtest.py 2026-01-01 2026-09-30
@@ -374,7 +437,10 @@ def main():
             f"- 초기자금 {capital:,.0f}, 편도 비용 {fee}% + 슬리피지 {a.slip_pct}%, Top{TOP_N}, 순위≤{RANK_CUT}\n"
             f"- 벤치마크: {'KOSPI(^KS11)' if a.market == 'KR' else 'S&P500(^GSPC)'}\n")
 
-    if a.compare:
+    if a.robust:
+        md = head + "\n" + ma200_diagnostic(idx) + "\n\n" + run_robust(df, idx, names, base, [30, 40, 50], max(2, a.segments))
+        m, trdf, eqdf = simulate(df, idx, names, base)
+    elif a.compare:
         scen = [
             ("기본(현행 전략)", base),
             ("레짐 끔(참고)", dict(base, regime=False)),
@@ -392,7 +458,7 @@ def main():
         for name, cfg in scen:
             m, _, _ = simulate(df, idx, names, cfg)
             rows.append((name, m))
-        md = head + "\n## 시나리오 비교\n" + fmt_metrics_table(rows)
+        md = head + "\n" + ma200_diagnostic(idx) + "\n\n## 시나리오 비교\n" + fmt_metrics_table(rows)
         m, trdf, eqdf = simulate(df, idx, names, base)
     else:
         m, trdf, eqdf = simulate(df, idx, names, user)
