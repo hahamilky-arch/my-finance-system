@@ -1,365 +1,417 @@
+"""Quant Alpha 전략 백테스트 (strategy.py 의 전략 3: Top 7 Regime 과 같은 규칙).
+
+실행 예:
+    python backtest.py --market KR --start 2026-01-01 --end 2026-09-30
+    python backtest.py --market KR --compare            # 기본 전략 vs 보완 옵션 비교표
+    python backtest.py --market US --staged --recov --save_db
+
+특징
+- 지수 레짐(MA20 3일 연속 이탈 = 약세 전량 청산)·재진입 쿨다운 3일·ATR 2.5배 손절·+8% 트레일링·MA20 이탈 청산을 라이브와 동일하게 적용
+- 순위 밖으로 밀린 보유 종목도 전체 종목 데이터에서 가격을 찾아 청산 규칙 적용 (상위 N개만 읽던 이전 버전의 결함 제거)
+- 수수료/슬리피지 반영, 벤치마크(지수) 대비 성과, 월별 수익률, 청산 사유별 통계
+- 결과는 콘솔 + backtest_out/ (summary.md, trades.csv, equity.csv). GitHub Actions 에서는 Step Summary 로도 출력
+"""
+import argparse
 import os
 import sys
+
 import numpy as np
 import pandas as pd
-from supabase import create_client, Client
 
-# 📌 1. db.py 및 strategy.py 로드 시 st.secrets 에러 방지를 위한 주입
-import streamlit as st
-
-url = os.environ.get("SUPABASE_URL")
-key = os.environ.get("SUPABASE_KEY")
-
-if url and key:
-    if not hasattr(st.secrets, "_secrets") or st.secrets._secrets is None:
-        st.secrets._secrets = {}
-    st.secrets._secrets["SUPABASE_URL"] = url
-    st.secrets._secrets["SUPABASE_KEY"] = key
-
-from db import supabase
+TOP_N = 7
+RANK_CUT = 15
+ATR_STOP_MULT = 2.5
+TRAIL_TRIGGER = 1.08
+TRAIL_KEEP = 0.92
+COOLDOWN_DAYS = 3
 
 
-def save_trades_to_db(closed_trades):
-    """백테스트 매매이력을 Supabase DB(backtest_trades)에 저장합니다."""
-    if not closed_trades:
-        print("💡 저장할 매매이력이 없습니다.")
-        return
+# ───────────────────────── 데이터 로드 ─────────────────────────
+def get_client():
+    from supabase import create_client
 
-    print("\n💾 Supabase DB에 백테스트 매매이력을 저장 중입니다...")
-    try:
-        # 기존 백테스트 매매이력 삭제 (초기화)
-        supabase.table("backtest_trades").delete().neq("id", 0).execute()
-
-        # 새로 생성된 매매이력 저장 데이터 가공
-        db_records = []
-        for trade in closed_trades:
-            db_records.append({
-                "ticker": trade["ticker"],
-                "name": trade["name"],
-                "buy_date": trade["buy_date"],
-                "sell_date": trade["sell_date"],
-                "buy_price": float(trade["buy_price"]),
-                "sell_price": float(trade["sell_price"]),
-                "quantity": float(trade["qty"]),
-                "profit_amount": float(trade["profit_amt"]),
-                "profit_rate": float(trade["profit_rate"]),
-                "exit_reason": trade["reason"],
-            })
-
-        # 100건씩 분할 배치(Batch) 저장
-        batch_size = 100
-        for i in range(0, len(db_records), batch_size):
-            batch = db_records[i : i + batch_size]
-            supabase.table("backtest_trades").insert(batch).execute()
-
-        print(f"✅ 총 {len(db_records)}건의 매매이력이 DB에 저장되었습니다.")
-    except Exception as e:
-        print(f"⚠️ DB 저장 중 오류 발생 (테이블 'backtest_trades' 존재 여부 확인): {e}")
+    url = os.environ.get("SUPABASE_URL")
+    key = os.environ.get("SUPABASE_KEY")
+    if not url or not key:
+        sys.exit("SUPABASE_URL / SUPABASE_KEY 환경변수가 필요합니다.")
+    return create_client(url, key)
 
 
-def run_backtest(
-    start_date="2026-01-01",
-    end_date="2026-09-30",
-    market_type="KR",
-    save_to_db=True,
-):
-    print("=" * 75)
-    print(f"🚀 Quant Alpha [Top 7 Regime] 1월~9월 백테스트 & 매매이력 출력")
-    print(f"• 테스트 기간       : {start_date} ~ {end_date}")
-    print(f"• 대상 시장         : {market_type}")
-    print(f"• 핵심 수식         : +8% 달성 시 트레일링 스탑 (max(최고가*0.92, 평단가))")
-    print("=" * 75)
+def _fetch_all(build_query, page=1000):
+    rows, start = [], 0
+    while True:
+        res = build_query().range(start, start + page - 1).execute()
+        data = res.data or []
+        rows.extend(data)
+        if len(data) < page:
+            break
+        start += page
+    return rows
 
-    # 1. 1월~9월 사이의 실제 존재하는 전체 영업일(price_date) 날짜 수집
-    print("📅 영업일 목록 수집 중...")
-    date_range = pd.date_range(start=start_date, end=end_date, freq="B")
-    all_dates = []
 
-    for dt in date_range:
-        d_str = dt.strftime("%Y-%m-%d")
-        res_chk = (
-            supabase.table("daily_analysis")
-            .select("price_date")
-            .eq("market", market_type)
-            .eq("price_date", d_str)
-            .limit(1)
-            .execute()
-        )
-        if res_chk.data:
-            all_dates.append(d_str)
+def load_data(client, market, start, end):
+    """(전체 종목 일봉 DataFrame, 지수 DataFrame, 이름 맵) 반환."""
+    index_symbol = "^KS11" if market == "KR" else "^GSPC"
 
-    if not all_dates:
-        print(f"❌ {start_date} ~ {end_date} 기간 내 영업일 데이터가 없습니다.")
-        return
+    idx_rows = _fetch_all(
+        lambda: client.table("daily_analysis")
+        .select("price_date, close_price, ma20, ma200")
+        .eq("ticker", index_symbol)
+        .gte("price_date", start)
+        .lte("price_date", end)
+        .order("price_date")
+    )
+    idx = pd.DataFrame(idx_rows)
+    if idx.empty:
+        sys.exit(f"{index_symbol} 지수 데이터가 {start}~{end} 기간에 없습니다.")
+    for c in ["close_price", "ma20", "ma200"]:
+        idx[c] = pd.to_numeric(idx[c], errors="coerce")
+    idx["price_date"] = pd.to_datetime(idx["price_date"]).dt.strftime("%Y-%m-%d")
+    idx = idx.drop_duplicates("price_date").sort_values("price_date").reset_index(drop=True)
 
-    print(f"📅 총 {len(all_dates)}영업일 확인 완료!")
-
-    # 2. 영업일별로 상위 50개(momentum_rank <= 50) 종목만 순차 수집
-    print("⚡ 영업일별 상위 50개 종목 데이터 수집 중...")
-    all_data_list = []
-
-    for d_str in all_dates:
-        try:
-            res_daily = (
-                supabase.table("daily_analysis")
-                .select(
-                    "price_date, ticker, momentum_rank, weighted_momentum, rs_score, rs_score_10, close_price, ma20, atr"
-                )
-                .eq("market", market_type)
-                .eq("price_date", d_str)
-                .lte("momentum_rank", 50)
-                .order("momentum_rank", desc=False)
-                .execute()
+    cols = "price_date, ticker, momentum_rank, weighted_momentum, rs_score, rs_score_10, close_price, ma20, ma50, atr"
+    all_rows = []
+    dates = idx["price_date"].tolist()
+    print(f"📅 {len(dates)}영업일 데이터 수집 중...")
+    for i, d in enumerate(dates, 1):
+        all_rows.extend(
+            _fetch_all(
+                lambda d=d: client.table("daily_analysis")
+                .select(cols)
+                .eq("market", market)
+                .eq("price_date", d)
+                .order("ticker")
             )
-            if res_daily.data:
-                all_data_list.extend(res_daily.data)
-        except Exception as e:
-            print(f"⚠️ {d_str} 데이터 수집 실패: {e}")
+        )
+        if i % 40 == 0:
+            print(f"   … {i}/{len(dates)}")
+    df = pd.DataFrame(all_rows)
+    if df.empty:
+        sys.exit("종목 데이터가 없습니다.")
+    df["price_date"] = pd.to_datetime(df["price_date"]).dt.strftime("%Y-%m-%d")
+    df["ticker"] = df["ticker"].astype(str).str.strip().str.upper()
+    df = df[~df["ticker"].str.startswith("^")]
+    for c in ["momentum_rank", "weighted_momentum", "rs_score", "rs_score_10", "close_price", "ma20", "ma50", "atr"]:
+        df[c] = pd.to_numeric(df[c], errors="coerce")
 
-    if not all_data_list:
-        print("❌ 수집된 종목 데이터가 없습니다.")
-        return
-
-    df_all = pd.DataFrame(all_data_list)
-    df_all["price_date"] = pd.to_datetime(df_all["price_date"]).dt.strftime(
-        "%Y-%m-%d"
-    )
-    df_all["ticker"] = df_all["ticker"].astype(str).str.strip().str.upper()
-
-    num_cols = [
-        "momentum_rank",
-        "weighted_momentum",
-        "rs_score",
-        "rs_score_10",
-        "close_price",
-        "ma20",
-        "atr",
-    ]
-    for col in num_cols:
-        df_all[col] = pd.to_numeric(df_all[col], errors="coerce")
-
-    print(
-        f"✅ 총 {len(df_all):,d}건 데이터 수집 완료 (총 {len(all_dates)}영업일 × 상위 50개)\n"
-    )
-
-    # 종목 한글명 맵핑 로드
     try:
-        stocks_res = (
-            supabase.table("stocks").select("ticker, name").execute()
-        )
-        stock_name_map = (
-            {
-                str(r["ticker"]).strip().upper(): r["name"]
-                for r in stocks_res.data
-            }
-            if stocks_res.data
-            else {}
-        )
+        names = {
+            str(r["ticker"]).strip().upper(): r["name"]
+            for r in (client.table("stocks").select("ticker, name").limit(10000).execute().data or [])
+        }
     except Exception:
-        stock_name_map = {}
+        names = {}
+    print(f"✅ 종목 데이터 {len(df):,}건 수집 완료")
+    return df, idx, names
 
-    # 3. 백테스트 계좌 상태 초기화
-    initial_capital = 20000000.0  # 초기 자본금 (2,000만원)
-    current_cash = initial_capital
-    portfolio = {}  # {ticker: {'buy_price', 'qty', 'buy_date', 'highest_price', 'entry_atr', 'name'}}
-    closed_trades = []
-    daily_equity_history = []
-    top_n_cfg = 7
 
-    # 4. 일별 백테스트 시뮬레이션
-    for target_date in all_dates:
-        df_daily = df_all[df_all["price_date"] == target_date].copy()
-        if df_daily.empty:
+# ───────────────────────── 시뮬레이션 ─────────────────────────
+def simulate(df, idx, names, cfg):
+    """cfg: dict(capital, fee_pct, slip_pct, staged, recov, breadth, breadth_th, rs_accel, corr, corr_th,
+    atr_size, regime). 반환: (metrics dict, trades DataFrame, equity DataFrame)"""
+    capital = float(cfg.get("capital", 20_000_000))
+    fee = float(cfg.get("fee_pct", 0.0)) / 100.0
+    slip = float(cfg.get("slip_pct", 0.0)) / 100.0
+
+    dates = idx["price_date"].tolist()
+    idx_close = dict(zip(idx["price_date"], idx["close_price"]))
+    idx_ma20 = dict(zip(idx["price_date"], idx["ma20"]))
+    idx_ma200 = dict(zip(idx["price_date"], idx["ma200"]))
+    below = {d: (idx_ma20[d] or 0) > 0 and idx_close[d] < idx_ma20[d] for d in dates}
+
+    by_date = {d: g.set_index("ticker") for d, g in df.groupby("price_date")}
+    close_pivot = df.pivot_table(index="price_date", columns="ticker", values="close_price").sort_index()
+    ret_pivot = close_pivot.pct_change()
+
+    # 시장 폭: MA20 위 종목 비율
+    breadth = {}
+    for d, g in by_date.items():
+        v = g[g["ma20"] > 0]
+        breadth[d] = float((v["close_price"] > v["ma20"]).mean() * 100) if len(v) else np.nan
+
+    cash = capital
+    pos = {}  # ticker -> dict
+    sold_recent = {}  # ticker -> (sell_date, sell_price)
+    trades, equity = [], []
+
+    for di, d in enumerate(dates):
+        g = by_date.get(d)
+        if g is None:
             continue
+        prices = g["close_price"].to_dict()
 
-        daily_prices = dict(zip(df_daily["ticker"], df_daily["close_price"]))
-        daily_ma20 = dict(zip(df_daily["ticker"], df_daily["ma20"]))
+        # 레짐 판정 (db.get_market_regime 과 동일: 최근 3거래일이 모두 MA20 아래면 약세)
+        reduce = below[d]
+        stop_new = di >= 2 and all(below[x] for x in dates[di - 2: di + 1])
+        use_regime = cfg.get("regime", True)
+        is_bull = (not reduce) if use_regime else True
+        if use_regime and cfg.get("staged"):
+            is_bull = not stop_new
+        liquidate = use_regime and (stop_new or not is_bull)
 
-        # 4-1. 보유 종목 평가액 & 최고가 갱신 및 청산 조건 검사
-        sell_list = []
-        for t_code, p_info in list(portfolio.items()):
-            c_price = daily_prices.get(t_code, p_info["buy_price"])
-            ma20 = daily_ma20.get(t_code, 0.0)
+        no_new_buy = False
+        if cfg.get("idx200", True) and (idx_ma200.get(d) or 0) > 0 and idx_close[d] < idx_ma200[d]:
+            no_new_buy = True
+        if use_regime and cfg.get("staged") and reduce and not stop_new:
+            no_new_buy = True
+        if cfg.get("recov") and di >= 1 and not all(not below[x] for x in dates[max(0, di - 1): di + 1]):
+            no_new_buy = True
+        if cfg.get("breadth") and pd.notna(breadth.get(d)) and breadth[d] < cfg.get("breadth_th", 40):
+            no_new_buy = True
 
-            p_info["highest_price"] = max(p_info["highest_price"], c_price)
-            b_price = p_info["buy_price"]
-            h_price = p_info["highest_price"]
-            e_atr = p_info["entry_atr"]
+        # 전일 종가가 MA20 아래였던 종목 (MA20 2일 연속 이탈 판정용)
+        prev_below = {}
+        if di >= 1 and by_date.get(dates[di - 1]) is not None:
+            pg = by_date[dates[di - 1]]
+            prev_below = ((pg["ma20"] > 0) & (pg["close_price"] < pg["ma20"])).to_dict()
 
-            # 청산 규칙 1: ATR 손절 (-2.5x)
-            if c_price <= (b_price - 2.5 * e_atr):
-                sell_list.append((t_code, "ATR 손절"))
+        # 1) 청산
+        for t in list(pos.keys()):
+            p = pos[t]
+            c = prices.get(t)
+            if c is None or pd.isna(c):
                 continue
-
-            # 청산 규칙 2: +8% 이상 달성 시 트레일링 스탑 (최소 본절 보장)
-            if h_price >= b_price * 1.08:
-                ts_price = max(h_price * 0.92, b_price)
-                if c_price <= ts_price:
-                    sell_list.append((t_code, "익절/본절 트레일링스탑"))
-                    continue
-
-            # 청산 규칙 3: MA20 이탈
-            if ma20 > 0 and c_price < ma20:
-                sell_list.append((t_code, "MA20 이탈"))
-                continue
-
-        # 4-2. 매도 정산
-        for sticker, reason in sell_list:
-            if sticker in portfolio:
-                p_item = portfolio.pop(sticker)
-                sell_price = daily_prices.get(sticker, p_item["buy_price"])
-                profit_amt = (sell_price - p_item["buy_price"]) * p_item["qty"]
-                profit_rate = (
-                    ((sell_price / p_item["buy_price"]) - 1.0) * 100
-                    if p_item["buy_price"] > 0
-                    else 0.0
-                )
-
-                current_cash += sell_price * p_item["qty"]
-                closed_trades.append({
-                    "ticker": sticker,
-                    "name": p_item["name"],
-                    "buy_date": p_item["buy_date"],
-                    "sell_date": target_date,
-                    "buy_price": p_item["buy_price"],
-                    "sell_price": sell_price,
-                    "qty": p_item["qty"],
-                    "profit_amt": profit_amt,
-                    "profit_rate": profit_rate,
-                    "reason": reason,
+            p["high"] = max(p["high"], c)
+            reason = None
+            ma20 = g["ma20"].get(t, np.nan)
+            if liquidate:
+                reason = "레짐 전환"
+            elif c <= p["buy"] - ATR_STOP_MULT * p["atr"]:
+                reason = "ATR 손절"
+            elif p["high"] >= p["buy"] * TRAIL_TRIGGER and c <= max(p["high"] * TRAIL_KEEP, p["buy"]):
+                reason = "트레일링스탑"
+            elif pd.notna(ma20) and ma20 > 0 and c < ma20 and prev_below.get(t, False):
+                reason = "MA20 2일 연속 이탈"
+            if reason:
+                px = c * (1 - slip)
+                cash += px * p["qty"] * (1 - fee)
+                trades.append({
+                    "ticker": t, "name": names.get(t, t), "buy_date": p["date"], "sell_date": d,
+                    "buy_price": p["buy"], "sell_price": px, "qty": p["qty"],
+                    "profit_amt": (px - p["buy"]) * p["qty"] - (p["buy"] * p["qty"] * fee) - (px * p["qty"] * fee),
+                    "profit_rate": (px / p["buy"] - 1) * 100, "reason": reason,
                 })
+                sold_recent[t] = (d, px)
+                del pos[t]
 
-        # 4-3. 신규 매수 스크리닝 (전략 3: 순위<=15, RS>0, 종가>MA20)
-        cond_buy = (
-            (df_daily["momentum_rank"] <= 15)
-            & (df_daily["rs_score"] > 0)
-            & (df_daily["rs_score_10"] > 0)
-            & (df_daily["ma20"] > 0)
-            & (df_daily["close_price"] > df_daily["ma20"])
-        )
-        candidates = df_daily[cond_buy].copy()
-        candidates["이격도"] = (
-            (candidates["close_price"] / candidates["ma20"]) - 1.0
-        ) * 100
-        candidates = candidates.sort_values(by="이격도", ascending=True)
-
-        empty_slots = top_n_cfg - len(portfolio)
-
-        if empty_slots > 0 and not candidates.empty:
-            eval_total = current_cash + sum(
-                daily_prices.get(t, info["buy_price"]) * info["qty"]
-                for t, info in portfolio.items()
+        # 2) 신규 매수
+        if (not no_new_buy) and (not stop_new) and is_bull and len(pos) < TOP_N:
+            cond = (
+                (g["momentum_rank"] <= RANK_CUT) & (g["rs_score"] > 0) & (g["rs_score_10"] > 0)
+                & (g["ma20"] > 0) & (g["close_price"] > g["ma20"])
             )
-            slot_budget = eval_total / top_n_cfg
+            cand = g[cond].copy()
+            cand["gap"] = (cand["close_price"] / cand["ma20"] - 1) * 100
+            cand = cand.sort_values("gap")
+            if cfg.get("rs_accel") and len(cand) > 1:
+                gr = cand["gap"].rank(method="first")
+                ar = (cand["rs_score_10"] - cand["rs_score"]).rank(ascending=False, method="first")
+                cand = cand.assign(_s=gr + ar).sort_values(["_s", "gap"]).drop(columns="_s")
 
-            for _, buy_row in candidates.iterrows():
-                bticker = buy_row["ticker"]
-                if bticker in portfolio:
-                    continue
-                if empty_slots <= 0:
+            corr = None
+            if cfg.get("corr") and len(cand):
+                hist = ret_pivot.loc[:d].tail(60)
+                use = list(dict.fromkeys(t for t in list(cand.index) + list(pos.keys()) if t in hist.columns))
+                if len(use) > 1:
+                    corr = hist[use].corr(min_periods=20)
+
+            equity_now = cash + sum(prices.get(t, p["buy"]) * p["qty"] for t, p in pos.items())
+            budget = equity_now / TOP_N
+            chosen = []
+            for t, row in cand.iterrows():
+                if len(pos) + len(chosen) >= TOP_N:
                     break
+                if t in pos:
+                    continue
+                if t in sold_recent:
+                    sd, sp = sold_recent[t]
+                    if (pd.to_datetime(d) - pd.to_datetime(sd)).days <= COOLDOWN_DAYS and row["close_price"] <= sp:
+                        continue
+                if corr is not None and t in corr.index:
+                    others = list(pos.keys()) + chosen
+                    if any(o in corr.columns and o != t and pd.notna(corr.loc[t, o]) and corr.loc[t, o] >= cfg.get("corr_th", 0.85) for o in others):
+                        continue
+                chosen.append(t)
+                c = float(row["close_price"])
+                atr = float(row["atr"]) if pd.notna(row["atr"]) else 0.0
+                amt = budget
+                if cfg.get("atr_size") and atr > 0 and c > 0:
+                    amt = min(amt, equity_now * 0.02 / (ATR_STOP_MULT * atr / c))
+                px = c * (1 + slip)
+                cost_total = amt
+                if cost_total > cash or px <= 0:
+                    chosen.pop()
+                    continue
+                qty = cost_total / (px * (1 + fee))
+                cash -= cost_total
+                pos[t] = {"buy": px, "qty": qty, "date": d, "high": c, "atr": atr}
 
-                b_price = float(buy_row["close_price"])
-                b_atr = float(buy_row["atr"]) if pd.notna(buy_row["atr"]) else 0.0
+        eq = cash + sum(prices.get(t, p["buy"]) * p["qty"] for t, p in pos.items())
+        equity.append({"date": d, "equity": eq, "positions": len(pos)})
 
-                if b_price > 0 and current_cash >= slot_budget:
-                    b_qty = slot_budget / b_price
-                    current_cash -= slot_budget
+    eqdf = pd.DataFrame(equity)
+    trdf = pd.DataFrame(trades)
+    if eqdf.empty:
+        return {}, trdf, eqdf
 
-                    portfolio[bticker] = {
-                        "buy_price": b_price,
-                        "qty": b_qty,
-                        "buy_date": target_date,
-                        "highest_price": b_price,
-                        "entry_atr": b_atr,
-                        "name": stock_name_map.get(bticker, bticker),
-                    }
-                    empty_slots -= 1
+    final = float(eqdf["equity"].iloc[-1])
+    peak = eqdf["equity"].cummax()
+    mdd = float(((eqdf["equity"] - peak) / peak * 100).min())
+    first_i, last_i = idx["close_price"].iloc[0], idx["close_price"].iloc[-1]
+    n = len(trdf)
+    wins = trdf[trdf["profit_amt"] > 0] if n else trdf
+    losses = trdf[trdf["profit_amt"] < 0] if n else trdf
+    pf = (wins["profit_amt"].sum() / abs(losses["profit_amt"].sum())) if n and len(losses) and losses["profit_amt"].sum() != 0 else np.nan
+    m = {
+        "최종자산": final,
+        "수익률(%)": (final / capital - 1) * 100,
+        "벤치마크(%)": (last_i / first_i - 1) * 100,
+        "MDD(%)": mdd,
+        "거래수": n,
+        "승률(%)": (len(wins) / n * 100) if n else 0.0,
+        "평균수익률(%)": float(trdf["profit_rate"].mean()) if n else 0.0,
+        "손익비(PF)": pf,
+        "평균보유종목": float(eqdf["positions"].mean()),
+    }
+    return m, trdf, eqdf
 
-        # 4-4. 당일 총 평가 자산 집계
-        daily_total_equity = current_cash + sum(
-            daily_prices.get(t, info["buy_price"]) * info["qty"]
-            for t, info in portfolio.items()
+
+# ───────────────────────── 리포트 ─────────────────────────
+def fmt_metrics_table(rows):
+    cols = ["시나리오", "수익률(%)", "벤치마크(%)", "MDD(%)", "거래수", "승률(%)", "손익비(PF)", "최종자산"]
+    out = ["| " + " | ".join(cols) + " |", "|" + "|".join(["---"] * len(cols)) + "|"]
+    for name, m in rows:
+        if not m:
+            continue
+        out.append(
+            f"| {name} | {m['수익률(%)']:+.2f} | {m['벤치마크(%)']:+.2f} | {m['MDD(%)']:.2f} | {m['거래수']} | "
+            f"{m['승률(%)']:.1f} | {m['손익비(PF)']:.2f} | {m['최종자산']:,.0f} |"
         )
-        daily_equity_history.append({
-            "date": target_date,
-            "equity": daily_total_equity,
-        })
+    return "\n".join(out)
 
-    # 5. 종합 성과 리포트 산출
-    df_equity = pd.DataFrame(daily_equity_history)
-    if df_equity.empty:
-        print("❌ 성과 데이터를 집계할 수 없습니다.")
+
+def _md(df):
+    try:
+        return df.to_markdown()
+    except Exception:
+        return "```\n" + df.to_string() + "\n```"
+
+
+def detail_report(m, trdf, eqdf):
+    lines = []
+    if trdf is not None and len(trdf):
+        lines.append("### 청산 사유별")
+        g = trdf.groupby("reason").agg(건수=("ticker", "count"), 평균수익률=("profit_rate", "mean"), 손익합=("profit_amt", "sum")).round(2)
+        lines.append(_md(g))
+        e = eqdf.copy()
+        e["month"] = e["date"].str[:7]
+        mm = e.groupby("month")["equity"].agg(["first", "last"])
+        mm["월수익률(%)"] = ((mm["last"] / mm["first"]) - 1) * 100
+        lines.append("\n### 월별 수익률(월 첫 평가 대비)")
+        mt = mm[["월수익률(%)"]].round(2)
+        lines.append(_md(mt))
+    return "\n".join(lines)
+
+
+def save_trades_to_db(client, trades):
+    if trades is None or trades.empty:
         return
+    try:
+        client.table("backtest_trades").delete().neq("id", 0).execute()
+        recs = [
+            {
+                "ticker": r["ticker"], "name": r["name"], "buy_date": r["buy_date"], "sell_date": r["sell_date"],
+                "buy_price": float(r["buy_price"]), "sell_price": float(r["sell_price"]), "quantity": float(r["qty"]),
+                "profit_amount": float(r["profit_amt"]), "profit_rate": float(r["profit_rate"]), "exit_reason": r["reason"],
+            }
+            for _, r in trades.iterrows()
+        ]
+        for i in range(0, len(recs), 100):
+            client.table("backtest_trades").insert(recs[i: i + 100]).execute()
+        print(f"✅ backtest_trades 에 {len(recs)}건 저장")
+    except Exception as e:
+        print(f"⚠️ DB 저장 실패: {e}")
 
-    final_equity = df_equity.iloc[-1]["equity"]
-    cumulative_return = (
-        (final_equity - initial_capital) / initial_capital
-    ) * 100
 
-    df_equity["peak"] = df_equity["equity"].cummax()
-    df_equity["drawdown"] = (
-        (df_equity["equity"] - df_equity["peak"]) / df_equity["peak"]
-    ) * 100
-    mdd = df_equity["drawdown"].min()
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--market", default="KR", choices=["KR", "US"])
+    ap.add_argument("--start", default="2026-01-01")
+    ap.add_argument("--end", default="2026-12-31")
+    ap.add_argument("--capital", type=float, default=None)
+    ap.add_argument("--fee_pct", type=float, default=None, help="편도 수수료+세금 %% (기본 KR 0.1 / US 0.05)")
+    ap.add_argument("--slip_pct", type=float, default=0.1, help="편도 슬리피지 %% (기본 0.1)")
+    ap.add_argument("--no_idx200", action="store_true", help="지수 MA200 아래 신규매수 금지 조건 끄기")
+    ap.add_argument("--no_regime", action="store_true", help="지수 레짐 필터 끄기")
+    ap.add_argument("--staged", action="store_true")
+    ap.add_argument("--recov", action="store_true")
+    ap.add_argument("--breadth", action="store_true")
+    ap.add_argument("--breadth_th", type=float, default=40)
+    ap.add_argument("--rs_accel", action="store_true")
+    ap.add_argument("--corr", action="store_true")
+    ap.add_argument("--corr_th", type=float, default=0.85)
+    ap.add_argument("--atr_size", action="store_true")
+    ap.add_argument("--compare", action="store_true", help="기본 전략과 각 보완 옵션을 한 표로 비교")
+    ap.add_argument("--save_db", action="store_true", help="결과 매매를 backtest_trades 에 저장(기존 내용 삭제)")
+    # 이전 버전 호환: python backtest.py 2026-01-01 2026-09-30
+    argv = sys.argv[1:]
+    if len(argv) >= 2 and not argv[0].startswith("-"):
+        argv = ["--start", argv[0], "--end", argv[1]] + argv[2:]
+    a = ap.parse_args(argv)
 
-    df_trades = pd.DataFrame(closed_trades)
-    total_trades_count = len(df_trades)
+    capital = a.capital or (20_000_000 if a.market == "KR" else 6000.0)
+    fee = a.fee_pct if a.fee_pct is not None else (0.1 if a.market == "KR" else 0.05)
 
-    if total_trades_count > 0:
-        wins = df_trades[df_trades["profit_amt"] > 0]
-        losses = df_trades[df_trades["profit_amt"] < 0]
+    client = get_client()
+    df, idx, names = load_data(client, a.market, a.start, a.end)
 
-        win_rate = (len(wins) / total_trades_count) * 100
-        avg_profit = wins["profit_amt"].mean() if not wins.empty else 0.0
-        avg_loss = (
-            abs(losses["profit_amt"].mean()) if not losses.empty else 0.0
-        )
-        profit_factor = (avg_profit / avg_loss) if avg_loss > 0 else 999.0
-        avg_return_per_trade = df_trades["profit_rate"].mean()
+    base = dict(capital=capital, fee_pct=fee, slip_pct=a.slip_pct, regime=not a.no_regime, idx200=not a.no_idx200)
+    user = dict(base, staged=a.staged, recov=a.recov, breadth=a.breadth, breadth_th=a.breadth_th,
+                rs_accel=a.rs_accel, corr=a.corr, corr_th=a.corr_th, atr_size=a.atr_size)
+
+    os.makedirs("backtest_out", exist_ok=True)
+    head = (f"# Quant Alpha 백테스트 · {a.market} · {idx['price_date'].iloc[0]} ~ {idx['price_date'].iloc[-1]}\n"
+            f"- 초기자금 {capital:,.0f}, 편도 비용 {fee}% + 슬리피지 {a.slip_pct}%, Top{TOP_N}, 순위≤{RANK_CUT}\n"
+            f"- 벤치마크: {'KOSPI(^KS11)' if a.market == 'KR' else 'S&P500(^GSPC)'}\n")
+
+    if a.compare:
+        scen = [
+            ("기본(현행 전략)", base),
+            ("레짐 끔(참고)", dict(base, regime=False)),
+            ("지수 MA200 조건 끔(참고)", dict(base, idx200=False)),
+            ("+3단계 레짐", dict(base, staged=True)),
+            ("+지수 2일 안착", dict(base, recov=True)),
+            (f"+시장 폭<{a.breadth_th:.0f}% 보류", dict(base, breadth=True, breadth_th=a.breadth_th)),
+            ("+RS 가속 우선", dict(base, rs_accel=True)),
+            (f"+상관≥{a.corr_th} 제외", dict(base, corr=True, corr_th=a.corr_th)),
+            ("+ATR 변동성 비중", dict(base, atr_size=True)),
+            ("보완 전부", dict(base, staged=True, recov=True, breadth=True, breadth_th=a.breadth_th,
+                              rs_accel=True, corr=True, corr_th=a.corr_th, atr_size=True)),
+        ]
+        rows = []
+        for name, cfg in scen:
+            m, _, _ = simulate(df, idx, names, cfg)
+            rows.append((name, m))
+        md = head + "\n## 시나리오 비교\n" + fmt_metrics_table(rows)
+        m, trdf, eqdf = simulate(df, idx, names, base)
     else:
-        win_rate = avg_return_per_trade = profit_factor = 0.0
+        m, trdf, eqdf = simulate(df, idx, names, user)
+        md = head + "\n## 결과\n" + fmt_metrics_table([("선택 옵션", m)]) + "\n\n" + detail_report(m, trdf, eqdf)
 
-    print("\n" + "=" * 75)
-    print("📊 Top 7 전략 [1월~9월 전체] 백테스트 종합 성과 리포트")
-    print("=" * 75)
-    print(f"• 테스트 기간       : {start_date} ~ {end_date}")
-    print(f"• 총 영업일 수       : {len(all_dates)}일")
-    print(f"• 초기 자본금       : {initial_capital:,.0f}원")
-    print(f"• 최종 평가 자산    : {final_equity:,.0f}원")
-    print(f"• 누적 수익률       : {cumulative_return:+.2f}%")
-    print(f"• 최대 낙폭 (MDD)    : {mdd:.2f}%")
-    print("-" * 75)
-    print(f"• 총 청산 거래 건수 : {total_trades_count}건")
-    print(f"• 승률 (Win Rate)   : {win_rate:.1f}%")
-    print(f"• 건당 평균 수익률  : {avg_return_per_trade:+.2f}%")
-    print(f"• 손익비 (PF)       : {profit_factor:.2f}")
-    print("=" * 75)
-
-    # 6. 상세 매매 이력 콘솔 출력
-    if total_trades_count > 0:
-        print("\n📜 [상세 청산 매매 이력]")
-        print("-" * 75)
-        for idx, t in enumerate(closed_trades, 1):
-            sign = "+" if t["profit_rate"] >= 0 else ""
-            print(
-                f"{idx:02d}. [{t['buy_date']} ~ {t['sell_date']}] {t['name']}({t['ticker']})"
-            )
-            print(
-                f"    - 매수가: {t['buy_price']:,.0f}원 | 매도가: {t['sell_price']:,.0f}원"
-            )
-            print(
-                f"    - 손익금: {t['profit_amt']:+,.0f}원 ({sign}{t['profit_rate']:.2f}%) | 사유: {t['reason']}"
-            )
-        print("-" * 75)
-
-    # 7. Supabase DB에 저장 처리
-    if save_to_db:
-        save_trades_to_db(closed_trades)
+    md += "\n\n> 주의: 과거 성과이며 미래를 보장하지 않습니다. 신호일 종가 체결을 가정합니다.\n"
+    print(md)
+    open("backtest_out/summary.md", "w", encoding="utf-8").write(md)
+    if trdf is not None and len(trdf):
+        trdf.to_csv("backtest_out/trades.csv", index=False, encoding="utf-8-sig")
+    if eqdf is not None and len(eqdf):
+        eqdf.to_csv("backtest_out/equity.csv", index=False)
+    step = os.environ.get("GITHUB_STEP_SUMMARY")
+    if step:
+        with open(step, "a", encoding="utf-8") as f:
+            f.write(md)
+    if a.save_db:
+        save_trades_to_db(client, trdf)
 
 
 if __name__ == "__main__":
-    s_date = sys.argv[1] if len(sys.argv) > 1 else "2026-01-01"
-    e_date = sys.argv[2] if len(sys.argv) > 2 else "2026-09-30"
-
-    run_backtest(start_date=s_date, end_date=e_date, save_to_db=True)
+    main()
