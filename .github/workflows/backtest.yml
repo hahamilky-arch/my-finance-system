@@ -17,8 +17,12 @@ on:
         description: '백테스트 종료일 (YYYY-MM-DD)'
         required: true
         default: '2026-12-31'
+      robust:
+        description: '강건성 분석: 기간 3분할 + 시장 폭 기준(30/40/50%) 민감도 (체크하면 아래 옵션은 무시)'
+        type: boolean
+        default: true
       compare:
-        description: '기본 전략 vs 보완 옵션 비교표 (체크하면 아래 옵션은 무시)'
+        description: '기본 전략 vs 보완 옵션 비교표 (robust 가 꺼져 있을 때만, 체크하면 아래 옵션은 무시)'
         type: boolean
         default: true
       staged:
@@ -75,6 +79,7 @@ jobs:
         SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
       run: |
         ARGS="--market ${{ inputs.market }} --start ${{ inputs.start_date }} --end ${{ inputs.end_date }}"
+        if [ "${{ inputs.robust }}" = "true" ]; then ARGS="$ARGS --robust"; fi
         if [ "${{ inputs.compare }}" = "true" ]; then ARGS="$ARGS --compare"; fi
         if [ "${{ inputs.staged }}" = "true" ]; then ARGS="$ARGS --staged"; fi
         if [ "${{ inputs.recov }}" = "true" ]; then ARGS="$ARGS --recov"; fi
