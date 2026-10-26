@@ -18,6 +18,7 @@ from charts import (
 from db import (
     get_available_dates,
     get_holdings_table,
+    get_index_ma200_ok,
     get_index_recovery_ok,
     get_market_breadth,
     get_market_regime,
@@ -129,6 +130,18 @@ def apply_styles(df):
     return df_s
 
 
+# 시장별 고급 전략 옵션 기본값 (백테스트 기준: KR은 3단계 레짐+시장 폭 40%가 3개 구간 모두 현행보다 우세, US는 현행 유지)
+ADV_DEFAULTS = {
+    "KR": {"staged": True, "breadth": True, "breadth_th": 40},
+    "US": {},
+}
+
+
+def get_adv_opts(market):
+    """저장된 시장별 옵션(적용 버튼) 또는 시장별 기본값."""
+    return st.session_state.get(f"adv_opts_{market}", ADV_DEFAULTS.get(market, {}))
+
+
 def display_trade_list(
     data,
     title,
@@ -215,7 +228,7 @@ def display_trade_list(
             # [옵션] ATR 변동성 비중: 손절폭(2.5×ATR) 기준 손실이 계좌의 2%를 넘지 않도록 금액 제한
             row_target = target_amount
             row_fmt = fmt_str
-            if button_label == "매수" and st.session_state.get("adv_opts", {}).get("atr_size"):
+            if button_label == "매수" and get_adv_opts(market_type).get("atr_size"):
                 _atr_v = float(row.get("atr", 0.0) or 0.0)
                 _px = float(row.get("종가", 0.0) or 0.0)
                 if _atr_v > 0 and _px > 0 and account_total > 0:
@@ -421,7 +434,7 @@ def _kosdaq_index_cached(date_str):
 
 
 # ── 고급 전략 옵션 (전략 설정 > 적용 시 저장, 기본값은 모두 꺼짐 = 기존 전략과 동일) ──
-_adv = st.session_state.get("adv_opts", {})
+_adv = get_adv_opts(market_type)
 adv_opts = {
     "rs_accel": bool(_adv.get("rs_accel")),
     "corr_cap": bool(_adv.get("corr_cap")),
@@ -517,19 +530,38 @@ if df_display is not None:
     with tab1:
         # 레짐(stop_new_buy / reduce_holdings)은 상단에서 db.get_market_regime()으로 한 번만 판정해 신호·화면이 같은 값을 사용
 
+        _staged_on = bool(_adv.get("staged")) and ("자동" in saved_mode) and current_engine_key == "strat3_top7"
+        _idx200_ok = get_index_ma200_ok(market_type, target_date_str) if current_engine_key == "strat3_top7" else True
+        _extra_hold = [r for r in adv_opts.get("no_new_buy_reason", "").split(" / ") if r and "조정 레짐" not in r]
+        if not _idx200_ok:
+            _extra_hold.append(f"{target_market_name} 지수가 MA200 아래")
+
         if stop_new_buy:
-            action_title = "신규 매수 중지"
-            action_desc = f"{target_market_name} 지수가 MA20 아래에 3일 연속 머물러 신규 매수를 중단합니다."
-            regime_label = "Regime · 하락 (Bear)"
-            regime_tooltip = f"{target_market_name} 지수가 MA20을 3일 연속 하회하여 신규 매수가 중지된 상태입니다."
+            action_title = "전량 청산 · 신규 매수 중지" if current_engine_key == "strat3_top7" else "신규 매수 중지"
+            action_desc = f"{target_market_name} 지수가 MA20 아래에 3일 연속 머물러 약세로 판정했습니다. 신규 매수를 중단하고 보유 종목은 정리합니다."
+            regime_label = "Regime · 약세 (Bear)"
+            regime_tooltip = f"{target_market_name} 지수가 MA20을 3일 연속 하회한 약세 단계입니다. 신규 매수 중지, 보유 종목 청산 신호."
+        elif reduce_holdings and _staged_on:
+            action_title = "조정 · 신규 매수 보류"
+            action_desc = (
+                f"{target_market_name} 지수가 MA20 아래(조정 단계)입니다. 신규 매수는 보류하고, 보유 종목은 개별 청산 신호"
+                "(ATR 손절·트레일링·MA20 2일 이탈)만 따릅니다. 3일 연속 이탈하면 약세로 전환해 전량 청산합니다."
+            )
+            regime_label = "Regime · 조정 (Caution)"
+            regime_tooltip = f"3단계 레짐: {target_market_name} 지수 MA20 하회(조정). 신규 매수 보류, 보유는 개별 규칙 유지, 3일 연속 시 약세 전환."
         elif reduce_holdings:
-            action_title = "보유 비중 축소"
-            action_desc = f"{target_market_name} 지수가 MA20 아래에 있어 관망 및 기존 포지션 비중 축소를 권장합니다."
+            action_title = "보유 종목 정리" if current_engine_key == "strat3_top7" else "보유 비중 축소"
+            action_desc = f"{target_market_name} 지수가 MA20 아래에 있어 신규 매수를 쉬고 기존 포지션을 줄이는 것을 권장합니다."
             regime_label = "Regime · 경계 (Caution)"
             regime_tooltip = f"{target_market_name} 지수가 MA20 아래에 위치하여 매수 자제 및 기존 비중 축소가 권장됩니다."
+        elif _extra_hold:
+            action_title = "신규 매수 보류 · 보유 유지"
+            action_desc = f"지수는 MA20 위지만 {', '.join(_extra_hold)}라서 신규 매수는 보류합니다. 보유 종목은 개별 청산 신호를 따릅니다."
+            regime_label = "Regime · 상승 (Bull) · 매수 보류"
+            regime_tooltip = f"지수 추세는 양호하나 추가 필터({', '.join(_extra_hold)})로 신규 매수가 보류된 상태입니다."
         else:
             action_title = "정상 매수 & 보유"
-            action_desc = f"{target_market_name} 지수가 MA20/MA200 위에 안착하여 알파 주도주 중심의 매수가 허용됩니다."
+            action_desc = f"{target_market_name} 지수가 MA20 위에 안착하여 알파 주도주 중심의 매수가 허용됩니다."
             regime_label = "Regime · 상승 (Bull)"
             regime_tooltip = f"{target_market_name} 지수가 MA20 위에 위치하여 전략에 따라 매수가 허용된 상태입니다."
 
@@ -1291,20 +1323,20 @@ if df_display is not None:
                     key="pop_rebal_select"
                 )
 
-                st.markdown("#### 고급 전략 옵션 (전략 3 기준 · 기본 꺼짐)")
-                st.caption("켜기 전에 백테스트로 확인하세요. 적용 시 이 세션에만 저장됩니다.")
-                _sv = st.session_state.get("adv_opts", {})
-                adv_staged = st.checkbox("3단계 레짐 (조정장은 신규매수만 보류, 약세 3일 연속일 때만 전량 청산)", value=bool(_sv.get("staged")), key="adv_w_staged")
-                adv_recov = st.checkbox("신규 매수 재개 조건: 지수 2일 연속 MA20 위", value=bool(_sv.get("recov")), key="adv_w_recov")
-                adv_breadth = st.checkbox("시장 폭 필터: MA20 위 종목 비율이 기준 미만이면 신규매수 보류", value=bool(_sv.get("breadth")), key="adv_w_breadth")
-                adv_breadth_th = st.slider("시장 폭 기준 (%)", 20, 70, int(_sv.get("breadth_th", 40)), 5, key="adv_w_breadth_th")
-                adv_rs_accel = st.checkbox("RS 가속 우선: 이격도 순위 + RS(10)-RS(90) 순위를 함께 반영", value=bool(_sv.get("rs_accel")), key="adv_w_rs_accel")
-                adv_corr = st.checkbox("상관 상한: 보유/선정 종목과 60일 수익률 상관이 높은 종목 제외", value=bool(_sv.get("corr_cap")), key="adv_w_corr")
-                adv_corr_th = st.slider("상관 상한 (이상이면 제외)", 0.50, 0.95, float(_sv.get("corr_th", 0.85)), 0.05, key="adv_w_corr_th")
-                adv_atr_size = st.checkbox("ATR 변동성 비중: 손절 시 손실이 계좌의 2%가 되도록 매수금액 제한", value=bool(_sv.get("atr_size")), key="adv_w_atr_size")
+                st.markdown(f"#### 고급 전략 옵션 ({market_type} 전용 · 전략 3 기준)")
+                st.caption("KR 기본: 3단계 레짐 + 시장 폭 40% 켜짐 / US 기본: 모두 꺼짐 (백테스트 근거). 변경 후 적용하면 이 세션에만 저장됩니다.")
+                _sv = get_adv_opts(market_type)
+                adv_staged = st.checkbox("3단계 레짐 (조정장은 신규매수만 보류, 약세 3일 연속일 때만 전량 청산)", value=bool(_sv.get("staged")), key=f"adv_w_staged_{market_type}")
+                adv_recov = st.checkbox("신규 매수 재개 조건: 지수 2일 연속 MA20 위", value=bool(_sv.get("recov")), key=f"adv_w_recov_{market_type}")
+                adv_breadth = st.checkbox("시장 폭 필터: MA20 위 종목 비율이 기준 미만이면 신규매수 보류", value=bool(_sv.get("breadth")), key=f"adv_w_breadth_{market_type}")
+                adv_breadth_th = st.slider("시장 폭 기준 (%)", 20, 70, int(_sv.get("breadth_th", 40)), 5, key=f"adv_w_breadth_th_{market_type}")
+                adv_rs_accel = st.checkbox("RS 가속 우선: 이격도 순위 + RS(10)-RS(90) 순위를 함께 반영", value=bool(_sv.get("rs_accel")), key=f"adv_w_rs_accel_{market_type}")
+                adv_corr = st.checkbox("상관 상한: 보유/선정 종목과 60일 수익률 상관이 높은 종목 제외", value=bool(_sv.get("corr_cap")), key=f"adv_w_corr_{market_type}")
+                adv_corr_th = st.slider("상관 상한 (이상이면 제외)", 0.50, 0.95, float(_sv.get("corr_th", 0.85)), 0.05, key=f"adv_w_corr_th_{market_type}")
+                adv_atr_size = st.checkbox("ATR 변동성 비중: 손절 시 손실이 계좌의 2%가 되도록 매수금액 제한", value=bool(_sv.get("atr_size")), key=f"adv_w_atr_size_{market_type}")
 
                 if st.button("적용", type="primary", use_container_width=True, key="pop_btn_apply"):
-                    st.session_state["adv_opts"] = {
+                    st.session_state[f"adv_opts_{market_type}"] = {
                         "staged": adv_staged, "recov": adv_recov, "breadth": adv_breadth, "breadth_th": adv_breadth_th,
                         "rs_accel": adv_rs_accel, "corr_cap": adv_corr, "corr_th": adv_corr_th, "atr_size": adv_atr_size,
                     }
