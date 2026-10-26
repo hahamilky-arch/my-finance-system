@@ -646,13 +646,64 @@ if df_display is not None:
 
         used_cnt, remain_cnt = get_remaining_quota()
         with st.expander(f"🤖 AI 시장 진단 · 잔여 {remain_cnt}/{MAX_DAILY_QUOTA}회", expanded=False):
-            st.caption("Gemini 시장 전체 스마트머니 흐름 & 주도 섹터 AI 진단")
+            st.caption("Gemini 시장 전체 스마트머니 흐름 & 주도 섹터 AI 진단" if market_type == "KR" else "Gemini S&P 500 추세 · 시장 폭 · 모멘텀 주도주 AI 진단")
             st.caption(f"Gemini AI 잔여 사용량: **{remain_cnt}/{MAX_DAILY_QUOTA}회**")
             
-            if st.button("시장 전체 스마트머니 자금 흐름 AI 진단 실행", type="primary", key="btn_run_smart_money_ai_tab1", use_container_width=True):
-                with st.spinner(f"[{market_type}] 시장 전체 수급 및 주도 섹터를 Gemini AI로 분석 중입니다..."):
-                    top_liq_names = []
+            if st.button("시장 전체 스마트머니 자금 흐름 AI 진단 실행" if market_type == "KR" else "미국 시장 추세·모멘텀 AI 진단 실행", type="primary", key="btn_run_smart_money_ai_tab1", use_container_width=True):
+                with st.spinner(f"[{market_type}] " + ("시장 전체 수급 및 주도 섹터" if market_type == "KR" else "지수 추세·시장 폭·모멘텀 주도주") + "를 Gemini AI로 분석 중입니다..."):
+                    # ── 공통: 지수 현황 · 시장 폭 · 모멘텀 상위 · 추천 종목 ──
+                    idx_txt = "데이터 없음"
+                    idx_5d_chg = None
+                    try:
+                        r_idx = supabase.table("daily_analysis").select("price_date, close_price, ma20, ma50, ma200").eq("ticker", target_symbol).lte("price_date", target_date_str).order("price_date", desc=True).limit(6).execute().data or []
+                        if r_idx:
+                            _c = float(r_idx[0]["close_price"])
+                            _parts = [f"종가 {_c:,.2f}"]
+                            for _k, _nm in [("ma20", "MA20"), ("ma50", "MA50"), ("ma200", "MA200")]:
+                                _v = r_idx[0].get(_k)
+                                if _v:
+                                    _parts.append(f"{_nm} 대비 {(_c / float(_v) - 1) * 100:+.1f}%")
+                            if len(r_idx) >= 6 and float(r_idx[5]["close_price"]) > 0:
+                                idx_5d_chg = (_c / float(r_idx[5]["close_price"]) - 1) * 100
+                                _parts.append(f"최근 5일 {idx_5d_chg:+.1f}%")
+                            idx_txt = ", ".join(_parts)
+                    except Exception:
+                        pass
+
+                    breadth_txt = "데이터 없음"
+                    try:
+                        _bd = _breadth_cached(market_type, target_date_str)
+                        if not _bd.empty:
+                            _l = _bd.iloc[-1]
+                            breadth_txt = f"MA20 위 {_l['pct20']:.0f}%, MA50 위 {_l['pct50']:.0f}%, MA200 위 {_l['pct200']:.0f}%"
+                            if len(_bd) > 1:
+                                breadth_txt += f" (MA20 위 비율 전일 대비 {_l['pct20'] - _bd.iloc[-2]['pct20']:+.0f}p)"
+                    except Exception:
+                        pass
+
+                    _top = df_display.sort_values("순위").head(10)
+                    top_mom_txt = "\n".join(
+                        f"- {int(r['순위'])}위 {r['종목명']}: RS(90) {float(r['RS(90)']):.2f}, MA20 이격 {float(r['이격도']):+.1f}%"
+                        for _, r in _top.iterrows()
+                    ) or "데이터 없음"
+                    rec_names = ", ".join(df_display[df_display["매매상태"] == "추천"].sort_values("순위").head(7)["종목명"].astype(str).tolist()) or "없음"
+
+                    summary_market_data = {
+                        "시장타입": market_type,
+                        "조회일자": target_date_str,
+                        "시장상태": action_title,
+                        "레짐": regime_label,
+                        "지수현황": idx_txt,
+                        "시장폭": breadth_txt,
+                        "잔여슬롯": f"{current_holdings_count}/{top_n_cfg}",
+                        "추천종목수": f"{buy_cnt_display}개",
+                        "모멘텀상위": top_mom_txt,
+                        "추천종목명": rec_names,
+                    }
+
+                    # ── KR 전용: 투자자/프로그램 수급 ──
                     if market_type == "KR":
+                        top_liq_names = []
                         try:
                             res_top_liq = supabase.table("daily_top_liquidity").select("name, foreign_net, inst_net").lte("trade_date", target_date_str).order("trade_date", desc=True).limit(100).execute()
                             if res_top_liq.data:
@@ -661,16 +712,34 @@ if df_display is not None:
                                 top_liq_names = df_top_agg.sort_values("total_net", ascending=False).head(10).index.tolist()
                         except Exception:
                             pass
+                        summary_market_data["수급상위주요종목"] = ", ".join(top_liq_names) if top_liq_names else "집계 데이터 없음"
 
-                    summary_market_data = {
-                        "시장타입": market_type,
-                        "조회일자": target_date_str,
-                        "시장상태": action_title,
-                        "잔여슬롯": f"{current_holdings_count}/{top_n_cfg}",
-                        "추천종목수": f"{buy_cnt_display}개",
-                        "수급상위주요종목": ", ".join(top_liq_names) if top_liq_names else "해당없음/집계중",
-                    }
-                    ai_res = analyze_stock_with_gemini(target_symbol, f"{target_market_name} 시장 수급 및 주도 섹터 종합", summary_market_data, "스마트머니 수급 분석")
+                        try:
+                            _inv = pd.DataFrame(supabase.table("market_investor_trends").select("*").lte("trade_date", target_date_str).order("trade_date", desc=True).limit(30).execute().data or [])
+                            for _mk in ["KOSPI", "KOSDAQ"]:
+                                _d = _inv[_inv["market_type"] == _mk].head(5) if not _inv.empty else pd.DataFrame()
+                                if not _d.empty:
+                                    summary_market_data[f"{_mk}_외인_5일누적"] = f"{pd.to_numeric(_d['foreign_net'], errors='coerce').sum():+,.0f}"
+                                    summary_market_data[f"{_mk}_기관_5일누적"] = f"{pd.to_numeric(_d['institution_net'], errors='coerce').sum():+,.0f}"
+                            _prg = pd.DataFrame(supabase.table("market_program_trends").select("*").lte("trade_date", target_date_str).order("trade_date", desc=True).limit(30).execute().data or [])
+                            if len(_prg) >= 5:
+                                _ser = pd.to_numeric(_prg.head(20)["non_arbitrage_net"], errors="coerce")
+                                _sd = _ser.std()
+                                summary_market_data["비차익_ZScore_20일"] = f"{((float(_prg.iloc[0]['non_arbitrage_net']) - _ser.mean()) / _sd):+.2f}" if _sd and _sd > 0 else "-"
+                                summary_market_data["비차익_5일누적"] = f"{pd.to_numeric(_prg.head(5)['non_arbitrage_net'], errors='coerce').sum():+,.0f}"
+                            _kf = summary_market_data.get("KOSPI_외인_5일누적")
+                            if idx_5d_chg is not None and _kf:
+                                _kfv = float(_kf.replace(",", ""))
+                                if idx_5d_chg > 0 and _kfv < 0:
+                                    summary_market_data["다이버전스_신호"] = "지수 상승 vs 외국인 5일 순매도 (괴리)"
+                                elif idx_5d_chg < 0 and _kfv > 0:
+                                    summary_market_data["다이버전스_신호"] = "지수 하락 vs 외국인 5일 순매수 (괴리)"
+                                else:
+                                    summary_market_data["다이버전스_신호"] = "지수와 외국인 수급 방향 일치"
+                        except Exception:
+                            pass
+
+                    ai_res = analyze_stock_with_gemini(target_symbol, f"{target_market_name} 시장 종합", summary_market_data, "스마트머니 수급 분석")
                     st.success("시장 AI 분석 완료")
                     st.markdown(ai_res)
 
