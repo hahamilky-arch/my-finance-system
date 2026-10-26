@@ -3,6 +3,12 @@ name: Strategy Backtest Workflow
 on:
   workflow_dispatch:
     inputs:
+      market:
+        description: '시장'
+        required: true
+        default: 'KR'
+        type: choice
+        options: [KR, US]
       start_date:
         description: '백테스트 시작일 (YYYY-MM-DD)'
         required: true
@@ -10,7 +16,39 @@ on:
       end_date:
         description: '백테스트 종료일 (YYYY-MM-DD)'
         required: true
-        default: '2026-09-30'
+        default: '2026-12-31'
+      compare:
+        description: '기본 전략 vs 보완 옵션 비교표 (체크하면 아래 옵션은 무시)'
+        type: boolean
+        default: true
+      staged:
+        description: '3단계 레짐'
+        type: boolean
+        default: false
+      recov:
+        description: '지수 2일 안착 후 재개'
+        type: boolean
+        default: false
+      breadth:
+        description: '시장 폭 필터 (MA20 위 비율 < 40% 이면 신규매수 보류)'
+        type: boolean
+        default: false
+      rs_accel:
+        description: 'RS 가속 우선'
+        type: boolean
+        default: false
+      corr:
+        description: '상관 상한 (0.85)'
+        type: boolean
+        default: false
+      atr_size:
+        description: 'ATR 변동성 비중'
+        type: boolean
+        default: false
+      save_db:
+        description: 'backtest_trades 테이블에 저장 (기존 내용 삭제됨)'
+        type: boolean
+        default: false
 
 jobs:
   backtest:
@@ -18,22 +56,39 @@ jobs:
 
     steps:
     - name: 📥 코드 체크아웃
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
     - name: 🐍 Python 환경 설정
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
-        python-version: '3.10'
+        python-version: '3.11'
+        cache: 'pip'
 
     - name: 📦 의존성 패키지 설치
       run: |
         python -m pip install --upgrade pip
-        # 📌 streamlit 및 기타 필요 패키지 추가
-        pip install pandas numpy supabase streamlit plotly
+        pip install pandas numpy supabase tabulate
 
-    - name: 🚀 기간별 백테스트 실행
+    - name: 🚀 백테스트 실행
       env:
         SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
         SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
       run: |
-        python backtest.py ${{ github.event.inputs.start_date }} ${{ github.event.inputs.end_date }}
+        ARGS="--market ${{ inputs.market }} --start ${{ inputs.start_date }} --end ${{ inputs.end_date }}"
+        if [ "${{ inputs.compare }}" = "true" ]; then ARGS="$ARGS --compare"; fi
+        if [ "${{ inputs.staged }}" = "true" ]; then ARGS="$ARGS --staged"; fi
+        if [ "${{ inputs.recov }}" = "true" ]; then ARGS="$ARGS --recov"; fi
+        if [ "${{ inputs.breadth }}" = "true" ]; then ARGS="$ARGS --breadth"; fi
+        if [ "${{ inputs.rs_accel }}" = "true" ]; then ARGS="$ARGS --rs_accel"; fi
+        if [ "${{ inputs.corr }}" = "true" ]; then ARGS="$ARGS --corr"; fi
+        if [ "${{ inputs.atr_size }}" = "true" ]; then ARGS="$ARGS --atr_size"; fi
+        if [ "${{ inputs.save_db }}" = "true" ]; then ARGS="$ARGS --save_db"; fi
+        echo "python backtest.py $ARGS"
+        python backtest.py $ARGS
+
+    - name: 📎 결과 파일 업로드
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: backtest-result
+        path: backtest_out/
