@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-from db import get_holdings_table, get_recently_sold_info, supabase
+from db import get_holdings_table, get_index_ma200_ok, get_recently_sold_info, supabase
 
 
 def _build_corr_matrix(market_type, target_date_str, tickers, lookback=60):
@@ -235,7 +235,8 @@ def get_data(
                 highest_price = float(
                     h_row.iloc[0].get("highest_price", buy_price)
                 )
-                entry_atr = float(h_row.iloc[0].get("entry_atr", row["atr"]))
+                _ea = h_row.iloc[0].get("entry_atr", None)
+                entry_atr = float(_ea) if (_ea is not None and pd.notna(_ea) and float(_ea) > 0) else float(row["atr"])
                 days_held = (target_dt - buy_dt).days
                 profit_rate_pos = (
                     ((c_price / buy_price) - 1) * 100 if buy_price > 0 else 0.0
@@ -260,8 +261,13 @@ def get_data(
                                 "익절 트레일링스탑 (+8% 달성 후 수익보존)"
                             )
                             continue
-                    if c_price < ma20:
-                        sell_dict[ticker_upper] = "MA20 이탈 (20일선 하회)"
+                    # MA20 이탈: 2거래일 연속 종가가 20일선 아래일 때만 청산
+                    _prev_below = (
+                        pd.notna(row["종가_prev"]) and pd.notna(row["MA20_prev"])
+                        and row["MA20_prev"] > 0 and row["종가_prev"] < row["MA20_prev"]
+                    )
+                    if ma20 > 0 and c_price < ma20 and _prev_below:
+                        sell_dict[ticker_upper] = "MA20 2일 연속 이탈"
                         continue
 
                 elif strategy_engine_mode == "short_term":
@@ -372,6 +378,12 @@ def get_data(
         )
 
     no_new_buy = bool(adv_opts.get("no_new_buy", False))
+    # 지수 MA200 조건: 지수 종가가 200일선 아래면 신규 매수 금지 (전략 3)
+    idx200_ok = True
+    if strategy_engine_mode == "strat3_top7":
+        idx200_ok = get_index_ma200_ok(market_type, target_date_str)
+        if not idx200_ok:
+            no_new_buy = True
     buy_list = set()
     if cycle_passed and (not stop_new_buy) and is_bull_mode and not no_new_buy:
         kept = [t for t in my_holdings_clean if t not in sell_dict]
@@ -416,10 +428,12 @@ def get_data(
         reasons = []
         if no_new_buy and adv_opts.get("no_new_buy_reason"):
             reasons.append(str(adv_opts["no_new_buy_reason"]))
+        if strategy_engine_mode == "strat3_top7" and not idx200_ok:
+            reasons.append("지수 < MA200")
         if t in corr_skipped:
             reasons.append(corr_skipped[t])
         if stop_new_buy:
-            reasons.append("시장경보(KOSPI < MA20)")
+            reasons.append("시장경보(" + ("KOSPI" if market_type == "KR" else "S&P500") + " < MA20 3일 연속)")
         if not is_bull_mode:
             reasons.append("하락장 레짐")
         if not cycle_passed:
