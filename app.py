@@ -200,7 +200,7 @@ def display_trade_list(
                 if strategy_engine_mode == "short_term":
                     reason_desc = f"단기 모멘텀 타점 포착 [추천순위: {rec_rank_display}]"
                 else:
-                    reason_desc = f"진입 조건 충족 (지수 2일 안착 완료) [추천순위: {rec_rank_display}]"
+                    reason_desc = f"진입 조건 충족 [추천순위: {rec_rank_display}]"
 
                 target_pct = (100.0 / top_n_cfg) if top_n_cfg > 0 else 0.0
                 atr_val = float(row.get("atr", 0.0))
