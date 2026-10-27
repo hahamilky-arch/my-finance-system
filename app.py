@@ -1081,6 +1081,8 @@ if df_display is not None:
         df_target = df_display.head(200).copy()
         if "atr" not in df_target.columns:
             df_target["atr"] = 0.0
+        if "sector" not in df_target.columns:  # strategy.py 가 구버전이어도 앱이 죽지 않도록
+            df_target["sector"] = ""
 
         _cnt_rec = int((df_target["매매상태"] == "추천").sum())
         _cnt_sell = int((df_target["매매상태"] == "매도").sum())
