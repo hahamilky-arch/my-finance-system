@@ -94,15 +94,17 @@ def load_data(client, market, start, end):
     for c in ["momentum_rank", "weighted_momentum", "rs_score", "rs_score_10", "close_price", "ma20", "ma50", "atr"]:
         df[c] = pd.to_numeric(df[c], errors="coerce")
 
+    names, sectors = {}, {}
     try:
-        names = {
-            str(r["ticker"]).strip().upper(): r["name"]
-            for r in (client.table("stocks").select("ticker, name").limit(10000).execute().data or [])
-        }
+        for r in (client.table("stocks").select("ticker, name, sector").limit(10000).execute().data or []):
+            t = str(r["ticker"]).strip().upper()
+            names[t] = r["name"]
+            if r.get("sector") and str(r["sector"]).strip():
+                sectors[t] = str(r["sector"]).strip()
     except Exception:
-        names = {}
-    print(f"✅ 종목 데이터 {len(df):,}건 수집 완료")
-    return df, idx, names
+        pass
+    print(f"✅ 종목 데이터 {len(df):,}건 수집 완료 (섹터 {len(sectors)}종목)")
+    return df, idx, names, sectors
 
 
 # ───────────────────────── 시뮬레이션 ─────────────────────────
@@ -231,6 +233,12 @@ def simulate(df, idx, names, cfg):
                     others = list(pos.keys()) + chosen
                     if any(o in corr.columns and o != t and pd.notna(corr.loc[t, o]) and corr.loc[t, o] >= cfg.get("corr_th", 0.85) for o in others):
                         continue
+                cap_n = int(cfg.get("sector_cap", 0) or 0)
+                sec_map = cfg.get("sectors", {})
+                if cap_n > 0 and sec_map.get(t):
+                    same = sum(1 for o in list(pos.keys()) + chosen if sec_map.get(o) == sec_map[t])
+                    if same >= cap_n:
+                        continue
                 chosen.append(t)
                 c = float(row["close_price"])
                 atr = float(row["atr"]) if pd.notna(row["atr"]) else 0.0
@@ -343,6 +351,8 @@ def run_robust(df, idx, names, base, breadth_ths, segments):
         scen.append((f"시장 폭<{th:g}%", dict(base, breadth=True, breadth_th=th)))
     for th in breadth_ths:
         scen.append((f"3단계+시장 폭<{th:g}%", dict(base, staged=True, breadth=True, breadth_th=th)))
+    scen.append(("3단계+폭40+섹터2", dict(base, staged=True, breadth=True, breadth_th=40, sector_cap=2)))
+    scen.append(("섹터 상한 2 단독", dict(base, sector_cap=2)))
     scen.append(("3단계+폭40+RS가속", dict(base, staged=True, breadth=True, breadth_th=40, rs_accel=True)))
     scen.append(("보완 전부(폭40)", dict(base, staged=True, recov=True, breadth=True, breadth_th=40,
                                       rs_accel=True, corr=True, corr_th=0.85, atr_size=True)))
@@ -410,6 +420,7 @@ def main():
     ap.add_argument("--breadth_th", type=float, default=40)
     ap.add_argument("--rs_accel", action="store_true")
     ap.add_argument("--corr", action="store_true")
+    ap.add_argument("--sector_cap", type=int, default=0, help="같은 섹터 최대 보유 종목 수(0=제한 없음)")
     ap.add_argument("--corr_th", type=float, default=0.85)
     ap.add_argument("--atr_size", action="store_true")
     ap.add_argument("--robust", action="store_true", help="기간 분할 + 시장 폭 기준 민감도 분석")
@@ -426,11 +437,11 @@ def main():
     fee = a.fee_pct if a.fee_pct is not None else (0.1 if a.market == "KR" else 0.05)
 
     client = get_client()
-    df, idx, names = load_data(client, a.market, a.start, a.end)
+    df, idx, names, sectors = load_data(client, a.market, a.start, a.end)
 
-    base = dict(capital=capital, fee_pct=fee, slip_pct=a.slip_pct, regime=not a.no_regime, idx200=not a.no_idx200)
+    base = dict(capital=capital, fee_pct=fee, slip_pct=a.slip_pct, regime=not a.no_regime, idx200=not a.no_idx200, sectors=sectors)
     user = dict(base, staged=a.staged, recov=a.recov, breadth=a.breadth, breadth_th=a.breadth_th,
-                rs_accel=a.rs_accel, corr=a.corr, corr_th=a.corr_th, atr_size=a.atr_size)
+                rs_accel=a.rs_accel, corr=a.corr, corr_th=a.corr_th, atr_size=a.atr_size, sector_cap=a.sector_cap)
 
     os.makedirs("backtest_out", exist_ok=True)
     head = (f"# Quant Alpha 백테스트 · {a.market} · {idx['price_date'].iloc[0]} ~ {idx['price_date'].iloc[-1]}\n"
@@ -450,6 +461,8 @@ def main():
             (f"+시장 폭<{a.breadth_th:.0f}% 보류", dict(base, breadth=True, breadth_th=a.breadth_th)),
             ("+RS 가속 우선", dict(base, rs_accel=True)),
             (f"+상관≥{a.corr_th} 제외", dict(base, corr=True, corr_th=a.corr_th)),
+            ("+섹터 상한 2", dict(base, sector_cap=2)),
+            ("+섹터 상한 3", dict(base, sector_cap=3)),
             ("+ATR 변동성 비중", dict(base, atr_size=True)),
             ("보완 전부", dict(base, staged=True, recov=True, breadth=True, breadth_th=a.breadth_th,
                               rs_accel=True, corr=True, corr_th=a.corr_th, atr_size=True)),
