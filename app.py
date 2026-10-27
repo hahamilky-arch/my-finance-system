@@ -130,10 +130,11 @@ def apply_styles(df):
     return df_s
 
 
-# 시장별 고급 전략 옵션 기본값 (백테스트 기준: KR은 3단계 레짐+시장 폭 40%가 3개 구간 모두 현행보다 우세, US는 현행 유지)
+# 시장별 고급 전략 옵션 기본값 (구간 3분할 백테스트 기준)
+# KR: 3단계 레짐 + 시장 폭 30% (모든 구간 플러스) / US: 지수 2일 안착 후 재개 (3개 구간 모두 현행보다 우세)
 ADV_DEFAULTS = {
-    "KR": {"staged": True, "breadth": True, "breadth_th": 40},
-    "US": {},
+    "KR": {"staged": True, "breadth": True, "breadth_th": 30},
+    "US": {"recov": True},
 }
 
 
@@ -1396,7 +1397,7 @@ if df_display is not None:
                 )
 
                 st.markdown(f"#### 고급 전략 옵션 ({market_type} 전용 · 전략 3 기준)")
-                st.caption("KR 기본: 3단계 레짐 + 시장 폭 40% 켜짐 / US 기본: 모두 꺼짐 (백테스트 근거). 변경 후 적용하면 이 세션에만 저장됩니다.")
+                st.caption("KR 기본: 3단계 레짐 + 시장 폭 30% / US 기본: 지수 2일 안착 후 재개 (구간 분할 백테스트 근거). 변경 후 적용하면 이 세션에만 저장됩니다.")
                 _sv = get_adv_opts(market_type)
                 adv_staged = st.checkbox("3단계 레짐 (조정장은 신규매수만 보류, 약세 3일 연속일 때만 전량 청산)", value=bool(_sv.get("staged")), key=f"adv_w_staged_{market_type}")
                 adv_recov = st.checkbox("신규 매수 재개 조건: 지수 2일 연속 MA20 위", value=bool(_sv.get("recov")), key=f"adv_w_recov_{market_type}")
