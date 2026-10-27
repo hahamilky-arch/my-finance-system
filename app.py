@@ -439,6 +439,7 @@ adv_opts = {
     "rs_accel": bool(_adv.get("rs_accel")),
     "corr_cap": bool(_adv.get("corr_cap")),
     "corr_th": float(_adv.get("corr_th", 0.85)),
+    "sector_cap": int(_adv.get("sector_cap", 0) or 0),
     "no_new_buy": False,
     "no_new_buy_reason": "",
 }
@@ -1107,6 +1108,7 @@ if df_display is not None:
             "변동",
             "매매상태",
             "종목명",
+            "sector",
             "종가",
             "상승률",
             "이격도",
@@ -1124,6 +1126,7 @@ if df_display is not None:
             "매매상태": "상태",
             "이격도": "이격(%)",
             "atr": "ATR",
+            "sector": "섹터",
         })
 
         if filter_opt == "추천 종목만":
@@ -1402,12 +1405,15 @@ if df_display is not None:
                 adv_rs_accel = st.checkbox("RS 가속 우선: 이격도 순위 + RS(10)-RS(90) 순위를 함께 반영", value=bool(_sv.get("rs_accel")), key=f"adv_w_rs_accel_{market_type}")
                 adv_corr = st.checkbox("상관 상한: 보유/선정 종목과 60일 수익률 상관이 높은 종목 제외", value=bool(_sv.get("corr_cap")), key=f"adv_w_corr_{market_type}")
                 adv_corr_th = st.slider("상관 상한 (이상이면 제외)", 0.50, 0.95, float(_sv.get("corr_th", 0.85)), 0.05, key=f"adv_w_corr_th_{market_type}")
+                adv_sector = st.checkbox("섹터 상한: 같은 섹터는 보유+신규 합쳐 N종목까지만", value=bool(_sv.get("sector_cap", 0)), key=f"adv_w_sector_{market_type}")
+                adv_sector_n = st.slider("섹터당 최대 종목 수", 1, 4, int(_sv.get("sector_cap", 2) or 2), 1, key=f"adv_w_sector_n_{market_type}")
                 adv_atr_size = st.checkbox("ATR 변동성 비중: 손절 시 손실이 계좌의 2%가 되도록 매수금액 제한", value=bool(_sv.get("atr_size")), key=f"adv_w_atr_size_{market_type}")
 
                 if st.button("적용", type="primary", use_container_width=True, key="pop_btn_apply"):
                     st.session_state[f"adv_opts_{market_type}"] = {
                         "staged": adv_staged, "recov": adv_recov, "breadth": adv_breadth, "breadth_th": adv_breadth_th,
                         "rs_accel": adv_rs_accel, "corr_cap": adv_corr, "corr_th": adv_corr_th, "atr_size": adv_atr_size,
+                        "sector_cap": int(adv_sector_n) if adv_sector else 0,
                     }
                     st.session_state["strategy_engine_mode"] = pop_engine_key
                     st.session_state["pop_saved_mode"] = pop_strategy_mode
