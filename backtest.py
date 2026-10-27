@@ -351,6 +351,11 @@ def run_robust(df, idx, names, base, breadth_ths, segments):
         scen.append((f"시장 폭<{th:g}%", dict(base, breadth=True, breadth_th=th)))
     for th in breadth_ths:
         scen.append((f"3단계+시장 폭<{th:g}%", dict(base, staged=True, breadth=True, breadth_th=th)))
+    scen.append(("지수 2일 안착 단독", dict(base, recov=True)))
+    scen.append(("RS 가속 단독", dict(base, rs_accel=True)))
+    scen.append(("2일 안착+RS 가속", dict(base, recov=True, rs_accel=True)))
+    scen.append(("2일 안착+RS 가속+폭40", dict(base, recov=True, rs_accel=True, breadth=True, breadth_th=40)))
+    scen.append(("섹터 상한 3 단독", dict(base, sector_cap=3)))
     scen.append(("3단계+폭40+섹터2", dict(base, staged=True, breadth=True, breadth_th=40, sector_cap=2)))
     scen.append(("섹터 상한 2 단독", dict(base, sector_cap=2)))
     scen.append(("3단계+폭40+RS가속", dict(base, staged=True, breadth=True, breadth_th=40, rs_accel=True)))
