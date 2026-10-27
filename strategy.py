@@ -178,7 +178,7 @@ def get_data(
     )
 
     df_stocks = pd.DataFrame(
-        supabase.table("stocks").select("ticker, name").execute().data
+        supabase.table("stocks").select("ticker, name, sector").execute().data
     )
     if not df_stocks.empty:
         df_stocks["ticker"] = (
@@ -189,6 +189,10 @@ def get_data(
         columns={"name": "종목명"}
     )
     df_final["종목명"] = df_final["종목명"].fillna(df_final["ticker"])
+    if "sector" not in df_final.columns:
+        df_final["sector"] = None
+    df_final["sector"] = df_final["sector"].fillna("")
+    sector_of = dict(zip(df_final["ticker"].astype(str).str.strip().str.upper(), df_final["sector"]))
     if market_type == "US":
         df_final["종목명"] = df_final.apply(
             lambda r: f"[{r['ticker']}] {r['종목명']}", axis=1
@@ -371,6 +375,7 @@ def get_data(
     corr_matrix = None
     corr_th = float(adv_opts.get("corr_th", 0.0) or 0.0)
     corr_skipped = {}
+    sector_skipped = {}
     if adv_opts.get("corr_cap") and corr_th > 0:
         corr_matrix = _build_corr_matrix(
             market_type, target_date_str,
@@ -409,6 +414,13 @@ def get_data(
                 if hit:
                     corr_skipped[ticker_upper] = f"상관 {corr_th:.2f} 이상({hit[0]})"
                     continue
+            # [옵션] 섹터 상한: 같은 섹터는 보유+선정 합쳐 N종목까지 (섹터 정보 없는 종목은 제한하지 않음)
+            _cap = int(adv_opts.get("sector_cap", 0) or 0)
+            if _cap > 0 and sector_of.get(ticker_upper):
+                _same = sum(1 for o in (kept + list(buy_list)) if sector_of.get(o) == sector_of[ticker_upper])
+                if _same >= _cap:
+                    sector_skipped[ticker_upper] = f"섹터 상한({sector_of[ticker_upper]} {_cap}종목)"
+                    continue
             buy_list.add(ticker_upper)
 
     # 6. 상태 및 개별 세부 제외사유 부여
@@ -432,6 +444,8 @@ def get_data(
             reasons.append("지수 < MA200")
         if t in corr_skipped:
             reasons.append(corr_skipped[t])
+        if t in sector_skipped:
+            reasons.append(sector_skipped[t])
         if stop_new_buy:
             reasons.append("시장경보(" + ("KOSPI" if market_type == "KR" else "S&P500") + " < MA20 3일 연속)")
         if not is_bull_mode:
