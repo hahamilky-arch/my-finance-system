@@ -45,6 +45,9 @@ on:
         description: '상관 상한 (0.85)'
         type: boolean
         default: false
+      sector_cap:
+        description: '같은 섹터 최대 종목 수 (0=제한 없음, 예: 2)'
+        default: '0'
       atr_size:
         description: 'ATR 변동성 비중'
         type: boolean
@@ -87,6 +90,7 @@ jobs:
         if [ "${{ inputs.rs_accel }}" = "true" ]; then ARGS="$ARGS --rs_accel"; fi
         if [ "${{ inputs.corr }}" = "true" ]; then ARGS="$ARGS --corr"; fi
         if [ "${{ inputs.atr_size }}" = "true" ]; then ARGS="$ARGS --atr_size"; fi
+        if [ "${{ inputs.sector_cap }}" != "0" ]; then ARGS="$ARGS --sector_cap ${{ inputs.sector_cap }}"; fi
         if [ "${{ inputs.save_db }}" = "true" ]; then ARGS="$ARGS --save_db"; fi
         echo "python backtest.py $ARGS"
         python backtest.py $ARGS
