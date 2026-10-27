@@ -879,7 +879,7 @@ if df_display is not None:
 
             sub_tab_selected = st.segmented_control(
                 "수급 종목 분류",
-                options=["외인 TOP5", "기관 TOP5", "외인 빈도", "기관 빈도"],
+                options=["외인 TOP5", "기관 TOP5", "외인 누적", "기관 누적", "합산 누적"],
                 default="외인 TOP5",
                 label_visibility="collapsed"
             )
@@ -918,35 +918,48 @@ if df_display is not None:
                 else:
                     st.info("당일 수급 데이터 집계 중입니다.")
 
-            elif sub_tab_selected == "외인 빈도":
+            elif sub_tab_selected in ("외인 누적", "기관 누적", "합산 누적"):
+                # 최근 10거래일 수급 상위 목록 기준: 단순 출현 횟수가 아니라 누적 순매수 금액으로 순위, 순매수일수·연속일수·전략 상태를 함께 표시
                 if not df_liq_10d.empty:
-                    df_f_pos = df_liq_10d[df_liq_10d["foreign_net"] > 0]
-                    freq_f = df_f_pos.groupby(["ticker", "name"]).agg(빈도수=("trade_date", "nunique"), 누적순매수=("foreign_net", "sum")).reset_index().sort_values("빈도수", ascending=False).head(5)
-                    freq_f["종목 (티커)"] = freq_f.apply(lambda r: f"{r['name']} ({r['ticker']})", axis=1)
-                    freq_f["누적순매수(억)"] = freq_f["누적순매수"] / 100.0
-                    
-                    st.dataframe(
-                        freq_f[["종목 (티커)", "빈도수", "누적순매수(억)"]].style.format({
-                            "누적순매수(억)": "{:+,.0f}억",
-                        }).map(lambda v: "color: #d62728;" if float(v) > 0 else ("color: #1f77b4;" if float(v) < 0 else ""), subset=["누적순매수(억)"]),
-                        hide_index=True,
-                        use_container_width=True
-                    )
-
-            elif sub_tab_selected == "기관 빈도":
-                if not df_liq_10d.empty:
-                    df_i_pos = df_liq_10d[df_liq_10d["inst_net"] > 0]
-                    freq_i = df_i_pos.groupby(["ticker", "name"]).agg(빈도수=("trade_date", "nunique"), 누적순매수=("inst_net", "sum")).reset_index().sort_values("빈도수", ascending=False).head(5)
-                    freq_i["종목 (티커)"] = freq_i.apply(lambda r: f"{r['name']} ({r['ticker']})", axis=1)
-                    freq_i["누적순매수(억)"] = freq_i["누적순매수"] / 100.0
-
-                    st.dataframe(
-                        freq_i[["종목 (티커)", "빈도수", "누적순매수(억)"]].style.format({
-                            "누적순매수(억)": "{:+,.0f}억",
-                        }).map(lambda v: "color: #d62728;" if float(v) > 0 else ("color: #1f77b4;" if float(v) < 0 else ""), subset=["누적순매수(억)"]),
-                        hide_index=True,
-                        use_container_width=True
-                    )
+                    _dates = sorted(df_liq_10d["trade_date"].astype(str).unique(), reverse=True)[:10]
+                    _d = df_liq_10d[df_liq_10d["trade_date"].astype(str).isin(_dates)].copy()
+                    _d["foreign_net"] = pd.to_numeric(_d["foreign_net"], errors="coerce").fillna(0)
+                    _d["inst_net"] = pd.to_numeric(_d["inst_net"], errors="coerce").fillna(0)
+                    _col = {"외인 누적": "foreign_net", "기관 누적": "inst_net"}.get(sub_tab_selected, "both_net")
+                    _d["both_net"] = _d["foreign_net"] + _d["inst_net"]
+                    _status = dict(zip(df_display["ticker"].astype(str).str.strip().str.upper(), df_display["매매상태"]))
+                    _rank = dict(zip(df_display["ticker"].astype(str).str.strip().str.upper(), df_display["순위"]))
+                    _rows = []
+                    for (_tk, _nm), _g in _d.groupby(["ticker", "name"]):
+                        _g = _g.sort_values("trade_date", ascending=False)
+                        _pos_days = set(_g[_g[_col] > 0]["trade_date"].astype(str))
+                        _streak = 0
+                        for _dt in _dates:
+                            if _dt in _pos_days:
+                                _streak += 1
+                            else:
+                                break
+                        _tku = str(_tk).strip().upper()
+                        _rows.append({
+                            "종목 (티커)": f"{_nm} ({_tk})",
+                            "누적순매수(억)": float(_g[_col].sum()) / 100.0,
+                            f"순매수일(/{len(_dates)}일)": len(_pos_days),
+                            "연속": _streak,
+                            "모멘텀순위": _rank.get(_tku, None),
+                            "전략": _status.get(_tku, "") or "-",
+                        })
+                    _f = pd.DataFrame(_rows)
+                    if not _f.empty:
+                        _f = _f.sort_values("누적순매수(억)", ascending=False).head(5)
+                        st.dataframe(
+                            _f.style.format({"누적순매수(억)": "{:+,.0f}억", "모멘텀순위": lambda v: f"{int(v)}위" if pd.notna(v) else "-"})
+                            .map(lambda v: "color: #d62728;" if float(v) > 0 else ("color: #1f77b4;" if float(v) < 0 else ""), subset=["누적순매수(억)"]),
+                            hide_index=True,
+                            use_container_width=True
+                        )
+                        st.caption(f"최근 {len(_dates)}거래일 수급 상위 목록에 오른 날의 순매수 합계 기준입니다(목록에 없는 날은 집계되지 않음). '연속'은 기준일부터 거꾸로 이어진 순매수 일수입니다.")
+                    else:
+                        st.info("집계할 수급 데이터가 없습니다.")
 
             with st.expander("당일 수급 포착 전체 종목 목록", expanded=False):
                 if not df_stock_liq.empty:
