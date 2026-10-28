@@ -282,19 +282,19 @@ def draw_integrated_chart(
 
         if "ma20" in df_stock.columns and df_stock["ma20"].notna().any():
             fig.add_trace(
-                go.Scatter(x=df_stock["date_str"], y=df_stock["ma20"], mode="lines", name="MA20", line=dict(color="#f57c00", width=1.5)),
+                go.Scatter(x=df_stock["date_str"], y=df_stock["ma20"], mode="lines", name="MA20", line=dict(color="#e03131", width=1.5)),
                 row=1, col=1
             )
 
         if "ma50" in df_stock.columns and df_stock["ma50"].notna().any():
             fig.add_trace(
-                go.Scatter(x=df_stock["date_str"], y=df_stock["ma50"], mode="lines", name="MA50", line=dict(color="#388e3c", width=1.2)),
+                go.Scatter(x=df_stock["date_str"], y=df_stock["ma50"], mode="lines", name="MA50", line=dict(color="#2f9e44", width=1.2)),
                 row=1, col=1
             )
 
         if "ma200" in df_stock.columns and df_stock["ma200"].notna().any():
             fig.add_trace(
-                go.Scatter(x=df_stock["date_str"], y=df_stock["ma200"], mode="lines", name="MA200", line=dict(color="#8e24aa", width=1.2)),
+                go.Scatter(x=df_stock["date_str"], y=df_stock["ma200"], mode="lines", name="MA200", line=dict(color="#7b2cbf", width=1.2)),
                 row=1, col=1
             )
 
@@ -330,15 +330,15 @@ def draw_integrated_chart(
         # Row 4: 지수
         if not df_merged.empty:
             fig.add_trace(
-                go.Scatter(x=df_merged["date_str"], y=df_merged["close_price"], mode="lines", name="지수종가", line=dict(color="#5e35b1", width=1.5), connectgaps=True),
+                go.Scatter(x=df_merged["date_str"], y=df_merged["close_price"], mode="lines", name="지수종가", line=dict(color="#111111", width=1.5), connectgaps=True),
                 row=4, col=1
             )
             if "ma20" in df_merged.columns and df_merged["ma20"].notna().any():
-                fig.add_trace(go.Scatter(x=df_merged["date_str"], y=df_merged["ma20"], mode="lines", name="지수 MA20", line=dict(color="#f57c00", width=1.0), showlegend=False, connectgaps=True), row=4, col=1)
+                fig.add_trace(go.Scatter(x=df_merged["date_str"], y=df_merged["ma20"], mode="lines", name="지수 MA20", line=dict(color="#e03131", width=1.0), showlegend=False, connectgaps=True), row=4, col=1)
             if "ma50" in df_merged.columns and df_merged["ma50"].notna().any():
-                fig.add_trace(go.Scatter(x=df_merged["date_str"], y=df_merged["ma50"], mode="lines", name="지수 MA50", line=dict(color="#388e3c", width=1.0), showlegend=False, connectgaps=True), row=4, col=1)
+                fig.add_trace(go.Scatter(x=df_merged["date_str"], y=df_merged["ma50"], mode="lines", name="지수 MA50", line=dict(color="#2f9e44", width=1.0), showlegend=False, connectgaps=True), row=4, col=1)
             if "ma200" in df_merged.columns and df_merged["ma200"].notna().any():
-                fig.add_trace(go.Scatter(x=df_merged["date_str"], y=df_merged["ma200"], mode="lines", name="지수 MA200", line=dict(color="#8e24aa", width=1.0), showlegend=False, connectgaps=True), row=4, col=1)
+                fig.add_trace(go.Scatter(x=df_merged["date_str"], y=df_merged["ma200"], mode="lines", name="지수 MA200", line=dict(color="#7b2cbf", width=1.0), showlegend=False, connectgaps=True), row=4, col=1)
 
         if not df_merged.empty and df_merged["vwma100"].notna().any():
             fig.add_trace(go.Scatter(x=df_merged["date_str"], y=df_merged["vwma100"], mode="lines", name="지수 거래량가중 100선", line=dict(color="#f08c00", width=1.0), showlegend=False, connectgaps=True), row=4, col=1)
@@ -365,7 +365,7 @@ def draw_integrated_chart(
                         x1=s_row["date_str"],
                         y0=0,
                         y1=1,
-                        line=dict(color="#2e7d32", width=1.2),
+                        line=dict(color="#111111", width=1.2),
                     )
                 )
 
@@ -374,7 +374,7 @@ def draw_integrated_chart(
                 clean_buy = pd.to_datetime(buy_date).strftime("%Y-%m-%d")
                 if clean_buy in df_stock["date_str"].values:
                     v_shapes.append(
-                        dict(type="line", xref="x", yref="paper", x0=clean_buy, x1=clean_buy, y0=0, y1=1, line=dict(color="#e53935", width=1.8))
+                        dict(type="line", xref="x", yref="paper", x0=clean_buy, x1=clean_buy, y0=0, y1=1, line=dict(color="#e03131", width=1.8))
                     )
             except Exception:
                 pass
