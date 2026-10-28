@@ -1001,9 +1001,9 @@ if df_display is not None:
                     fig_market_idx = gg.Figure()
                     fig_market_idx.add_trace(gg.Scatter(x=df_idx_c["price_date_dt"], y=df_idx_c["close_price"], mode="lines", name=f"{target_market_name} 종가", line=dict(color="#111111", width=2.0)))
                     # 이동평균선은 모두 실선 (MA50 추가)
-                    for _ma_col, _ma_name, _ma_color in [("ma20", "MA20", "#e03131"), ("ma50", "MA50", "#2f9e44"), ("ma200", "MA200", "#7b2cbf"), ("vwma100", "거래량가중 100선", "#111111")]:
+                    for _ma_col, _ma_name, _ma_color in [("ma20", "MA20", "#e03131"), ("ma50", "MA50", "#2f9e44"), ("ma200", "MA200", "#7b2cbf"), ("vwma100", "거래량가중 100선", "#1a237e")]:
                         if _ma_col in df_idx_c.columns and df_idx_c[_ma_col].notna().any():
-                            fig_market_idx.add_trace(gg.Scatter(x=df_idx_c["price_date_dt"], y=df_idx_c[_ma_col], mode="lines", name=_ma_name, line=dict(color=_ma_color, width=1.6, dash=("dot" if _ma_col == "vwma100" else "solid")), connectgaps=True))
+                            fig_market_idx.add_trace(gg.Scatter(x=df_idx_c["price_date_dt"], y=df_idx_c[_ma_col], mode="lines", name=_ma_name, line=dict(color=_ma_color, width=1.6), connectgaps=True))
 
                     # 20일선 이탈일: 얇은 세로선으로 표시
                     breakdown_df = df_idx_c[df_idx_c["ma20_breakdown"]]
@@ -1033,9 +1033,9 @@ if df_display is not None:
                 else:
                     fig_kq = gg.Figure()
                     fig_kq.add_trace(gg.Scatter(x=df_kq_idx["date"], y=df_kq_idx["close"], mode="lines", name="코스닥 종가", line=dict(color="#111111", width=2.0)))
-                    for _c, _n, _clr in [("ma20", "MA20", "#e03131"), ("ma50", "MA50", "#2f9e44"), ("ma200", "MA200", "#7b2cbf"), ("vwma100", "거래량가중 100선", "#111111")]:
+                    for _c, _n, _clr in [("ma20", "MA20", "#e03131"), ("ma50", "MA50", "#2f9e44"), ("ma200", "MA200", "#7b2cbf"), ("vwma100", "거래량가중 100선", "#1a237e")]:
                         if _c in df_kq_idx.columns and df_kq_idx[_c].notna().any():
-                            fig_kq.add_trace(gg.Scatter(x=df_kq_idx["date"], y=df_kq_idx[_c], mode="lines", name=_n, line=dict(color=_clr, width=1.6, dash=("dot" if _c == "vwma100" else "solid")), connectgaps=True))
+                            fig_kq.add_trace(gg.Scatter(x=df_kq_idx["date"], y=df_kq_idx[_c], mode="lines", name=_n, line=dict(color=_clr, width=1.6), connectgaps=True))
                     _below = df_kq_idx["close"] < df_kq_idx["ma20"]
                     _brk = df_kq_idx[_below & (~_below.shift(1, fill_value=False))]
                     for _bd in _brk["date"]:
