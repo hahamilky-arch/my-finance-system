@@ -1001,9 +1001,9 @@ if df_display is not None:
                     fig_market_idx = gg.Figure()
                     fig_market_idx.add_trace(gg.Scatter(x=df_idx_c["price_date_dt"], y=df_idx_c["close_price"], mode="lines", name=f"{target_market_name} 종가", line=dict(color="#111111", width=2.0)))
                     # 이동평균선은 모두 실선 (MA50 추가)
-                    for _ma_col, _ma_name, _ma_color in [("ma20", "MA20", "#e03131"), ("ma50", "MA50", "#2f9e44"), ("ma200", "MA200", "#7b2cbf"), ("vwma100", "거래량가중 100선", "#f08c00")]:
+                    for _ma_col, _ma_name, _ma_color in [("ma20", "MA20", "#e03131"), ("ma50", "MA50", "#2f9e44"), ("ma200", "MA200", "#7b2cbf"), ("vwma100", "거래량가중 100선", "#111111")]:
                         if _ma_col in df_idx_c.columns and df_idx_c[_ma_col].notna().any():
-                            fig_market_idx.add_trace(gg.Scatter(x=df_idx_c["price_date_dt"], y=df_idx_c[_ma_col], mode="lines", name=_ma_name, line=dict(color=_ma_color, width=1.6), connectgaps=True))
+                            fig_market_idx.add_trace(gg.Scatter(x=df_idx_c["price_date_dt"], y=df_idx_c[_ma_col], mode="lines", name=_ma_name, line=dict(color=_ma_color, width=1.6, dash=("dot" if _ma_col == "vwma100" else "solid")), connectgaps=True))
 
                     # 20일선 이탈일: 얇은 세로선으로 표시
                     breakdown_df = df_idx_c[df_idx_c["ma20_breakdown"]]
@@ -1033,9 +1033,9 @@ if df_display is not None:
                 else:
                     fig_kq = gg.Figure()
                     fig_kq.add_trace(gg.Scatter(x=df_kq_idx["date"], y=df_kq_idx["close"], mode="lines", name="코스닥 종가", line=dict(color="#111111", width=2.0)))
-                    for _c, _n, _clr in [("ma20", "MA20", "#e03131"), ("ma50", "MA50", "#2f9e44"), ("ma200", "MA200", "#7b2cbf"), ("vwma100", "거래량가중 100선", "#f08c00")]:
+                    for _c, _n, _clr in [("ma20", "MA20", "#e03131"), ("ma50", "MA50", "#2f9e44"), ("ma200", "MA200", "#7b2cbf"), ("vwma100", "거래량가중 100선", "#111111")]:
                         if _c in df_kq_idx.columns and df_kq_idx[_c].notna().any():
-                            fig_kq.add_trace(gg.Scatter(x=df_kq_idx["date"], y=df_kq_idx[_c], mode="lines", name=_n, line=dict(color=_clr, width=1.6), connectgaps=True))
+                            fig_kq.add_trace(gg.Scatter(x=df_kq_idx["date"], y=df_kq_idx[_c], mode="lines", name=_n, line=dict(color=_clr, width=1.6, dash=("dot" if _c == "vwma100" else "solid")), connectgaps=True))
                     _below = df_kq_idx["close"] < df_kq_idx["ma20"]
                     _brk = df_kq_idx[_below & (~_below.shift(1, fill_value=False))]
                     for _bd in _brk["date"]:
@@ -1257,16 +1257,18 @@ if df_display is not None:
                         df_s_stock["f_cum"] = df_s_stock["foreign_net"].cumsum()
                         df_s_stock["i_cum"] = df_s_stock["inst_net"].cumsum()
                         df_s_stock["trade_date_dt"] = pd.to_datetime(df_s_stock["trade_date"])
+                        df_s_stock["date_ymd"] = df_s_stock["trade_date_dt"].dt.strftime("%Y%m%d")
 
                         c_s1, c_s2 = st.columns([1.2, 1.0])
                         with c_s1:
                             fig_s = gg.Figure()
-                            fig_s.add_trace(gg.Scatter(x=df_s_stock["trade_date_dt"], y=df_s_stock["f_cum"], mode="lines+markers", name="외국인 누적", line=dict(color="#d62728", width=2)))
-                            fig_s.add_trace(gg.Scatter(x=df_s_stock["trade_date_dt"], y=df_s_stock["i_cum"], mode="lines+markers", name="기관 누적", line=dict(color="#2ca02c", width=2)))
+                            fig_s.add_trace(gg.Scatter(x=df_s_stock["date_ymd"], y=df_s_stock["f_cum"], mode="lines+markers", name="외국인 누적", line=dict(color="#d62728", width=2)))
+                            fig_s.add_trace(gg.Scatter(x=df_s_stock["date_ymd"], y=df_s_stock["i_cum"], mode="lines+markers", name="기관 누적", line=dict(color="#2ca02c", width=2)))
                             fig_s.update_layout(height=240, margin=dict(l=10, r=10, t=20, b=20))
+                            fig_s.update_xaxes(type="category", tickangle=-45)
                             st.plotly_chart(fig_s, use_container_width=True, config={'scrollZoom': False})
                         with c_s2:
-                            disp_s = df_s_stock[["trade_date", "close_price", "foreign_net", "inst_net"]].sort_values("trade_date", ascending=False).rename(columns={"trade_date": "일자", "close_price": "종가", "foreign_net": "외국인", "inst_net": "기관"})
+                            disp_s = df_s_stock.assign(trade_date=df_s_stock["date_ymd"])[["trade_date", "close_price", "foreign_net", "inst_net"]].sort_values("trade_date", ascending=False).rename(columns={"trade_date": "일자", "close_price": "종가", "foreign_net": "외국인", "inst_net": "기관"})
                             st.dataframe(disp_s.style.format({"종가": "{:,.0f}원", "외국인": "{:+,.0f}", "기관": "{:+,.0f}"}).map(lambda v: "color: #d62728;" if float(v) > 0 else ("color: #1f77b4;" if float(v) < 0 else ""), subset=["외국인", "기관"]), hide_index=True, use_container_width=True)
 
                 st.write("")
