@@ -428,9 +428,13 @@ def _kosdaq_index_cached(date_str):
         return pd.DataFrame()
     df = df.reset_index()
     df["date"] = pd.to_datetime(df["Date"]).dt.tz_localize(None).dt.normalize()
-    df = df[["date", "Close"]].rename(columns={"Close": "close"}).dropna()
+    df = df[["date", "Close", "Volume"]].rename(columns={"Close": "close", "Volume": "volume"}).dropna(subset=["close"])
     for n in (20, 50, 200):
         df[f"ma{n}"] = df["close"].rolling(n).mean()
+    # 거래량 가중 이동평균(VWMA) 100일
+    _pv = (df["close"] * df["volume"]).rolling(100).sum()
+    _v = df["volume"].rolling(100).sum()
+    df["vwma100"] = (_pv / _v).where(_v > 0)
     return df.tail(120).reset_index(drop=True)
 
 
@@ -979,11 +983,17 @@ if df_display is not None:
         index_chart_title = f"{target_market_name} 지수 · MA20/50/200"
         with st.expander(index_chart_title, expanded=True):
             try:
-                res_idx_chart = supabase.table("daily_analysis").select("price_date, close_price, ma20, ma50, ma200").eq("ticker", target_symbol).lte("price_date", target_date_str).order("price_date", desc=True).limit(120).execute()
+                res_idx_chart = supabase.table("daily_analysis").select("price_date, close_price, volume, ma20, ma50, ma200").eq("ticker", target_symbol).lte("price_date", target_date_str).order("price_date", desc=True).limit(230).execute()
                 if res_idx_chart.data:
                     df_idx_c = pd.DataFrame(res_idx_chart.data)
                     df_idx_c["price_date_dt"] = pd.to_datetime(df_idx_c["price_date"])
                     df_idx_c = df_idx_c.sort_values("price_date_dt").reset_index(drop=True)
+                    # 거래량 가중 100일선 (VWMA100): 전체 구간으로 계산 후 최근 120일만 표시
+                    _cp = pd.to_numeric(df_idx_c["close_price"], errors="coerce")
+                    _vol = pd.to_numeric(df_idx_c["volume"], errors="coerce").fillna(0)
+                    _pvs, _vs = (_cp * _vol).rolling(100).sum(), _vol.rolling(100).sum()
+                    df_idx_c["vwma100"] = (_pvs / _vs).where(_vs > 0)
+                    df_idx_c = df_idx_c.tail(120).reset_index(drop=True)
 
                     df_idx_c["below_ma20"] = df_idx_c["close_price"] < df_idx_c["ma20"]
                     df_idx_c["ma20_breakdown"] = df_idx_c["below_ma20"] & (~df_idx_c["below_ma20"].shift(1, fill_value=False))
@@ -991,7 +1001,7 @@ if df_display is not None:
                     fig_market_idx = gg.Figure()
                     fig_market_idx.add_trace(gg.Scatter(x=df_idx_c["price_date_dt"], y=df_idx_c["close_price"], mode="lines", name=f"{target_market_name} 종가", line=dict(color="#111111", width=2.0)))
                     # 이동평균선은 모두 실선 (MA50 추가)
-                    for _ma_col, _ma_name, _ma_color in [("ma20", "MA20", "#e03131"), ("ma50", "MA50", "#2f9e44"), ("ma200", "MA200", "#7b2cbf")]:
+                    for _ma_col, _ma_name, _ma_color in [("ma20", "MA20", "#e03131"), ("ma50", "MA50", "#2f9e44"), ("ma200", "MA200", "#7b2cbf"), ("vwma100", "거래량가중 100선", "#f08c00")]:
                         if _ma_col in df_idx_c.columns and df_idx_c[_ma_col].notna().any():
                             fig_market_idx.add_trace(gg.Scatter(x=df_idx_c["price_date_dt"], y=df_idx_c[_ma_col], mode="lines", name=_ma_name, line=dict(color=_ma_color, width=1.6), connectgaps=True))
 
@@ -1023,8 +1033,8 @@ if df_display is not None:
                 else:
                     fig_kq = gg.Figure()
                     fig_kq.add_trace(gg.Scatter(x=df_kq_idx["date"], y=df_kq_idx["close"], mode="lines", name="코스닥 종가", line=dict(color="#111111", width=2.0)))
-                    for _c, _n, _clr in [("ma20", "MA20", "#e03131"), ("ma50", "MA50", "#2f9e44"), ("ma200", "MA200", "#7b2cbf")]:
-                        if df_kq_idx[_c].notna().any():
+                    for _c, _n, _clr in [("ma20", "MA20", "#e03131"), ("ma50", "MA50", "#2f9e44"), ("ma200", "MA200", "#7b2cbf"), ("vwma100", "거래량가중 100선", "#f08c00")]:
+                        if _c in df_kq_idx.columns and df_kq_idx[_c].notna().any():
                             fig_kq.add_trace(gg.Scatter(x=df_kq_idx["date"], y=df_kq_idx[_c], mode="lines", name=_n, line=dict(color=_clr, width=1.6), connectgaps=True))
                     _below = df_kq_idx["close"] < df_kq_idx["ma20"]
                     _brk = df_kq_idx[_below & (~_below.shift(1, fill_value=False))]
