@@ -25,6 +25,19 @@ on:
         description: '기본 전략 vs 보완 옵션 비교표 (robust 가 꺼져 있을 때만, 체크하면 아래 옵션은 무시)'
         type: boolean
         default: true
+      fill_compare:
+        description: '체결 가정(신호일/다음 거래일 종가) × 거래량가중 100선 매수조건(위/눌림/돌파) 비교 (체크하면 robust·compare·아래 옵션은 무시)'
+        type: boolean
+        default: false
+      next_day:
+        description: '다음 거래일 종가 체결로 실행 (일반 실행·robust·compare 에 적용)'
+        type: boolean
+        default: false
+      vwma_mode:
+        description: '거래량가중 100선 매수조건 (일반 실행 시)'
+        type: choice
+        options: ['', above, pullback, breakout]
+        default: ''
       staged:
         description: '3단계 레짐'
         type: boolean
@@ -82,6 +95,9 @@ jobs:
         SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
       run: |
         ARGS="--market ${{ inputs.market }} --start ${{ inputs.start_date }} --end ${{ inputs.end_date }}"
+        if [ "${{ inputs.fill_compare }}" = "true" ]; then ARGS="$ARGS --fill_compare"; fi
+        if [ "${{ inputs.next_day }}" = "true" ]; then ARGS="$ARGS --next_day"; fi
+        if [ -n "${{ inputs.vwma_mode }}" ]; then ARGS="$ARGS --vwma_mode ${{ inputs.vwma_mode }}"; fi
         if [ "${{ inputs.robust }}" = "true" ]; then ARGS="$ARGS --robust"; fi
         if [ "${{ inputs.compare }}" = "true" ]; then ARGS="$ARGS --compare"; fi
         if [ "${{ inputs.staged }}" = "true" ]; then ARGS="$ARGS --staged"; fi
