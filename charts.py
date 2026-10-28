@@ -91,7 +91,7 @@ def draw_market_supply_chart(target_date_str):
                     row=1, col=1
                 )
                 fig_kospi.add_trace(
-                    go.Scatter(x=df_k["trade_date_dt"], y=df_k["ind_cum"], mode="lines", name="개인", line=dict(color="#1f77b4", width=1.5, dash="dot")),
+                    go.Scatter(x=df_k["trade_date_dt"], y=df_k["ind_cum"], mode="lines", name="개인", line=dict(color="#1f77b4", width=1.5)),
                     row=1, col=1
                 )
 
@@ -131,7 +131,7 @@ def draw_market_supply_chart(target_date_str):
                     row=1, col=1
                 )
                 fig_kosdaq.add_trace(
-                    go.Scatter(x=df_kq["trade_date_dt"], y=df_kq["ind_cum"], mode="lines", name="개인", line=dict(color="#1f77b4", width=1.5, dash="dot")),
+                    go.Scatter(x=df_kq["trade_date_dt"], y=df_kq["ind_cum"], mode="lines", name="개인", line=dict(color="#1f77b4", width=1.5)),
                     row=1, col=1
                 )
                 fig_kosdaq.add_trace(
@@ -175,17 +175,17 @@ def draw_integrated_chart(
             .select("price_date, close_price, open_price, high_price, low_price, volume, ma20, ma50, ma200, momentum_rank")
             .eq("ticker", ticker)
             .order("price_date", desc=True)
-            .limit(120)
+            .limit(230)
             .execute()
         )
 
         # 2. 시장 지수 시계열 데이터 조회
         res_index = (
             supabase.table("daily_analysis")
-            .select("price_date, close_price, ma20, ma50, ma200")
+            .select("price_date, close_price, volume, ma20, ma50, ma200")
             .eq("ticker", index_symbol)
             .order("price_date", desc=True)
-            .limit(150)
+            .limit(250)
             .execute()
         )
 
@@ -202,12 +202,17 @@ def draw_integrated_chart(
             if col in df_stock.columns:
                 df_stock[col] = pd.to_numeric(df_stock[col], errors="coerce")
 
+        # 거래량 가중 100일선(VWMA100): 전체 구간으로 계산 후 최근 120일만 표시
+        _pv = (df_stock["close_price"] * df_stock["volume"].fillna(0)).rolling(100).sum()
+        _vv = df_stock["volume"].fillna(0).rolling(100).sum()
+        df_stock["vwma100"] = (_pv / _vv).where(_vv > 0)
+
         df_stock = df_stock[
             (df_stock["close_price"] > 0) &
             (df_stock["open_price"] > 0) &
             (df_stock["high_price"] > 0) &
             (df_stock["low_price"] > 0)
-        ].reset_index(drop=True)
+        ].tail(120).reset_index(drop=True)
 
         if df_stock.empty:
             st.warning(f"[{ticker}] 유효한 주가 데이터가 없습니다.")
@@ -227,13 +232,16 @@ def draw_integrated_chart(
         if not df_index.empty:
             df_index["price_date_dt"] = pd.to_datetime(df_index["price_date"])
             df_index = df_index.sort_values("price_date_dt").reset_index(drop=True)
-            for col in ["close_price", "ma20", "ma50", "ma200"]:
+            for col in ["close_price", "volume", "ma20", "ma50", "ma200"]:
                 if col in df_index.columns:
                     df_index[col] = pd.to_numeric(df_index[col], errors="coerce")
-            
+            _ipv = (df_index["close_price"] * df_index["volume"].fillna(0)).rolling(100).sum()
+            _iv = df_index["volume"].fillna(0).rolling(100).sum()
+            df_index["vwma100"] = (_ipv / _iv).where(_iv > 0)
+
             df_merged = pd.merge(
                 df_stock[["price_date", "date_str"]],
-                df_index[["price_date", "close_price", "ma20", "ma50", "ma200"]],
+                df_index[["price_date", "close_price", "ma20", "ma50", "ma200", "vwma100"]],
                 on="price_date",
                 how="left"
             )
@@ -280,13 +288,19 @@ def draw_integrated_chart(
 
         if "ma50" in df_stock.columns and df_stock["ma50"].notna().any():
             fig.add_trace(
-                go.Scatter(x=df_stock["date_str"], y=df_stock["ma50"], mode="lines", name="MA50", line=dict(color="#388e3c", width=1.2, dash="dash")),
+                go.Scatter(x=df_stock["date_str"], y=df_stock["ma50"], mode="lines", name="MA50", line=dict(color="#388e3c", width=1.2)),
                 row=1, col=1
             )
 
         if "ma200" in df_stock.columns and df_stock["ma200"].notna().any():
             fig.add_trace(
-                go.Scatter(x=df_stock["date_str"], y=df_stock["ma200"], mode="lines", name="MA200", line=dict(color="#8e24aa", width=1.2, dash="dashdot")),
+                go.Scatter(x=df_stock["date_str"], y=df_stock["ma200"], mode="lines", name="MA200", line=dict(color="#8e24aa", width=1.2)),
+                row=1, col=1
+            )
+
+        if df_stock["vwma100"].notna().any():
+            fig.add_trace(
+                go.Scatter(x=df_stock["date_str"], y=df_stock["vwma100"], mode="lines", name="거래량가중 100선", line=dict(color="#f08c00", width=1.4)),
                 row=1, col=1
             )
 
@@ -320,13 +334,16 @@ def draw_integrated_chart(
                 row=4, col=1
             )
             if "ma20" in df_merged.columns and df_merged["ma20"].notna().any():
-                fig.add_trace(go.Scatter(x=df_merged["date_str"], y=df_merged["ma20"], mode="lines", name="지수 MA20", line=dict(color="#f57c00", width=1.0, dash="dash"), showlegend=False, connectgaps=True), row=4, col=1)
+                fig.add_trace(go.Scatter(x=df_merged["date_str"], y=df_merged["ma20"], mode="lines", name="지수 MA20", line=dict(color="#f57c00", width=1.0), showlegend=False, connectgaps=True), row=4, col=1)
             if "ma50" in df_merged.columns and df_merged["ma50"].notna().any():
-                fig.add_trace(go.Scatter(x=df_merged["date_str"], y=df_merged["ma50"], mode="lines", name="지수 MA50", line=dict(color="#388e3c", width=1.0, dash="dot"), showlegend=False, connectgaps=True), row=4, col=1)
+                fig.add_trace(go.Scatter(x=df_merged["date_str"], y=df_merged["ma50"], mode="lines", name="지수 MA50", line=dict(color="#388e3c", width=1.0), showlegend=False, connectgaps=True), row=4, col=1)
             if "ma200" in df_merged.columns and df_merged["ma200"].notna().any():
-                fig.add_trace(go.Scatter(x=df_merged["date_str"], y=df_merged["ma200"], mode="lines", name="지수 MA200", line=dict(color="#8e24aa", width=1.0, dash="dashdot"), showlegend=False, connectgaps=True), row=4, col=1)
+                fig.add_trace(go.Scatter(x=df_merged["date_str"], y=df_merged["ma200"], mode="lines", name="지수 MA200", line=dict(color="#8e24aa", width=1.0), showlegend=False, connectgaps=True), row=4, col=1)
 
-        # 📌 세로 점선 (shapes)
+        if not df_merged.empty and df_merged["vwma100"].notna().any():
+            fig.add_trace(go.Scatter(x=df_merged["date_str"], y=df_merged["vwma100"], mode="lines", name="지수 거래량가중 100선", line=dict(color="#f08c00", width=1.0), showlegend=False, connectgaps=True), row=4, col=1)
+
+        # 📌 세로선 (shapes)
         v_shapes = []
 
         if supply_dates:
@@ -348,7 +365,7 @@ def draw_integrated_chart(
                         x1=s_row["date_str"],
                         y0=0,
                         y1=1,
-                        line=dict(color="#2e7d32", width=1.2, dash="dash"),
+                        line=dict(color="#2e7d32", width=1.2),
                     )
                 )
 
@@ -357,7 +374,7 @@ def draw_integrated_chart(
                 clean_buy = pd.to_datetime(buy_date).strftime("%Y-%m-%d")
                 if clean_buy in df_stock["date_str"].values:
                     v_shapes.append(
-                        dict(type="line", xref="x", yref="paper", x0=clean_buy, x1=clean_buy, y0=0, y1=1, line=dict(color="#e53935", width=1.8, dash="dash"))
+                        dict(type="line", xref="x", yref="paper", x0=clean_buy, x1=clean_buy, y0=0, y1=1, line=dict(color="#e53935", width=1.8))
                     )
             except Exception:
                 pass
@@ -367,7 +384,7 @@ def draw_integrated_chart(
                 clean_sell = pd.to_datetime(sell_date).strftime("%Y-%m-%d")
                 if clean_sell in df_stock["date_str"].values:
                     v_shapes.append(
-                        dict(type="line", xref="x", yref="paper", x0=clean_sell, x1=clean_sell, y0=0, y1=1, line=dict(color="#1e88e5", width=1.8, dash="dash"))
+                        dict(type="line", xref="x", yref="paper", x0=clean_sell, x1=clean_sell, y0=0, y1=1, line=dict(color="#1e88e5", width=1.8))
                     )
             except Exception:
                 pass
@@ -467,7 +484,7 @@ def draw_attribution_charts(df_hist, market_type="KR"):
                 hovertemplate="<b>%{text}</b><br>보유일수: %{x}일<br>수익률: %{y:+.2f}%<extra></extra>",
             )
         )
-        fig_scatter.add_hline(y=0, line_dash="dash", line_color="gray")
+        fig_scatter.add_hline(y=0, line_color="gray")
 
         fig_scatter.update_layout(
             title=dict(text="보유기간 대비 수익률 분포도", font=dict(size=14)),
