@@ -300,7 +300,7 @@ def draw_integrated_chart(
 
         if df_stock["vwma100"].notna().any():
             fig.add_trace(
-                go.Scatter(x=df_stock["date_str"], y=df_stock["vwma100"], mode="lines", name="거래량가중 100선", line=dict(color="#111111", width=1.4, dash="dot")),
+                go.Scatter(x=df_stock["date_str"], y=df_stock["vwma100"], mode="lines", name="거래량가중 100선", line=dict(color="#1a237e", width=1.4)),
                 row=1, col=1
             )
 
@@ -341,7 +341,7 @@ def draw_integrated_chart(
                 fig.add_trace(go.Scatter(x=df_merged["date_str"], y=df_merged["ma200"], mode="lines", name="지수 MA200", line=dict(color="#7b2cbf", width=1.0), showlegend=False, connectgaps=True), row=4, col=1)
 
         if not df_merged.empty and df_merged["vwma100"].notna().any():
-            fig.add_trace(go.Scatter(x=df_merged["date_str"], y=df_merged["vwma100"], mode="lines", name="지수 거래량가중 100선", line=dict(color="#111111", width=1.0, dash="dot"), showlegend=False, connectgaps=True), row=4, col=1)
+            fig.add_trace(go.Scatter(x=df_merged["date_str"], y=df_merged["vwma100"], mode="lines", name="지수 거래량가중 100선", line=dict(color="#1a237e", width=1.0), showlegend=False, connectgaps=True), row=4, col=1)
 
         # 📌 세로선 (shapes)
         v_shapes = []
