@@ -69,7 +69,7 @@ def load_data(client, market, start, end):
     idx["price_date"] = pd.to_datetime(idx["price_date"]).dt.strftime("%Y-%m-%d")
     idx = idx.drop_duplicates("price_date").sort_values("price_date").reset_index(drop=True)
 
-    cols = "price_date, ticker, momentum_rank, weighted_momentum, rs_score, rs_score_10, close_price, ma20, ma50, atr"
+    cols = "price_date, ticker, momentum_rank, weighted_momentum, rs_score, rs_score_10, close_price, volume, ma20, ma50, atr"
     all_rows = []
     dates = idx["price_date"].tolist()
     print(f"📅 {len(dates)}영업일 데이터 수집 중...")
@@ -91,8 +91,50 @@ def load_data(client, market, start, end):
     df["price_date"] = pd.to_datetime(df["price_date"]).dt.strftime("%Y-%m-%d")
     df["ticker"] = df["ticker"].astype(str).str.strip().str.upper()
     df = df[~df["ticker"].str.startswith("^")]
-    for c in ["momentum_rank", "weighted_momentum", "rs_score", "rs_score_10", "close_price", "ma20", "ma50", "atr"]:
+    for c in ["momentum_rank", "weighted_momentum", "rs_score", "rs_score_10", "close_price", "volume", "ma20", "ma50", "atr"]:
         df[c] = pd.to_numeric(df[c], errors="coerce")
+
+    # 거래량 가중 100일선(VWMA100): 시작일 이전 워밍업 구간을 별도로 읽어 100거래일을 채운다
+    try:
+        warm_from = (pd.to_datetime(start) - pd.Timedelta(days=170)).strftime("%Y-%m-%d")
+        w_idx = _fetch_all(
+            lambda: client.table("daily_analysis").select("price_date")
+            .eq("ticker", index_symbol).gte("price_date", warm_from).lt("price_date", start).order("price_date")
+        )
+        w_dates = sorted({r["price_date"] for r in w_idx})
+        print(f"📅 VWMA 워밍업 {len(w_dates)}영업일 수집 중...")
+        w_rows = []
+        for d in w_dates:
+            w_rows.extend(_fetch_all(
+                lambda d=d: client.table("daily_analysis").select("price_date, ticker, close_price, volume")
+                .eq("market", market).eq("price_date", d).order("ticker")
+            ))
+        warm = pd.DataFrame(w_rows)
+        if not warm.empty:
+            warm["price_date"] = pd.to_datetime(warm["price_date"]).dt.strftime("%Y-%m-%d")
+            warm["ticker"] = warm["ticker"].astype(str).str.strip().str.upper()
+            for c in ["close_price", "volume"]:
+                warm[c] = pd.to_numeric(warm[c], errors="coerce")
+        else:
+            warm = pd.DataFrame(columns=["price_date", "ticker", "close_price", "volume"])
+    except Exception as e:
+        print(f"⚠️ VWMA 워밍업 로드 실패: {e}")
+        warm = pd.DataFrame(columns=["price_date", "ticker", "close_price", "volume"])
+    allv = pd.concat([warm[["price_date", "ticker", "close_price", "volume"]],
+                      df[["price_date", "ticker", "close_price", "volume"]]]).drop_duplicates(["price_date", "ticker"])
+    pc = allv.pivot_table(index="price_date", columns="ticker", values="close_price").sort_index()
+    pv = allv.pivot_table(index="price_date", columns="ticker", values="volume").sort_index().reindex(pc.index).fillna(0)
+    den = pv.rolling(100, min_periods=100).sum()
+    vw = ((pc * pv).rolling(100, min_periods=100).sum() / den).where(den > 0)
+    above = (pc > vw).where(vw.notna())
+    was_below = pd.concat([(above.shift(k) == False) for k in (1, 2, 3)]).groupby(level=0).any()
+    cross = (above == True) & was_below.reindex(above.index).fillna(False)
+    gap = (pc / vw - 1) * 100
+    keys = pd.MultiIndex.from_frame(df[["price_date", "ticker"]])
+    df["vwma100"] = vw.stack().reindex(keys).to_numpy()
+    df["vw_gap"] = gap.stack().reindex(keys).to_numpy()
+    df["vw_cross"] = cross.stack().reindex(keys).fillna(False).to_numpy().astype(bool)
+    print(f"   VWMA100 유효 {int(df['vwma100'].notna().sum()):,}/{len(df):,}건")
 
     names, sectors = {}, {}
     try:
@@ -135,12 +177,53 @@ def simulate(df, idx, names, cfg):
     pos = {}  # ticker -> dict
     sold_recent = {}  # ticker -> (sell_date, sell_price)
     trades, equity = [], []
+    nextday = bool(cfg.get("nextday"))  # True: 신호일 다음 거래일 종가에 체결
+    pend_buys = []  # nextday 모드: 체결 대기 매수 [{t, amt, atr}]
+    vmode = cfg.get("vwma_mode")  # None | "above" | "pullback" | "breakout"
+
+    def do_sell(t, c, d, reason):
+        nonlocal cash
+        p = pos[t]
+        px = c * (1 - slip)
+        cash += px * p["qty"] * (1 - fee)
+        trades.append({
+            "ticker": t, "name": names.get(t, t), "buy_date": p["date"], "sell_date": d,
+            "buy_price": p["buy"], "sell_price": px, "qty": p["qty"],
+            "profit_amt": (px - p["buy"]) * p["qty"] - (p["buy"] * p["qty"] * fee) - (px * p["qty"] * fee),
+            "profit_rate": (px / p["buy"] - 1) * 100, "reason": reason,
+        })
+        sold_recent[t] = (d, px)
+        del pos[t]
+
+    def do_buy(t, c, atr, amt, d):
+        nonlocal cash
+        px = c * (1 + slip)
+        if amt > cash or px <= 0:
+            return False
+        qty = amt / (px * (1 + fee))
+        cash -= amt
+        pos[t] = {"buy": px, "qty": qty, "date": d, "high": c, "atr": atr}
+        return True
 
     for di, d in enumerate(dates):
         g = by_date.get(d)
         if g is None:
             continue
         prices = g["close_price"].to_dict()
+
+        # (다음 거래일 체결 모드) 전일 신호의 주문을 오늘 종가로 체결: 매도 먼저, 매수는 그 다음
+        if nextday:
+            for t in list(pos.keys()):
+                c = prices.get(t)
+                if pos[t].get("exit") and c is not None and pd.notna(c):
+                    pos[t]["high"] = max(pos[t]["high"], c)
+                    do_sell(t, c, d, pos[t]["exit"])
+            for pb in pend_buys:
+                c = prices.get(pb["t"])
+                if pb["t"] in pos or len(pos) >= TOP_N or c is None or pd.isna(c):
+                    continue
+                do_buy(pb["t"], float(c), pb["atr"], pb["amt"], d)
+            pend_buys = []
 
         # 레짐 판정 (db.get_market_regime 과 동일: 최근 3거래일이 모두 MA20 아래면 약세)
         reduce = below[d]
@@ -174,6 +257,8 @@ def simulate(df, idx, names, cfg):
             if c is None or pd.isna(c):
                 continue
             p["high"] = max(p["high"], c)
+            if p.get("exit"):  # 이미 청산 신호가 나서 다음 거래일 체결 대기 중
+                continue
             reason = None
             ma20 = g["ma20"].get(t, np.nan)
             if liquidate:
@@ -185,16 +270,10 @@ def simulate(df, idx, names, cfg):
             elif pd.notna(ma20) and ma20 > 0 and c < ma20 and prev_below.get(t, False):
                 reason = "MA20 2일 연속 이탈"
             if reason:
-                px = c * (1 - slip)
-                cash += px * p["qty"] * (1 - fee)
-                trades.append({
-                    "ticker": t, "name": names.get(t, t), "buy_date": p["date"], "sell_date": d,
-                    "buy_price": p["buy"], "sell_price": px, "qty": p["qty"],
-                    "profit_amt": (px - p["buy"]) * p["qty"] - (p["buy"] * p["qty"] * fee) - (px * p["qty"] * fee),
-                    "profit_rate": (px / p["buy"] - 1) * 100, "reason": reason,
-                })
-                sold_recent[t] = (d, px)
-                del pos[t]
+                if nextday:
+                    p["exit"] = reason
+                else:
+                    do_sell(t, c, d, reason)
 
         # 2) 신규 매수
         if (not no_new_buy) and (not stop_new) and is_bull and len(pos) < TOP_N:
@@ -202,6 +281,13 @@ def simulate(df, idx, names, cfg):
                 (g["momentum_rank"] <= RANK_CUT) & (g["rs_score"] > 0) & (g["rs_score_10"] > 0)
                 & (g["ma20"] > 0) & (g["close_price"] > g["ma20"])
             )
+            if vmode and "vw_gap" in g.columns:
+                if vmode == "above":
+                    cond = cond & (g["vw_gap"] > 0)
+                elif vmode == "pullback":  # 100선 위 0~3% 이내로 눌려 지지받는 종목
+                    cond = cond & (g["vw_gap"] >= 0) & (g["vw_gap"] <= cfg.get("vw_band", 3.0))
+                elif vmode == "breakout":  # 최근 3거래일 내 100선 아래 → 위로 돌파
+                    cond = cond & (g["vw_cross"] == True)
             cand = g[cond].copy()
             cand["gap"] = (cand["close_price"] / cand["ma20"] - 1) * 100
             cand = cand.sort_values("gap")
@@ -220,23 +306,24 @@ def simulate(df, idx, names, cfg):
             equity_now = cash + sum(prices.get(t, p["buy"]) * p["qty"] for t, p in pos.items())
             budget = equity_now / TOP_N
             chosen = []
+            queued = [pb["t"] for pb in pend_buys]
             for t, row in cand.iterrows():
-                if len(pos) + len(chosen) >= TOP_N:
+                if len(pos) + len(queued) + len(chosen) >= TOP_N:
                     break
-                if t in pos:
+                if t in pos or t in queued:
                     continue
                 if t in sold_recent:
                     sd, sp = sold_recent[t]
                     if (pd.to_datetime(d) - pd.to_datetime(sd)).days <= COOLDOWN_DAYS and row["close_price"] <= sp:
                         continue
                 if corr is not None and t in corr.index:
-                    others = list(pos.keys()) + chosen
+                    others = list(pos.keys()) + queued + chosen
                     if any(o in corr.columns and o != t and pd.notna(corr.loc[t, o]) and corr.loc[t, o] >= cfg.get("corr_th", 0.85) for o in others):
                         continue
                 cap_n = int(cfg.get("sector_cap", 0) or 0)
                 sec_map = cfg.get("sectors", {})
                 if cap_n > 0 and sec_map.get(t):
-                    same = sum(1 for o in list(pos.keys()) + chosen if sec_map.get(o) == sec_map[t])
+                    same = sum(1 for o in list(pos.keys()) + queued + chosen if sec_map.get(o) == sec_map[t])
                     if same >= cap_n:
                         continue
                 chosen.append(t)
@@ -245,14 +332,11 @@ def simulate(df, idx, names, cfg):
                 amt = budget
                 if cfg.get("atr_size") and atr > 0 and c > 0:
                     amt = min(amt, equity_now * 0.02 / (ATR_STOP_MULT * atr / c))
-                px = c * (1 + slip)
-                cost_total = amt
-                if cost_total > cash or px <= 0:
-                    chosen.pop()
+                if nextday:
+                    pend_buys.append({"t": t, "amt": amt, "atr": atr})
                     continue
-                qty = cost_total / (px * (1 + fee))
-                cash -= cost_total
-                pos[t] = {"buy": px, "qty": qty, "date": d, "high": c, "atr": atr}
+                if not do_buy(t, c, atr, amt, d):
+                    chosen.pop()
 
         eq = cash + sum(prices.get(t, p["buy"]) * p["qty"] for t, p in pos.items())
         equity.append({"date": d, "equity": eq, "positions": len(pos)})
@@ -431,6 +515,9 @@ def main():
     ap.add_argument("--robust", action="store_true", help="기간 분할 + 시장 폭 기준 민감도 분석")
     ap.add_argument("--segments", type=int, default=3, help="--robust 기간 분할 개수")
     ap.add_argument("--compare", action="store_true", help="기본 전략과 각 보완 옵션을 한 표로 비교")
+    ap.add_argument("--next_day", action="store_true", help="신호일 다음 거래일 종가에 체결(기본은 신호일 종가)")
+    ap.add_argument("--vwma_mode", default="", choices=["", "above", "pullback", "breakout"], help="거래량가중 100선 매수 조건")
+    ap.add_argument("--fill_compare", action="store_true", help="체결 가정(당일/다음날) × 거래량가중 100선 매수조건 비교표")
     ap.add_argument("--save_db", action="store_true", help="결과 매매를 backtest_trades 에 저장(기존 내용 삭제)")
     # 이전 버전 호환: python backtest.py 2026-01-01 2026-09-30
     argv = sys.argv[1:]
@@ -444,7 +531,8 @@ def main():
     client = get_client()
     df, idx, names, sectors = load_data(client, a.market, a.start, a.end)
 
-    base = dict(capital=capital, fee_pct=fee, slip_pct=a.slip_pct, regime=not a.no_regime, idx200=not a.no_idx200, sectors=sectors)
+    base = dict(capital=capital, fee_pct=fee, slip_pct=a.slip_pct, regime=not a.no_regime, idx200=not a.no_idx200, sectors=sectors,
+                nextday=a.next_day, vwma_mode=(a.vwma_mode or None))
     user = dict(base, staged=a.staged, recov=a.recov, breadth=a.breadth, breadth_th=a.breadth_th,
                 rs_accel=a.rs_accel, corr=a.corr, corr_th=a.corr_th, atr_size=a.atr_size, sector_cap=a.sector_cap)
 
@@ -453,9 +541,21 @@ def main():
             f"- 초기자금 {capital:,.0f}, 편도 비용 {fee}% + 슬리피지 {a.slip_pct}%, Top{TOP_N}, 순위≤{RANK_CUT}\n"
             f"- 벤치마크: {'KOSPI(^KS11)' if a.market == 'KR' else 'S&P500(^GSPC)'}\n")
 
-    if a.robust:
+    if a.robust and not a.fill_compare:
         md = head + "\n" + ma200_diagnostic(idx) + "\n\n" + run_robust(df, idx, names, base, [30, 40, 50], max(2, a.segments))
         m, trdf, eqdf = simulate(df, idx, names, base)
+    elif a.fill_compare:
+        b0 = dict(base, nextday=False, vwma_mode=None)
+        names_v = [("", None), (" + VWMA100 위", "above"), (" + VWMA100 눌림(0~3%)", "pullback"), (" + VWMA100 돌파(3일내)", "breakout")]
+        rows = []
+        for tag, nd in [("[신호일 종가] ", False), ("[다음날 종가] ", True)]:
+            for suffix, vm in names_v:
+                m, _, _ = simulate(df, idx, names, dict(b0, nextday=nd, vwma_mode=vm))
+                rows.append((tag + ("기본 전략" if not vm else "기본" ) + suffix, m))
+        md = (head + "\n" + ma200_diagnostic(idx) + "\n\n## 체결 가정 × 거래량가중 100선 매수조건 비교\n" + fmt_metrics_table(rows)
+              + "\n\n- VWMA100 위: 종가 > 거래량가중 100일선 / 눌림: 선 위 0~3% 이내 / 돌파: 최근 3거래일 내 선 아래→위 돌파"
+              + "\n- 모든 시나리오는 기본 후보 조건(순위≤15, RS>0, 종가>MA20)을 유지하고 위 조건만 추가, 정렬은 기존 이격도 오름차순\n")
+        m, trdf, eqdf = simulate(df, idx, names, b0)
     elif a.compare:
         scen = [
             ("기본(현행 전략)", base),
@@ -482,7 +582,7 @@ def main():
         m, trdf, eqdf = simulate(df, idx, names, user)
         md = head + "\n## 결과\n" + fmt_metrics_table([("선택 옵션", m)]) + "\n\n" + detail_report(m, trdf, eqdf)
 
-    md += "\n\n> 주의: 과거 성과이며 미래를 보장하지 않습니다. 신호일 종가 체결을 가정합니다.\n"
+    md += "\n\n> 주의: 과거 성과이며 미래를 보장하지 않습니다. {'다음 거래일 종가' if a.next_day else '신호일 종가'} 체결을 가정합니다.\n"
     print(md)
     open("backtest_out/summary.md", "w", encoding="utf-8").write(md)
     if trdf is not None and len(trdf):
