@@ -180,6 +180,18 @@ def report(markets, n_folds):
     return "\n".join(out)
 
 
+def outlier_check(df, thr=0.30):
+    """일간 등락 ±thr 초과 관측(분할/단위 오류 의심) 목록과 해당 종목 집합."""
+    piv = df.pivot_table(index="price_date", columns="ticker", values="close_price").sort_index()
+    ret = piv.pct_change()
+    st = ret.stack()
+    bad = st[st.abs() > thr].sort_values(key=lambda x: -x.abs())
+    lines = [f"- 일간 ±{thr * 100:.0f}% 초과 관측 {len(bad)}건, 종목 {bad.index.get_level_values(1).nunique() if len(bad) else 0}개"]
+    for (d, t), v in bad.head(15).items():
+        lines.append(f"  - {t} {d} {v * 100:+.0f}%")
+    return "\n".join(lines), set(bad.index.get_level_values(1)) if len(bad) else set()
+
+
 def main():
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     import backtest as bt
@@ -190,19 +202,25 @@ def main():
     ap.add_argument("--start", default="2025-01-01")
     ap.add_argument("--end", default="2026-12-31")
     ap.add_argument("--folds", type=int, default=3)
+    ap.add_argument("--drop_outliers", action="store_true", help="일간 ±30% 초과 변동이 있는 종목을 제외하고 분석")
     a = ap.parse_args()
 
     client = bt.get_client()
     markets = {}
+    dq = []
     for m in (["KR", "US"] if a.market == "both" else [a.market]):
         df, idx, names, sectors = bt.load_data(client, m, a.start, a.end)
+        txt, bad_t = outlier_check(df)
+        dq.append(f"### 데이터 점검 · {m}\n{txt}" + (f"\n- 해당 종목 제외하고 분석: {'예' if a.drop_outliers else '아니오'}" if bad_t else ""))
+        if a.drop_outliers and bad_t:
+            df = df[~df["ticker"].isin(bad_t)]
         capital = 20_000_000 if m == "KR" else 6000.0
         fee = 0.1 if m == "KR" else 0.05
         base = dict(capital=capital, fee_pct=fee, slip_pct=0.1, regime=True, idx200=True, sectors=sectors)
         A = part_a(bt, df, idx, names, base, a.folds)
         B = part_b(rs, df, idx, (fee + 0.1) / 100.0, a.folds)
         markets[m] = (A, B)
-    md = "# Quant Alpha 2차 검증 (고정 후보 · 다음날 종가 체결)\n\n" + report(markets, a.folds)
+    md = "# Quant Alpha 2차 검증 (고정 후보 · 다음날 종가 체결)\n\n" + "\n\n".join(dq) + "\n\n" + report(markets, a.folds)
     print(md)
     os.makedirs("research2_out", exist_ok=True)
     open("research2_out/summary.md", "w", encoding="utf-8").write(md)
