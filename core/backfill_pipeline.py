@@ -64,6 +64,7 @@ def backfill_pipeline(start_date_str, end_date_str, market='KR'):
     df_all['price_date'] = pd.to_datetime(df_all['price_date'])
     for col in ['open_price', 'high_price', 'low_price', 'close_price']:
         df_all[col] = pd.to_numeric(df_all[col], errors='coerce')
+        df_all.loc[df_all[col] <= 0, col] = np.nan  # 0원 가격은 결측 처리 (직전 유효가로 ffill)
     df_all['volume'] = pd.to_numeric(df_all['volume'], errors='coerce').fillna(0)
 
     # 사전 피벗 데이터프레임 생성 (속도 극대화)
