@@ -133,8 +133,8 @@ def apply_styles(df):
 # 시장별 고급 전략 옵션 기본값 (구간 3분할 백테스트 기준)
 # KR: 3단계 레짐 + 시장 폭 30% (모든 구간 플러스) / US: 지수 2일 안착 후 재개 (3개 구간 모두 현행보다 우세)
 ADV_DEFAULTS = {
-    "KR": {"staged": True, "breadth": True, "breadth_th": 30},
-    "US": {"recov": True},
+    "KR": {"staged": True, "breadth": True, "breadth_th": 30, "sort_mode": "rank"},
+    "US": {"recov": True, "sort_mode": "rank"},
 }
 
 
@@ -1433,13 +1433,13 @@ if df_display is not None:
                 st.markdown(f"#### 고급 전략 옵션 ({market_type} 전용 · 전략 3 기준)")
                 st.caption("KR 기본: 3단계 레짐 + 시장 폭 30% / US 기본: 지수 2일 안착 후 재개 (구간 분할 백테스트 근거). 변경 후 적용하면 이 세션에만 저장됩니다.")
                 _sv = get_adv_opts(market_type)
-                _sort_opts = {"gap": "이격도 낮은 순 (현행)", "rank": "모멘텀 순위 순 (실험)"}
+                _sort_opts = {"gap": "이격도 낮은 순 (이전)", "rank": "모멘텀 순위 순 (기본)"}
                 adv_sort = st.radio(
                     "추천 정렬 기준 (후보 = 순위≤15·RS>0·종가>MA20)",
                     list(_sort_opts.keys()), format_func=lambda k: _sort_opts[k],
                     index=1 if _sv.get("sort_mode") == "rank" else 0, horizontal=True, key=f"adv_w_sort_{market_type}",
                 )
-                st.caption("2차 검증(약 1년)에서 순위 정렬이 이격도 정렬보다 평균적으로 나았지만 표본이 짧아 실험 옵션입니다. 기본은 현행입니다.")
+                st.caption("2차 검증(약 1년)에서 순위 정렬이 이격도 정렬보다 KR·US 모두 평균적으로 나아 기본값으로 설정했지만 표본이 짧습니다. 이격도 순으로 되돌릴 수 있습니다.")
                 adv_staged = st.checkbox("3단계 레짐 (조정장은 신규매수만 보류, 약세 3일 연속일 때만 전량 청산)", value=bool(_sv.get("staged")), key=f"adv_w_staged_{market_type}")
                 adv_recov = st.checkbox("신규 매수 재개 조건: 지수 2일 연속 MA20 위", value=bool(_sv.get("recov")), key=f"adv_w_recov_{market_type}")
                 adv_breadth = st.checkbox("시장 폭 필터: MA20 위 종목 비율이 기준 미만이면 신규매수 보류", value=bool(_sv.get("breadth")), key=f"adv_w_breadth_{market_type}")
