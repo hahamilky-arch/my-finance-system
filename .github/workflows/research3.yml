@@ -1,0 +1,49 @@
+name: Strategy Research 3 (exit ablation)
+
+on:
+  workflow_dispatch:
+    inputs:
+      market:
+        description: '시장 (both 권장: KR/US 동시 통과 여부 확인)'
+        required: true
+        default: 'both'
+        type: choice
+        options: [both, KR, US]
+      start_date:
+        description: '시작일 (데이터가 더 길수록 신뢰도 높음)'
+        required: true
+        default: '2025-12-01'
+      end_date:
+        description: '종료일'
+        required: true
+        default: '2026-12-31'
+      drop_outliers:
+        description: '일간 ±30% 초과 변동 종목 제외'
+        type: boolean
+        default: true
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+    - name: 📦 의존성 설치
+      run: |
+        python -m pip install --upgrade pip
+        pip install pandas numpy supabase tabulate
+    - name: 🔬 청산 규칙 분해 실행
+      env:
+        SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+        SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+      run: python research3.py --market ${{ inputs.market }} --start ${{ inputs.start_date }} --end ${{ inputs.end_date }} $([ "${{ inputs.drop_outliers }}" = "true" ] && echo --drop_outliers)
+    - name: 📎 결과 업로드
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: research3-result
+        path: research3_out/
