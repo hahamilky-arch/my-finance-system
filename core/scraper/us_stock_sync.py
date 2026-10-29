@@ -60,6 +60,8 @@ def sync_us_stocks(start_date=None, end_date=None):
             # 4. DB 적재 데이터 가공 (stock_prices 테이블 스키마에 맞춤: OHLCV)
             records = []
             for date, row in df.iterrows():
+                if pd.isna(row['Close']) or float(row['Close']) <= 0:
+                    continue  # 거래정지/결측으로 종가가 0·NaN인 행은 저장하지 않음 (지표·수익률 오염 방지)
                 records.append({
                     "ticker": ticker,
                     "price_date": date.strftime('%Y-%m-%d'),
