@@ -187,6 +187,9 @@ def run_analysis_pipeline(market='KR', target_date=None):
     df['low_price'] = pd.to_numeric(df['low_price'], errors='coerce')
     df['open_price'] = pd.to_numeric(df['open_price'], errors='coerce')
     df['volume'] = pd.to_numeric(df['volume'], errors='coerce').fillna(0)
+    # 0원 종가(거래정지/수집 누락)는 결측으로 처리 → 아래 ffill 이 직전 유효가를 이어 사용
+    for _c in ['close_price', 'high_price', 'low_price', 'open_price']:
+        df.loc[df[_c] <= 0, _c] = np.nan
     
     target_dt = pd.to_datetime(analysis_date).normalize()
 
