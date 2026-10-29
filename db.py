@@ -24,11 +24,25 @@ def get_holdings_table(market_type="KR"):
     return "current_holdings"
 
 
-def get_available_dates():
+def get_available_dates(market_type=None):
     """
-    daily_analysis 테이블에서 데이터가 존재하는 날짜 목록 조회
+    daily_analysis 테이블에서 데이터가 존재하는 날짜 목록 조회.
+    market_type 이 주어지면 해당 시장 벤치마크 지수(^KS11/^GSPC)가 실제로 존재하는 날짜(=개장일)만 반환한다.
+    (휴장일에 이전 일자 값으로 채워진 종목 행이 있어도 날짜 선택에 나타나지 않도록 함)
     """
     try:
+        if market_type in ("KR", "US"):
+            bench = "^KS11" if market_type == "KR" else "^GSPC"
+            rb = (
+                supabase.table("daily_analysis")
+                .select("price_date")
+                .eq("ticker", bench)
+                .order("price_date", desc=True)
+                .limit(300)
+                .execute()
+            )
+            if rb.data:
+                return sorted({str(r["price_date"])[:10] for r in rb.data}, reverse=True)
         res = (
             supabase.table("daily_analysis")
             .select("price_date")
