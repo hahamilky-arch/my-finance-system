@@ -654,8 +654,10 @@ if df_display is not None:
         with st.expander(f"🤖 AI 시장 진단 · 잔여 {remain_cnt}/{MAX_DAILY_QUOTA}회", expanded=False):
             st.caption("Gemini 시장 전체 스마트머니 흐름 & 주도 섹터 AI 진단" if market_type == "KR" else "Gemini S&P 500 추세 · 시장 폭 · 모멘텀 주도주 AI 진단")
             st.caption(f"Gemini AI 잔여 사용량: **{remain_cnt}/{MAX_DAILY_QUOTA}회**")
-            
-            if st.button("시장 전체 스마트머니 자금 흐름 AI 진단 실행" if market_type == "KR" else "미국 시장 추세·모멘텀 AI 진단 실행", type="primary", key="btn_run_smart_money_ai_tab1", use_container_width=True):
+            if not st.session_state.get("trade_authenticated", False):
+                st.info("🔒 AI 분석은 우측 상단 [비밀번호 해제] 후 사용할 수 있습니다.")
+
+            if st.button("시장 전체 스마트머니 자금 흐름 AI 진단 실행" if market_type == "KR" else "미국 시장 추세·모멘텀 AI 진단 실행", type="primary", key="btn_run_smart_money_ai_tab1", use_container_width=True, disabled=not st.session_state.get("trade_authenticated", False)) and st.session_state.get("trade_authenticated", False):
                 with st.spinner(f"[{market_type}] " + ("시장 전체 수급 및 주도 섹터" if market_type == "KR" else "지수 추세·시장 폭·모멘텀 주도주") + "를 Gemini AI로 분석 중입니다..."):
                     # ── 공통: 지수 현황 · 시장 폭 · 모멘텀 상위 · 추천 종목 ──
                     idx_txt = "데이터 없음"
@@ -1278,9 +1280,12 @@ if df_display is not None:
                     analysis_option = st.selectbox("분석 항목 선택", ["종합 기본적 분석", "스마트머니 & 섹터 주도주 분석", "ROE 듀퐁 분석", "사업 구조", "퀀트 밸류에이션", "단/중기 시나리오"], key="tab2_gemini_opt")
                 with col_btn:
                     st.write("")
-                    run_ai_btn = st.button("AI 분석 실행", type="primary", use_container_width=True, key="btn_run_ai_stock")
+                    _ai_ok = bool(st.session_state.get("trade_authenticated", False))
+                    run_ai_btn = st.button("AI 분석 실행" if _ai_ok else "🔒 AI 분석 실행", type="primary", use_container_width=True, key="btn_run_ai_stock", disabled=not _ai_ok)
+                if not _ai_ok:
+                    st.caption("🔒 AI 분석은 우측 상단 [비밀번호 해제] 후 사용할 수 있습니다.")
 
-                if run_ai_btn:
+                if run_ai_btn and _ai_ok:
                     target_row = df_display[df_display["ticker"] == sel_chart_ticker].iloc[0]
                     stock_nm = target_row["종목명"]
                     with st.spinner(f"'{stock_nm}' 분석 실행 중..."):
