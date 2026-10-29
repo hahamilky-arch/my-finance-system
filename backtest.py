@@ -266,11 +266,11 @@ def simulate(df, idx, names, cfg):
             ma20 = g["ma20"].get(t, np.nan)
             if liquidate:
                 reason = "레짐 전환"
-            elif c <= p["buy"] - ATR_STOP_MULT * p["atr"]:
+            elif cfg.get("exit_atr", True) and c <= p["buy"] - ATR_STOP_MULT * p["atr"]:
                 reason = "ATR 손절"
-            elif p["high"] >= p["buy"] * TRAIL_TRIGGER and c <= max(p["high"] * TRAIL_KEEP, p["buy"]):
+            elif cfg.get("exit_trail", True) and p["high"] >= p["buy"] * TRAIL_TRIGGER and c <= max(p["high"] * TRAIL_KEEP, p["buy"]):
                 reason = "트레일링스탑"
-            elif pd.notna(ma20) and ma20 > 0 and c < ma20 and prev_below.get(t, False):
+            elif cfg.get("exit_ma20", True) and pd.notna(ma20) and ma20 > 0 and c < ma20 and prev_below.get(t, False):
                 reason = "MA20 2일 연속 이탈"
             if reason:
                 if nextday:
@@ -322,7 +322,7 @@ def simulate(df, idx, names, cfg):
                     continue
                 if t in sold_recent:
                     sd, sp = sold_recent[t]
-                    if (pd.to_datetime(d) - pd.to_datetime(sd)).days <= COOLDOWN_DAYS and row["close_price"] <= sp:
+                    if (pd.to_datetime(d) - pd.to_datetime(sd)).days <= cfg.get("cooldown_days", COOLDOWN_DAYS) and row["close_price"] <= sp:
                         continue
                 if corr is not None and t in corr.index:
                     others = list(pos.keys()) + queued + chosen
