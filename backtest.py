@@ -357,7 +357,8 @@ def simulate(df, idx, names, cfg):
     final = float(eqdf["equity"].iloc[-1])
     peak = eqdf["equity"].cummax()
     mdd = float(((eqdf["equity"] - peak) / peak * 100).min())
-    first_i, last_i = idx["close_price"].iloc[0], idx["close_price"].iloc[-1]
+    _ic = idx["close_price"].dropna()
+    first_i, last_i = (_ic.iloc[0], _ic.iloc[-1]) if len(_ic) else (np.nan, np.nan)
     n = len(trdf)
     wins = trdf[trdf["profit_amt"] > 0] if n else trdf
     losses = trdf[trdf["profit_amt"] < 0] if n else trdf
