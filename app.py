@@ -349,8 +349,6 @@ if "db_settings_loaded" not in st.session_state:
         pass
     st.session_state["db_settings_loaded"] = True
 
-all_dates = get_available_dates()
-latest_date_default = pd.to_datetime(all_dates[0]) if all_dates else None
 
 # 📌 3. 초슬림 상단 Header & Control 바
 h_col1, h_col2, h_col3, h_col4 = st.columns([1.4, 0.9, 1.4, 1.6], vertical_alignment="center")
@@ -365,6 +363,10 @@ with h_col2:
 
 target_symbol = "^KS11" if market_type == "KR" else "^GSPC"
 target_market_name = "코스피" if market_type == "KR" else "S&P 500"
+
+# 개장일(벤치마크 지수가 존재하는 날짜)만 선택 가능하게 함
+all_dates = get_available_dates(market_type)
+latest_date_default = pd.to_datetime(all_dates[0]) if all_dates else None
 
 with h_col3:
     selected_date = st.date_input("Date", value=latest_date_default, label_visibility="collapsed")
