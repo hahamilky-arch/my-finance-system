@@ -191,6 +191,11 @@ def run_analysis_pipeline(market='KR', target_date=None):
     for _c in ['close_price', 'high_price', 'low_price', 'open_price']:
         df.loc[df[_c] <= 0, _c] = np.nan
     
+    # 해당 시장 벤치마크 지수가 실제로 거래된 날짜만 날짜축으로 사용 (휴장일 ffill 행/지표 왜곡 방지)
+    _bench_dates = set(df.loc[df['ticker'] == benchmark_ticker, 'price_date'])
+    if _bench_dates:
+        df = df[df['price_date'].isin(_bench_dates)]
+
     target_dt = pd.to_datetime(analysis_date).normalize()
 
     # 3. 데이터 피벗
