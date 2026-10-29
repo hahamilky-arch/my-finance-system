@@ -258,7 +258,8 @@ def get_data(
                     if c_price <= (buy_price - 2.5 * entry_atr):
                         sell_dict[ticker_upper] = "ATR 손절 (-2.5x ATR 하회)"
                         continue
-                    if highest_price >= buy_price * 1.08:
+                    # [옵션] trail_off: +8% 도달 후 -8% 트레일링 스탑을 쓰지 않음 (US 검증에서 제거가 도움)
+                    if (not adv_opts.get("trail_off")) and highest_price >= buy_price * 1.08:
                         ts_price = max(highest_price * 0.92, buy_price)
                         if c_price <= ts_price:
                             sell_dict[ticker_upper] = (
