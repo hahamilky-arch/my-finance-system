@@ -67,6 +67,11 @@ def backfill_pipeline(start_date_str, end_date_str, market='KR'):
         df_all.loc[df_all[col] <= 0, col] = np.nan  # 0원 가격은 결측 처리 (직전 유효가로 ffill)
     df_all['volume'] = pd.to_numeric(df_all['volume'], errors='coerce').fillna(0)
 
+    # 해당 시장 벤치마크 지수가 실제로 거래된 날짜만 날짜축으로 사용 (휴장일 ffill 행/지표 왜곡 방지)
+    _bench_dates = set(df_all.loc[df_all['ticker'] == benchmark_ticker, 'price_date'])
+    if _bench_dates:
+        df_all = df_all[df_all['price_date'].isin(_bench_dates)]
+
     # 사전 피벗 데이터프레임 생성 (속도 극대화)
     pivot_close = df_all.pivot(index='price_date', columns='ticker', values='close_price').sort_index().ffill()
     pivot_high = df_all.pivot(index='price_date', columns='ticker', values='high_price').sort_index().ffill()
