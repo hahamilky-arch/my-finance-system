@@ -17,6 +17,10 @@ on:
         description: '종료일'
         required: true
         default: '2026-12-31'
+      drop_outliers:
+        description: '일간 ±30% 초과 변동 종목(분할/데이터 오류 의심) 제외'
+        type: boolean
+        default: false
       folds:
         description: '기간 분할 수'
         required: true
@@ -40,7 +44,7 @@ jobs:
       env:
         SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
         SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-      run: python research2.py --market ${{ inputs.market }} --start ${{ inputs.start_date }} --end ${{ inputs.end_date }} --folds ${{ inputs.folds }}
+      run: python research2.py --market ${{ inputs.market }} --start ${{ inputs.start_date }} --end ${{ inputs.end_date }} --folds ${{ inputs.folds }} $([ "${{ inputs.drop_outliers }}" = "true" ] && echo --drop_outliers)
     - name: 📎 결과 업로드
       if: always()
       uses: actions/upload-artifact@v4
