@@ -9,6 +9,7 @@ def calculate_holdings_risk(
     current_engine_key,
     sl_cfg,
     target_date_str,
+    trail_off=False,
 ):
     """보유 종목의 1번(익절)/2번(손절) 스톱가 및 포트폴리오 리스크 노출도(2% Rule)를 계산합니다."""
     if holdings_db.empty:
@@ -80,7 +81,8 @@ def calculate_holdings_risk(
                 buy_price * (1 + (sl_cfg / 100.0)), highest_price * 0.95
             )
 
-        if max_return >= 0.08:
+        use_tp = (max_return >= 0.08) and not trail_off  # trail_off: 트레일링(익절/본절) 스탑 미사용
+        if use_tp:
             stop_type_label = "🎯 1번(익절)"
             effective_stop_price = tp_stop_price
         else:
@@ -96,7 +98,7 @@ def calculate_holdings_risk(
         if stock_risk_pct > 2.0:
             risk_violations.append(f"{ticker} ({stock_risk_pct:.1f}%)")
 
-        if max_return >= 0.08 and curr_price <= tp_stop_price:
+        if use_tp and curr_price <= tp_stop_price:
             status = "🎯 익절 이탈 (+8% 도달 후 반락)"
         elif engine_status == "매도" or curr_price <= atr_stop_price:
             status = "🟢 익절 이탈" if profit_rate > 0 else "🚨 손절 이탈"
