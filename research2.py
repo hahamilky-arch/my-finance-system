@@ -16,7 +16,8 @@ import pandas as pd
 
 def excess_of(m, idx_slice):
     """벤치마크는 backtest.py 버전과 무관하게 지수 종가의 첫/마지막 유효값으로 직접 계산."""
-    c = idx_slice["close_price"].dropna()
+    c = idx_slice["close_price"]
+    c = c[c > 0].dropna()  # 0원/결측 지수 종가 제외
     if not m or len(c) < 2:
         return np.nan
     return m["수익률(%)"] - (c.iloc[-1] / c.iloc[0] - 1) * 100
@@ -214,6 +215,10 @@ def main():
     dq = []
     for m in (["KR", "US"] if a.market == "both" else [a.market]):
         df, idx, names, sectors = bt.load_data(client, m, a.start, a.end)
+        _bad_idx = int((~(idx["close_price"] > 0)).sum())
+        if _bad_idx:
+            idx = idx[idx["close_price"] > 0].reset_index(drop=True)  # 지수 종가 0/결측 날짜 제거
+            dq.append(f"### 지수 종가 정리 · {m}\n- 지수 종가 0/결측 {_bad_idx}일 제거")
         n_zero = int((df["close_price"] <= 0).sum())
         if n_zero:
             zt = df.loc[df["close_price"] <= 0, "ticker"].nunique()
