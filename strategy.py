@@ -325,9 +325,13 @@ def get_data(
             & (df_final["MA20"] > 0)
             & (df_final["종가"] > df_final["MA20"])
         )
-        candidates = df_final[cond_rank].sort_values(
-            by="이격도", ascending=True
-        )
+        if adv_opts.get("sort_mode") == "rank":
+            # [옵션] 모멘텀 순위 정렬: 후보 중 순위가 높은(숫자가 낮은) 종목 우선, 동순위는 이격도 낮은 순
+            candidates = df_final[cond_rank].sort_values(by=["순위", "이격도"], ascending=[True, True])
+        else:
+            candidates = df_final[cond_rank].sort_values(
+                by="이격도", ascending=True
+            )
         # [옵션] RS 가속 우선: 이격도 순위(낮을수록 좋음)와 RS 가속도(RS(10)-RS(90), 클수록 좋음) 순위를 평균
         if adv_opts.get("rs_accel") and len(candidates) > 1:
             _gap_rank = candidates["이격도"].rank(ascending=True, method="first")
