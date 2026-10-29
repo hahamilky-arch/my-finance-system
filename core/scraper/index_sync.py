@@ -57,6 +57,8 @@ def sync_index(market, start_date=None, end_date=None):
     # 4. DB 적재 데이터 가공 (stock_prices 테이블 스키마에 맞춤: OHLCV)
     records = []
     for date, row in df.iterrows():
+        if pd.isna(row['Close']) or float(row['Close']) <= 0:
+            continue  # 종가 0·NaN 행은 저장하지 않음
         records.append({
             "ticker": ticker,
             "price_date": date.strftime('%Y-%m-%d'),
