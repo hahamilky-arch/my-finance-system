@@ -14,8 +14,12 @@ import numpy as np
 import pandas as pd
 
 
-def excess_of(m):
-    return m["수익률(%)"] - m["벤치마크(%)"]
+def excess_of(m, idx_slice):
+    """벤치마크는 backtest.py 버전과 무관하게 지수 종가의 첫/마지막 유효값으로 직접 계산."""
+    c = idx_slice["close_price"].dropna()
+    if not m or len(c) < 2:
+        return np.nan
+    return m["수익률(%)"] - (c.iloc[-1] / c.iloc[0] - 1) * 100
 
 
 def slice_range(df, idx, d0, d1):
@@ -50,14 +54,14 @@ def part_a(bt, df, idx, names, base, n_folds):
                 for a, b in fr:
                     d2, i2 = slice_range(df, idx, a, b)
                     mf, _, _ = bt.simulate(d2, i2, names, cfg)
-                    fm.append(excess_of(mf) if mf else np.nan)
-                rows.append(dict(sort=sort, n=n, cut=cut, ret=m["수익률(%)"], excess=excess_of(m), mdd=m["MDD(%)"],
+                    fm.append(excess_of(mf, i2))
+                rows.append(dict(sort=sort, n=n, cut=cut, ret=m["수익률(%)"], excess=excess_of(m, idx), mdd=m["MDD(%)"],
                                  trades=m["거래수"], win=m["승률(%)"], folds=fm))
     ref = []
     for sort in ["gap", "rank", "rs90"]:
         cfg = dict(base, sort=sort, top_n=7, rank_cut=15, nextday=True, regime=False)
         m, _, _ = bt.simulate(df, idx, names, cfg)
-        ref.append(dict(sort=sort, ret=m["수익률(%)"], excess=excess_of(m), mdd=m["MDD(%)"]))
+        ref.append(dict(sort=sort, ret=m["수익률(%)"], excess=excess_of(m, idx), mdd=m["MDD(%)"]))
     # 이웃 평균(보유수, 순위컷 한 칸)
     ns, cuts = [5, 7, 10], [15, 30]
     key = {(r["sort"], r["n"], r["cut"]): r for r in rows}
@@ -210,6 +214,13 @@ def main():
     dq = []
     for m in (["KR", "US"] if a.market == "both" else [a.market]):
         df, idx, names, sectors = bt.load_data(client, m, a.start, a.end)
+        n_zero = int((df["close_price"] <= 0).sum())
+        if n_zero:
+            zt = df.loc[df["close_price"] <= 0, "ticker"].nunique()
+            df = df.copy()
+            df.loc[df["close_price"] <= 0, "close_price"] = np.nan  # 0원 종가는 데이터 결측으로 처리
+            df = df.dropna(subset=["close_price"])
+            dq.append(f"### 0원 종가 정리 · {m}\n- 종가 0 이하 {n_zero}건(종목 {zt}개)을 결측으로 제거")
         txt, bad_t = outlier_check(df)
         dq.append(f"### 데이터 점검 · {m}\n{txt}" + (f"\n- 해당 종목 제외하고 분석: {'예' if a.drop_outliers else '아니오'}" if bad_t else ""))
         if a.drop_outliers and bad_t:
