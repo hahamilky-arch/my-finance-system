@@ -446,6 +446,7 @@ adv_opts = {
     "corr_th": float(_adv.get("corr_th", 0.85)),
     "sector_cap": int(_adv.get("sector_cap", 0) or 0),
     "sort_mode": "rank" if _adv.get("sort_mode") == "rank" else "gap",
+    "trail_off": bool(_adv.get("trail_off")),
     "no_new_buy": False,
     "no_new_buy_reason": "",
 }
@@ -1317,7 +1318,8 @@ if df_display is not None:
                         holdings_merged["name"] = holdings_merged["ticker"]
 
                     holdings_list, total_risk_pct, risk_violations = calculate_holdings_risk(
-                        holdings_merged, df_display, market_type, account_total_input, current_engine_key, sl_cfg, target_date_str
+                        holdings_merged, df_display, market_type, account_total_input, current_engine_key, sl_cfg, target_date_str,
+                        trail_off=bool(adv_opts.get("trail_off")),
                     )
 
                     st.markdown(
@@ -1440,6 +1442,11 @@ if df_display is not None:
                     index=1 if _sv.get("sort_mode") == "rank" else 0, horizontal=True, key=f"adv_w_sort_{market_type}",
                 )
                 st.caption("2차 검증(약 1년)에서 순위 정렬이 이격도 정렬보다 KR·US 모두 평균적으로 나아 기본값으로 설정했지만 표본이 짧습니다. 이격도 순으로 되돌릴 수 있습니다.")
+                adv_trail_off = st.checkbox(
+                    "트레일링 스탑 끄기: +8% 도달 후 고점 -8% 익절 스탑을 쓰지 않음 (ATR 손절·MA20 2일 이탈·레짐 청산은 유지)",
+                    value=bool(_sv.get("trail_off")), key=f"adv_w_trail_off_{market_type}",
+                )
+                st.caption("3차 검증: US에서는 트레일링 제거가 평균 +6%p 개선(정렬 2종 모두), KR에서는 순위 정렬 기준 -27%p로 악화. KR은 켜 둔 채(기본) 사용을 권장합니다.")
                 adv_staged = st.checkbox("3단계 레짐 (조정장은 신규매수만 보류, 약세 3일 연속일 때만 전량 청산)", value=bool(_sv.get("staged")), key=f"adv_w_staged_{market_type}")
                 adv_recov = st.checkbox("신규 매수 재개 조건: 지수 2일 연속 MA20 위", value=bool(_sv.get("recov")), key=f"adv_w_recov_{market_type}")
                 adv_breadth = st.checkbox("시장 폭 필터: MA20 위 종목 비율이 기준 미만이면 신규매수 보류", value=bool(_sv.get("breadth")), key=f"adv_w_breadth_{market_type}")
@@ -1457,6 +1464,7 @@ if df_display is not None:
                         "rs_accel": adv_rs_accel, "corr_cap": adv_corr, "corr_th": adv_corr_th, "atr_size": adv_atr_size,
                         "sector_cap": int(adv_sector_n) if adv_sector else 0,
                         "sort_mode": adv_sort,
+                        "trail_off": adv_trail_off,
                     }
                     st.session_state["strategy_engine_mode"] = pop_engine_key
                     st.session_state["pop_saved_mode"] = pop_strategy_mode
