@@ -177,6 +177,9 @@ def simulate(df, idx, names, cfg):
     pos = {}  # ticker -> dict
     sold_recent = {}  # ticker -> (sell_date, sell_price)
     trades, equity = [], []
+    TOPN = int(cfg.get("top_n", TOP_N))
+    RCUT = cfg.get("rank_cut", RANK_CUT)
+    sort_mode = cfg.get("sort", "gap")  # gap(이격도 오름차순, 현행) | rank(모멘텀 순위) | rs90(RS90 내림차순)
     nextday = bool(cfg.get("nextday"))  # True: 신호일 다음 거래일 종가에 체결
     pend_buys = []  # nextday 모드: 체결 대기 매수 [{t, amt, atr}]
     vmode = cfg.get("vwma_mode")  # None | "above" | "pullback" | "breakout"
@@ -220,7 +223,7 @@ def simulate(df, idx, names, cfg):
                     do_sell(t, c, d, pos[t]["exit"])
             for pb in pend_buys:
                 c = prices.get(pb["t"])
-                if pb["t"] in pos or len(pos) >= TOP_N or c is None or pd.isna(c):
+                if pb["t"] in pos or len(pos) >= TOPN or c is None or pd.isna(c):
                     continue
                 do_buy(pb["t"], float(c), pb["atr"], pb["amt"], d)
             pend_buys = []
@@ -276,9 +279,9 @@ def simulate(df, idx, names, cfg):
                     do_sell(t, c, d, reason)
 
         # 2) 신규 매수
-        if (not no_new_buy) and (not stop_new) and is_bull and len(pos) < TOP_N:
+        if (not no_new_buy) and (not stop_new) and is_bull and len(pos) < TOPN:
             cond = (
-                (g["momentum_rank"] <= RANK_CUT) & (g["rs_score"] > 0) & (g["rs_score_10"] > 0)
+                (g["momentum_rank"] <= RCUT) & (g["rs_score"] > 0) & (g["rs_score_10"] > 0)
                 & (g["ma20"] > 0) & (g["close_price"] > g["ma20"])
             )
             if vmode and "vw_gap" in g.columns:
@@ -290,7 +293,12 @@ def simulate(df, idx, names, cfg):
                     cond = cond & (g["vw_cross"] == True)
             cand = g[cond].copy()
             cand["gap"] = (cand["close_price"] / cand["ma20"] - 1) * 100
-            cand = cand.sort_values("gap")
+            if sort_mode == "rank":
+                cand = cand.sort_values(["momentum_rank", "gap"])
+            elif sort_mode == "rs90":
+                cand = cand.sort_values(["rs_score", "gap"], ascending=[False, True])
+            else:
+                cand = cand.sort_values("gap")
             if cfg.get("rs_accel") and len(cand) > 1:
                 gr = cand["gap"].rank(method="first")
                 ar = (cand["rs_score_10"] - cand["rs_score"]).rank(ascending=False, method="first")
@@ -304,11 +312,11 @@ def simulate(df, idx, names, cfg):
                     corr = hist[use].corr(min_periods=20)
 
             equity_now = cash + sum(prices.get(t, p["buy"]) * p["qty"] for t, p in pos.items())
-            budget = equity_now / TOP_N
+            budget = equity_now / TOPN
             chosen = []
             queued = [pb["t"] for pb in pend_buys]
             for t, row in cand.iterrows():
-                if len(pos) + len(queued) + len(chosen) >= TOP_N:
+                if len(pos) + len(queued) + len(chosen) >= TOPN:
                     break
                 if t in pos or t in queued:
                     continue
@@ -582,7 +590,8 @@ def main():
         m, trdf, eqdf = simulate(df, idx, names, user)
         md = head + "\n## 결과\n" + fmt_metrics_table([("선택 옵션", m)]) + "\n\n" + detail_report(m, trdf, eqdf)
 
-    md += "\n\n> 주의: 과거 성과이며 미래를 보장하지 않습니다. {'다음 거래일 종가' if a.next_day else '신호일 종가'} 체결을 가정합니다.\n"
+    fill_note = "시나리오별로 표기된 체결 가정" if a.fill_compare else ("다음 거래일 종가" if a.next_day else "신호일 종가") + " 체결을 가정합니다."
+    md += "\n\n> 주의: 과거 성과이며 미래를 보장하지 않습니다. " + fill_note + "\n"
     print(md)
     open("backtest_out/summary.md", "w", encoding="utf-8").write(md)
     if trdf is not None and len(trdf):
