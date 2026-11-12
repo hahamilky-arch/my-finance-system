@@ -1086,9 +1086,21 @@ if df_display is not None:
 
         # KR 전용 차트들
         if market_type == "KR":
-            with st.expander("코스피 외국인 + 기관 합산 수급 추이 (30일)", expanded=False):
-                if not df_inv_all.empty:
-                    df_k_chart = df_inv_all[df_inv_all["market_type"] == "KOSPI"].head(30).sort_values("trade_date").copy()
+            with st.expander("코스피 외국인 + 기관 합산 수급 추이 (6개월)", expanded=False):
+                # 위 df_inv_all 은 최근 30행(KOSPI+KOSDAQ 혼합)이라 6개월 차트용으로 KOSPI 만 따로 조회
+                try:
+                    _from_dt = (pd.to_datetime(target_date_str) - pd.Timedelta(days=183)).strftime("%Y-%m-%d")
+                    _res_k6 = (
+                        supabase.table("market_investor_trends").select("*")
+                        .eq("market_type", "KOSPI")
+                        .gte("trade_date", _from_dt).lte("trade_date", target_date_str)
+                        .order("trade_date", desc=True).limit(400).execute()
+                    )
+                    df_k6 = pd.DataFrame(_res_k6.data) if _res_k6.data else pd.DataFrame()
+                except Exception:
+                    df_k6 = pd.DataFrame()
+                if not df_k6.empty:
+                    df_k_chart = df_k6.sort_values("trade_date").copy()
                     if not df_k_chart.empty:
                         df_k_chart["trade_date_dt"] = pd.to_datetime(df_k_chart["trade_date"])
                         df_k_chart["f_val"] = pd.to_numeric(df_k_chart["foreign_net"], errors="coerce").fillna(0)
@@ -1098,8 +1110,8 @@ if df_display is not None:
 
                         fig_smart = gg.Figure()
                         fig_smart.add_trace(gg.Bar(x=df_k_chart["trade_date_dt"], y=df_k_chart["smart_sum"], name="일별 합산", marker_color=np.where(df_k_chart["smart_sum"] >= 0, "#d62728", "#1f77b4")))
-                        fig_smart.add_trace(gg.Scatter(x=df_k_chart["trade_date_dt"], y=df_k_chart["smart_cum"], mode="lines+markers", name="30일 누적", line=dict(color="#2ca02c", width=2.5)))
-                        fig_smart.update_layout(height=250, margin=dict(l=10, r=10, t=20, b=20))
+                        fig_smart.add_trace(gg.Scatter(x=df_k_chart["trade_date_dt"], y=df_k_chart["smart_cum"], mode="lines", name="6개월 누적", line=dict(color="#2ca02c", width=2.5)))
+                        fig_smart.update_layout(height=280, margin=dict(l=10, r=10, t=20, b=20), hovermode="x unified")
                         st.plotly_chart(fig_smart, use_container_width=True, config={'scrollZoom': False})
 
             with st.expander("수급 추이 · 차트 3개", expanded=False):
