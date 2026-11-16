@@ -765,11 +765,12 @@ if df_display is not None:
 
             p_zscore = 0.0
             z_tag = "초기상태"
-            k_f_5d_tr, k_i_5d_tr = 0, 0
-            k_f_cum_10d, k_i_cum_10d = 0.0, 0.0
+            # 기간별(10/20/30일) 순매수 일수·누적: {기간: (사용 일수, 순매수 일수, 누적 조원)}
+            f_stat, i_stat = {}, {}
 
             try:
-                res_inv_all = supabase.table("market_investor_trends").select("*").lte("trade_date", target_date_str).order("trade_date", desc=True).limit(30).execute()
+                # KOSPI+KOSDAQ 가 섞여 있어 30거래일치 KOSPI 를 얻으려면 넉넉히 조회
+                res_inv_all = supabase.table("market_investor_trends").select("*").lte("trade_date", target_date_str).order("trade_date", desc=True).limit(90).execute()
                 df_inv_all = pd.DataFrame(res_inv_all.data) if res_inv_all.data else pd.DataFrame()
 
                 res_prog_all = supabase.table("market_program_trends").select("*").lte("trade_date", target_date_str).order("trade_date", desc=True).limit(30).execute()
@@ -788,14 +789,15 @@ if df_display is not None:
 
             if not df_inv_all.empty:
                 df_k_inv = df_inv_all[df_inv_all["market_type"] == "KOSPI"]
-                k_f_5d_tr = (df_k_inv.head(10)["foreign_net"] > 0).sum() if not df_k_inv.empty else 0
-                k_i_5d_tr = (df_k_inv.head(10)["institution_net"] > 0).sum() if not df_k_inv.empty else 0
-                
                 k_f_val = float(df_k_inv.iloc[0].get("foreign_net", 0)) / 1000000.0 if not df_k_inv.empty else 0.0
                 k_i_val = float(df_k_inv.iloc[0].get("institution_net", 0)) / 1000000.0 if not df_k_inv.empty else 0.0
 
-                k_f_cum_10d = float(df_k_inv.head(10)["foreign_net"].sum()) / 1000000.0 if not df_k_inv.empty else 0.0
-                k_i_cum_10d = float(df_k_inv.head(10)["institution_net"].sum()) / 1000000.0 if not df_k_inv.empty else 0.0
+                _f_all = pd.to_numeric(df_k_inv["foreign_net"], errors="coerce").fillna(0) if not df_k_inv.empty else pd.Series(dtype=float)
+                _i_all = pd.to_numeric(df_k_inv["institution_net"], errors="coerce").fillna(0) if not df_k_inv.empty else pd.Series(dtype=float)
+                for _p in (10, 20, 30):
+                    _f, _i = _f_all.head(_p), _i_all.head(_p)
+                    f_stat[_p] = (len(_f), int((_f > 0).sum()), float(_f.sum()) / 1000000.0)
+                    i_stat[_p] = (len(_i), int((_i > 0).sum()), float(_i.sum()) / 1000000.0)
             else:
                 k_f_val, k_i_val = 0.0, 0.0
 
@@ -810,33 +812,29 @@ if df_display is not None:
                 unsafe_allow_html=True
             )
 
-            f_bars = "".join([f'<div class="gauge-segment segment-active"></div>' if i < k_f_5d_tr else '<div class="gauge-segment segment-inactive"></div>' for i in range(10)])
-            st.markdown(
-                f"""<div class="gauge-card">
-<div class="gauge-card-header">
-<span class="gauge-title">코스피 외국인</span>
-<span class="gauge-tag">당일 {k_f_val:+.2f}조 · 10일 중 {k_f_5d_tr}일 순매수</span>
-</div>
-<div class="gauge-value" style="color: {'#d62728' if k_f_val >= 0 else '#1f77b4'};">{k_f_val:+.2f}조원</div>
-<div class="gauge-subtext">10일 누적 {k_f_cum_10d:+.2f}조원</div>
-<div class="gauge-bar-bg">{f_bars}</div>
-</div>""",
-                unsafe_allow_html=True
-            )
+            _per = st.segmented_control("수급 기간", [10, 20, 30], default=10, format_func=lambda x: f"{x}일", key="inv_period", label_visibility="collapsed") or 10
 
-            i_bars = "".join([f'<div class="gauge-segment segment-active"></div>' if i < k_i_5d_tr else '<div class="gauge-segment segment-inactive"></div>' for i in range(10)])
-            st.markdown(
-                f"""<div class="gauge-card">
+            def _inv_card(title, val, stat):
+                n_used, n_pos, cum = stat.get(_per, (0, 0, 0.0))
+                filled = int(round(n_pos / n_used * 10)) if n_used else 0
+                bars = "".join(['<div class="gauge-segment segment-active"></div>' if i < filled else '<div class="gauge-segment segment-inactive"></div>' for i in range(10)])
+                cum_txt = " · ".join(f"{p}일 {stat[p][2]:+.2f}조" for p in (10, 20, 30) if p in stat) or "-"
+                short = "" if n_used == _per or not n_used else f" ({n_used}일치만 확보)"
+                st.markdown(
+                    f"""<div class="gauge-card">
 <div class="gauge-card-header">
-<span class="gauge-title">코스피 기관</span>
-<span class="gauge-tag">당일 {k_i_val:+.2f}조 · 10일 중 {k_i_5d_tr}일 순매수</span>
+<span class="gauge-title">{title}</span>
+<span class="gauge-tag">당일 {val:+.2f}조 · {_per}일 중 {n_pos}일 순매수{short}</span>
 </div>
-<div class="gauge-value" style="color: {'#d62728' if k_i_val >= 0 else '#1f77b4'};">{k_i_val:+.2f}조원</div>
-<div class="gauge-subtext">10일 누적 {k_i_cum_10d:+.2f}조원</div>
-<div class="gauge-bar-bg">{i_bars}</div>
+<div class="gauge-value" style="color: {'#d62728' if val >= 0 else '#1f77b4'};">{val:+.2f}조원</div>
+<div class="gauge-subtext">누적 {cum_txt}</div>
+<div class="gauge-bar-bg">{bars}</div>
 </div>""",
-                unsafe_allow_html=True
-            )
+                    unsafe_allow_html=True,
+                )
+
+            _inv_card("코스피 외국인", k_f_val, f_stat)
+            _inv_card("코스피 기관", k_i_val, i_stat)
 
             st.write("")
 
