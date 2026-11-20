@@ -21,7 +21,9 @@ def safe_float(val):
     except (TypeError, ValueError):
         return 0.0
 
-def backfill_pipeline(start_date_str, end_date_str, market='KR'):
+def backfill_pipeline(start_date_str, end_date_str, market='KR', only_ticker=None):
+    """only_ticker 지정 시 해당 종목 1개만 계산·저장한다. 모멘텀 순위는 같은 날짜에 이미 저장된
+    다른 종목의 weighted_momentum 과 비교해 구하므로 다른 종목의 기존 행은 건드리지 않는다."""
     start_date = datetime.strptime(start_date_str, '%Y-%m-%d')
     end_date = datetime.strptime(end_date_str, '%Y-%m-%d')
     date_range = [start_date + timedelta(days=x) for x in range((end_date - start_date).days + 1)]
@@ -29,7 +31,15 @@ def backfill_pipeline(start_date_str, end_date_str, market='KR'):
     benchmark_ticker = "^KS11" if market == "KR" else "^GSPC"
     
     # 분석 대상 티커 리스트 (인덱스 포함)
-    target_tickers = [t["ticker"] for t in supabase.table("stocks").select("ticker").or_(f"market.eq.{market},market.eq.INDEX").execute().data]
+    if only_ticker:
+        only_ticker = only_ticker.strip().upper()
+        _chk = supabase.table("stocks").select("ticker").eq("ticker", only_ticker).eq("market", market).execute().data
+        if not _chk:
+            print(f"[{only_ticker}] stocks 테이블에 {market} 종목으로 등록되어 있지 않습니다. 먼저 등록하세요.")
+            return
+        target_tickers = [only_ticker, benchmark_ticker]
+    else:
+        target_tickers = [t["ticker"] for t in supabase.table("stocks").select("ticker").or_(f"market.eq.{market},market.eq.INDEX").execute().data]
     
     if not target_tickers:
         print("대상 티커 목록이 없습니다.")
@@ -116,6 +126,21 @@ def backfill_pipeline(start_date_str, end_date_str, market='KR'):
                             (r12.fillna(0) * 1)
         
         rank_map = weighted_momentum.rank(ascending=False)
+
+        if only_ticker:
+            # 같은 날짜에 이미 저장된 다른 종목의 weighted_momentum 으로 순위를 구한다
+            try:
+                _rows = supabase.table("daily_analysis").select("ticker, weighted_momentum") \
+                    .eq("market", market).eq("price_date", d_str).execute().data
+                _others = pd.to_numeric(pd.Series([r["weighted_momentum"] for r in _rows if r["ticker"] != only_ticker]), errors="coerce").dropna()
+                if len(_others):
+                    _my = float(weighted_momentum.get(only_ticker, 0.0))
+                    rank_map = pd.Series({only_ticker: float((_others > _my).sum() + 1)})
+                else:
+                    rank_map = pd.Series({only_ticker: 999.0})
+            except Exception as e:
+                print(f"[{d_str}] 기존 순위 조회 실패, 999로 저장: {e}")
+                rank_map = pd.Series({only_ticker: 999.0})
         
         ma10_series = sub_close.rolling(window=10, min_periods=1).mean().iloc[-1]
         ma20_series = sub_close.rolling(window=20, min_periods=1).mean().iloc[-1]
